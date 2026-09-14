@@ -80,5 +80,7 @@ describe("conversation interaction chrome", () => {
     expect(capsules).toContain("model-picker");
     expect(capsules).toContain("选择强度");
     expect(capsules).toContain("滑动选择模型");
+    expect(capsules).toContain("推荐模型集");
+    expect(capsules).toContain("model-picker-list");
   });
 });

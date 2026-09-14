@@ -765,6 +765,61 @@ html.dark {
     background: oklch(0.18 0.01 264);
   }
 
+  .model-picker-list {
+    margin-top: 8px;
+    max-height: 280px;
+    overflow: auto;
+    border-radius: 14px;
+    background: var(--color-surface);
+    padding: 6px 4px 8px;
+    box-shadow: inset 0 0 0 0.5px var(--color-line);
+  }
+
+  html.dark .model-picker-list {
+    background: oklch(0.22 0.01 264);
+  }
+
+  .model-picker-list-title,
+  .model-picker-list-group {
+    margin: 0;
+    padding: 6px 10px 4px;
+    color: var(--color-mute);
+    font-size: 11px;
+    font-weight: 560;
+    letter-spacing: 0.02em;
+  }
+
+  .model-picker-list-group {
+    padding-top: 10px;
+  }
+
+  .model-picker-list-item {
+    display: flex;
+    width: 100%;
+    min-height: 32px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: var(--color-ink);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .model-picker-list-item-on {
+    color: var(--color-ink);
+  }
+
+  .model-picker-list-item:hover,
+  .model-picker-list-item-on {
+    background: var(--color-fill);
+  }
+
+  .model-picker-list-item-on svg {
+    color: var(--color-mute);
+  }
+
   .thinking-block {
     padding-left: 10px;
     border-left: 2px solid var(--color-line);
