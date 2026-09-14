@@ -157,9 +157,11 @@ export function ComposerCapsules({
         role="menuitem"
         aria-label={model.name ?? model.id}
         className={`pressable model-picker-list-item ${selected ? "model-picker-list-item-on" : ""}`}
+        aria-current={selected ? "true" : undefined}
         onClick={() => {
           onModel(model.provider, model.id);
           setModelListOpen(false);
+          setOpen(false);
         }}
       >
         <span>{model.name ?? model.id}</span>
@@ -181,7 +183,25 @@ export function ComposerCapsules({
         <span className="min-w-0 truncate">{capsuleLabel}</span>
         <ChevronDown size={12} strokeWidth={2} className="shrink-0 opacity-70" />
       </button>
-      {open ? (
+      {open && modelListOpen && models.length > 0 ? (
+        <div className="model-picker-list" role="menu" aria-label="选择模型">
+          <p className="model-picker-list-title">选择模型</p>
+          {grouped.defaultModels.length > 0 ? (
+            <>
+              <p className="model-picker-list-group">默认</p>
+              {grouped.defaultModels.map((model) => renderModelItem(model, "default"))}
+            </>
+          ) : null}
+          {grouped.recommended.length > 0 ? (
+            <>
+              <p className="model-picker-list-group">推荐模型集</p>
+              {grouped.recommended.map((model) => renderModelItem(model, "rec"))}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {open && !modelListOpen ? (
         <div className="model-picker" role="dialog" aria-label="模型和思考">
           <div className="model-picker-head">
             {showFast ? (
@@ -300,24 +320,6 @@ export function ComposerCapsules({
                   思考：{THINKING_LABEL[level] ?? level}
                 </button>
               ))}
-            </div>
-          ) : null}
-
-          {modelListOpen && models.length > 0 ? (
-            <div className="model-picker-list" role="menu" aria-label="选择模型">
-              <p className="model-picker-list-title">选择模型</p>
-              {grouped.defaultModels.length > 0 ? (
-                <>
-                  <p className="model-picker-list-group">默认</p>
-                  {grouped.defaultModels.map((model) => renderModelItem(model, "default"))}
-                </>
-              ) : null}
-              {grouped.recommended.length > 0 ? (
-                <>
-                  <p className="model-picker-list-group">推荐模型集</p>
-                  {grouped.recommended.map((model) => renderModelItem(model, "rec"))}
-                </>
-              ) : null}
             </div>
           ) : null}
         </div>

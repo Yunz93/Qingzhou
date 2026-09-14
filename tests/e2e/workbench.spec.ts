@@ -102,6 +102,7 @@ test("shows an explicit banner when the model changes", async ({ page }) => {
 
   await page.getByRole("button", { name: "模型和思考" }).click();
   await page.getByRole("button", { name: "选择模型" }).click();
+  await expect(page.getByText("推荐模型集")).toBeVisible();
   await page.getByRole("menuitem", { name: "Fake Model 2" }).click();
   await expect(page.getByRole("status").filter({ hasText: "模型已从 Fake Model 更改为 Fake Model 2。" })).toBeVisible();
 });
