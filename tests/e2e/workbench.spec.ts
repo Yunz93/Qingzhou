@@ -64,6 +64,7 @@ test("workbench core loop", async ({ page }) => {
 
   await page.getByRole("button", { name: "模式" }).click();
   await page.getByRole("menuitem", { name: "每次确认" }).click();
+  await expect(page.getByRole("button", { name: "模式" })).toHaveText(/每次确认/);
 
   await page.getByLabel("输入消息").fill("WRITE:denied.txt:secret");
   await page.getByRole("button", { name: "发送" }).click();
