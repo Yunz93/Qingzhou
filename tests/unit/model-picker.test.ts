@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   THINKING_SHORT,
+  capsuleModelLabel,
   clampIndex,
+  groupPickerModels,
   indexOfModel,
   modelKey,
   nextModelIndex,
@@ -28,5 +30,14 @@ describe("model picker helpers", () => {
     expect(nextModelIndex(models, "openai/gpt-5.4")).toBe(1);
     expect(nextModelIndex(models, "anthropic/opus")).toBe(0);
     expect(THINKING_SHORT.high).toBe("高");
+    expect(capsuleModelLabel("GPT-6 Astra", "high")).toBe("GPT-6 Astra 高");
+    expect(capsuleModelLabel("GPT-6 Astra", "off", true)).toBe("GPT-6 Astra Fast");
+  });
+
+  it("groups the current model as 默认 and the rest as 推荐模型集", () => {
+    const grouped = groupPickerModels(models, "google/gemini");
+    expect(grouped.defaultModels.map((model) => model.id)).toEqual(["gemini"]);
+    expect(grouped.recommended.map((model) => model.id)).toEqual(["gpt-5.4", "opus"]);
+    expect(groupPickerModels(models, null).recommended).toHaveLength(3);
   });
 });

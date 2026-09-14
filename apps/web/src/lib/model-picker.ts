@@ -45,3 +45,25 @@ export function sliderPercent(index: number, length: number): number {
   if (length <= 1) return 0;
   return (clampIndex(index, length) / (length - 1)) * 100;
 }
+
+export function capsuleModelLabel(
+  modelLabel: string,
+  thinkingLevel: ThinkingLevel,
+  fastOn = false,
+): string {
+  const thinking = thinkingLevel !== "off" ? ` ${THINKING_SHORT[thinkingLevel] ?? thinkingLevel}` : "";
+  const fast = fastOn ? " Fast" : "";
+  return `${modelLabel}${thinking}${fast}`;
+}
+
+export function groupPickerModels(
+  models: PickerModel[],
+  modelId: string | null,
+): { defaultModels: PickerModel[]; recommended: PickerModel[] } {
+  const current = models.find((model) => modelKey(model) === modelId);
+  const currentKey = current ? modelKey(current) : null;
+  return {
+    defaultModels: current ? [current] : [],
+    recommended: currentKey ? models.filter((model) => modelKey(model) !== currentKey) : models,
+  };
+}

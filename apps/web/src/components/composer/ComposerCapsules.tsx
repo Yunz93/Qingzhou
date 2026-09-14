@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel } from "@qingzhou/protocol";
 import { approvalPolicies, interactionModes } from "@qingzhou/protocol";
-import { ChevronDown, ChevronRight, RotateCw, Zap } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, RotateCw, Zap } from "lucide-react";
 import {
   THINKING_LABEL,
   THINKING_SHORT,
+  capsuleModelLabel,
   clampIndex,
+  groupPickerModels,
   indexOfModel,
   modelKey,
   nextModelIndex,
@@ -52,11 +54,12 @@ export function ComposerCapsules({
   const policyLabel = approvalPolicies.find((item) => item.value === approvalPolicy)?.label ?? approvalPolicy;
   const currentModel = models.find((model) => modelKey(model) === modelId);
   const modelLabel = currentModel?.name ?? currentModel?.id ?? (models.length === 0 ? "暂无模型" : "选择模型");
-  const thinkingLabel = THINKING_LABEL[thinkingLevel] ?? thinkingLevel;
   const thinkingShort = THINKING_SHORT[thinkingLevel] ?? thinkingLevel;
   const showFast = typeof fastModeEnabled === "boolean" && onFastMode;
   const fastOn = fastModeActive === true || (fastModeActive !== false && fastModeEnabled === true);
   const modelIndex = indexOfModel(models, modelId);
+  const grouped = groupPickerModels(models, modelId);
+  const capsuleLabel = capsuleModelLabel(modelLabel, thinkingLevel, showFast && fastOn);
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
@@ -144,6 +147,27 @@ export function ComposerCapsules({
     if (level) onThinking(level);
   };
 
+  const renderModelItem = (model: PickerModel, keyPrefix: string) => {
+    const id = modelKey(model);
+    const selected = id === modelId;
+    return (
+      <button
+        key={`${keyPrefix}-${id}`}
+        type="button"
+        role="menuitem"
+        aria-label={model.name ?? model.id}
+        className={`pressable model-picker-list-item ${selected ? "model-picker-list-item-on" : ""}`}
+        onClick={() => {
+          onModel(model.provider, model.id);
+          setModelListOpen(false);
+        }}
+      >
+        <span>{model.name ?? model.id}</span>
+        {selected ? <Check size={14} strokeWidth={2.2} aria-hidden /> : null}
+      </button>
+    );
+  };
+
   return (
     <div ref={rootRef} className="relative min-w-0">
       <button
@@ -154,11 +178,7 @@ export function ComposerCapsules({
         aria-label="模型和思考"
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="min-w-0 truncate">
-          {modelLabel}
-          {thinkingLevel !== "off" ? ` · ${thinkingLabel}` : ""}
-          {showFast && fastOn ? " · Fast" : ""}
-        </span>
+        <span className="min-w-0 truncate">{capsuleLabel}</span>
         <ChevronDown size={12} strokeWidth={2} className="shrink-0 opacity-70" />
       </button>
       {open ? (
@@ -284,24 +304,20 @@ export function ComposerCapsules({
           ) : null}
 
           {modelListOpen && models.length > 0 ? (
-            <div className="model-picker-menu" role="menu" aria-label="模型列表">
-              {models.map((model) => {
-                const id = modelKey(model);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="menuitem"
-                    className={`pressable composer-popover-item ${id === modelId ? "composer-popover-active" : ""}`}
-                    onClick={() => {
-                      onModel(model.provider, model.id);
-                      setModelListOpen(false);
-                    }}
-                  >
-                    {model.name ?? model.id}
-                  </button>
-                );
-              })}
+            <div className="model-picker-list" role="menu" aria-label="选择模型">
+              <p className="model-picker-list-title">选择模型</p>
+              {grouped.defaultModels.length > 0 ? (
+                <>
+                  <p className="model-picker-list-group">默认</p>
+                  {grouped.defaultModels.map((model) => renderModelItem(model, "default"))}
+                </>
+              ) : null}
+              {grouped.recommended.length > 0 ? (
+                <>
+                  <p className="model-picker-list-group">推荐模型集</p>
+                  {grouped.recommended.map((model) => renderModelItem(model, "rec"))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
