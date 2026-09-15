@@ -86,8 +86,7 @@ test("workbench core loop", async ({ page }) => {
   await expect(page.getByText("Steered: steer now").first()).toBeVisible();
 
   await page.getByRole("button", { name: "模型和思考" }).click();
-  await page.getByRole("button", { name: "选择强度" }).click();
-  await page.getByRole("menuitem", { name: "思考：较高" }).click();
+  await page.getByRole("radio", { name: "较高" }).click();
   await page.getByRole("button", { name: /归档 E2E task/ }).click();
 });
 
