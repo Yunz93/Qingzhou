@@ -45,6 +45,13 @@ export {
   type ToolExecutionStatus,
 } from "./task-schema.js";
 export {
+  THINKING_LEVELS,
+  parseThinkingLevelMap,
+  thinkingLevelsForModel,
+  thinkingLevelsFromPiModel,
+  type ThinkingLevelMap,
+} from "./thinking-levels.js";
+export {
   MODE_PREFIX,
   applyModePrefix,
   approvalDecision,

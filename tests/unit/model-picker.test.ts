@@ -7,6 +7,7 @@ import {
   indexOfModel,
   modelKey,
   nextModelIndex,
+  pickerThinkingLevels,
   sliderPercent,
 } from "../../apps/web/src/lib/model-picker.ts";
 
@@ -39,5 +40,17 @@ describe("model picker helpers", () => {
     expect(grouped.defaultModels.map((model) => model.id)).toEqual(["gemini"]);
     expect(grouped.recommended.map((model) => model.id)).toEqual(["gpt-5.4", "opus"]);
     expect(groupPickerModels(models, null).recommended).toHaveLength(3);
+  });
+
+  it("uses the selected model's thinking steps instead of the session list", () => {
+    expect(pickerThinkingLevels({ provider: "fake", id: "plain", reasoning: false }, ["off", "high"])).toEqual([
+      "off",
+    ]);
+    expect(
+      pickerThinkingLevels(
+        { provider: "fake", id: "max", thinkingLevels: ["off", "high", "max"] },
+        ["off", "low", "high"],
+      ),
+    ).toEqual(["off", "high", "max"]);
   });
 });

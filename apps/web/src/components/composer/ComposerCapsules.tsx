@@ -11,6 +11,7 @@ import {
   indexOfModel,
   modelKey,
   nextModelIndex,
+  pickerThinkingLevels,
   sliderPercent,
   type PickerModel,
 } from "../../lib/model-picker";
@@ -48,16 +49,29 @@ export function ComposerCapsules({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [modelListOpen, setModelListOpen] = useState(false);
+  const [pendingModelKey, setPendingModelKey] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const modeLabel = interactionModes.find((item) => item.value === mode)?.label ?? mode;
   const policyLabel = approvalPolicies.find((item) => item.value === approvalPolicy)?.label ?? approvalPolicy;
+  const activeModelKey = pendingModelKey ?? modelId;
+  const activeModel = models.find((model) => modelKey(model) === activeModelKey);
   const currentModel = models.find((model) => modelKey(model) === modelId);
-  const modelLabel = currentModel?.name ?? currentModel?.id ?? (models.length === 0 ? "暂无模型" : "选择模型");
+  const modelLabel =
+    activeModel?.name ??
+    activeModel?.id ??
+    currentModel?.name ??
+    currentModel?.id ??
+    (models.length === 0 ? "暂无模型" : "选择模型");
   const showFast = typeof fastModeEnabled === "boolean" && onFastMode;
   const fastOn = fastModeActive === true || (fastModeActive !== false && fastModeEnabled === true);
-  const modelIndex = indexOfModel(models, modelId);
   const grouped = groupPickerModels(models, modelId);
-  const capsuleLabel = capsuleModelLabel(modelLabel, thinkingLevel, showFast && fastOn);
+  const capsuleLabel = capsuleModelLabel(
+    currentModel?.name ?? currentModel?.id ?? modelLabel,
+    thinkingLevel,
+    showFast && fastOn,
+  );
+  const modelIndex = indexOfModel(models, activeModelKey);
+  const intensityLevels = pickerThinkingLevels(activeModel ?? currentModel, thinkingLevels);
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
@@ -73,6 +87,10 @@ export function ComposerCapsules({
   useEffect(() => {
     if (!open) setModelListOpen(false);
   }, [open]);
+
+  useEffect(() => {
+    if (pendingModelKey && pendingModelKey === modelId) setPendingModelKey(null);
+  }, [modelId, pendingModelKey]);
 
   if (slot === "mode") {
     return (
@@ -133,11 +151,13 @@ export function ComposerCapsules({
 
   const pickModelAt = (index: number) => {
     const model = models[clampIndex(index, models.length)];
-    if (model) onModel(model.provider, model.id);
+    if (!model) return;
+    setPendingModelKey(modelKey(model));
+    onModel(model.provider, model.id);
   };
 
   const pickThinkingAt = (index: number) => {
-    const level = thinkingLevels[clampIndex(index, thinkingLevels.length)];
+    const level = intensityLevels[clampIndex(index, intensityLevels.length)];
     if (level) onThinking(level);
   };
 
@@ -153,6 +173,7 @@ export function ComposerCapsules({
         className={`pressable model-picker-list-item ${selected ? "model-picker-list-item-on" : ""}`}
         aria-current={selected ? "true" : undefined}
         onClick={() => {
+          setPendingModelKey(id);
           onModel(model.provider, model.id);
           setModelListOpen(false);
           setOpen(false);
@@ -264,9 +285,9 @@ export function ComposerCapsules({
             <p className="model-picker-empty">暂无模型</p>
           )}
 
-          {thinkingLevels.length > 1 ? (
+          {intensityLevels.length > 1 ? (
             <div className="model-picker-levels" role="radiogroup" aria-label="思考强度">
-              {thinkingLevels.map((level, index) => (
+              {intensityLevels.map((level, index) => (
                 <button
                   key={level}
                   type="button"

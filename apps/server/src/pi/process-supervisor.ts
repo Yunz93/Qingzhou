@@ -15,7 +15,7 @@ import type {
   TimelineMessage,
   ToolExecution,
 } from "@qingzhou/protocol";
-import { emptyRuntime, mergeCompletedTimelineMessage } from "@qingzhou/protocol";
+import { emptyRuntime, mergeCompletedTimelineMessage, thinkingLevelsFromPiModel } from "@qingzhou/protocol";
 import type { AppConfig } from "../config.js";
 import { RpcClient, type RpcEvent } from "./rpc-client.js";
 import { normalizePiEvent, piMessagesToTimeline } from "./event-normalizer.js";
@@ -786,6 +786,7 @@ function parseAvailableModels(raw: unknown): ModelRef[] {
       name: typeof item.name === "string" ? item.name : undefined,
       reasoning: Boolean(item.reasoning),
       contextWindow: typeof item.contextWindow === "number" ? item.contextWindow : undefined,
+      thinkingLevels: thinkingLevelsFromPiModel(item),
     };
   });
 }

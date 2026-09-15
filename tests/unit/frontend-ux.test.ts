@@ -82,7 +82,7 @@ describe("conversation interaction chrome", () => {
     expect(capsules).toContain("滑动选择模型");
     expect(capsules).toContain("推荐模型集");
     expect(capsules).toContain("model-picker-list");
-    expect(capsules).toContain("model-picker-levels");
+    expect(capsules).toContain("pickerThinkingLevels");
     expect(capsules).not.toContain("选择强度");
   });
 });
