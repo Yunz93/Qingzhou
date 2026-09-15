@@ -1,6 +1,12 @@
 import type { ThinkingLevel } from "@qingzhou/protocol";
 
-export type PickerModel = { provider: string; id: string; name?: string };
+export type PickerModel = {
+  provider: string;
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+  thinkingLevels?: ThinkingLevel[];
+};
 
 export const THINKING_LABEL: Record<ThinkingLevel, string> = {
   off: "关闭",
@@ -54,6 +60,15 @@ export function capsuleModelLabel(
   const thinking = thinkingLevel !== "off" ? ` ${THINKING_SHORT[thinkingLevel] ?? thinkingLevel}` : "";
   const fast = fastOn ? " Fast" : "";
   return `${modelLabel}${thinking}${fast}`;
+}
+
+export function pickerThinkingLevels(
+  model: PickerModel | undefined,
+  sessionLevels: ThinkingLevel[],
+): ThinkingLevel[] {
+  if (model?.thinkingLevels && model.thinkingLevels.length > 0) return model.thinkingLevels;
+  if (model?.reasoning === false) return ["off"];
+  return sessionLevels.length > 0 ? sessionLevels : ["off"];
 }
 
 export function groupPickerModels(

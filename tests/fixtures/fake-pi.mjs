@@ -21,7 +21,19 @@ for (let i = 0; i < args.length; i += 1) {
 
 const MODELS = [
   { id: "fake-model", name: "Fake Model", provider: "fake", reasoning: true },
-  { id: "fake-model-2", name: "Fake Model 2", provider: "fake", reasoning: true },
+  {
+    id: "fake-model-2",
+    name: "Fake Model 2",
+    provider: "fake",
+    reasoning: true,
+    thinkingLevelMap: {
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      max: "max",
+    },
+  },
 ];
 
 const state = {
@@ -64,6 +76,19 @@ if (sessionPath) {
   } catch {
     state.messages = [];
   }
+}
+
+function thinkingLevelsFor(model) {
+  if (!model?.reasoning) return ["off"];
+  const map = model.thinkingLevelMap;
+  const all = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const extended = new Set(["xhigh", "max"]);
+  return all.filter((level) => {
+    const mapped = map?.[level];
+    if (mapped === null) return false;
+    if (extended.has(level)) return mapped !== undefined;
+    return true;
+  });
 }
 
 function persist() {
@@ -413,7 +438,7 @@ function handleLine(line) {
       respond(id, type, true, { models: MODELS });
       break;
     case "get_available_thinking_levels":
-      respond(id, type, true, { levels: ["off", "low", "high"] });
+      respond(id, type, true, { levels: thinkingLevelsFor(state.model) });
       break;
     case "set_model": {
       const previous = state.model;
@@ -421,6 +446,8 @@ function handleLine(line) {
       state.model = found
         ? { ...found }
         : { ...state.model, provider: parsed.provider, id: parsed.modelId, name: parsed.modelId };
+      const nextLevels = thinkingLevelsFor(state.model);
+      if (!nextLevels.includes(state.thinkingLevel)) state.thinkingLevel = nextLevels[0] ?? "off";
       state.messages.push({
         role: "model_change",
         provider: state.model.provider,

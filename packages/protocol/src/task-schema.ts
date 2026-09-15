@@ -49,6 +49,7 @@ export const modelRefSchema = z.object({
   name: z.string().optional(),
   reasoning: z.boolean().optional(),
   contextWindow: z.number().optional(),
+  thinkingLevels: z.array(thinkingLevelSchema).optional(),
 });
 
 export type ModelRef = z.infer<typeof modelRefSchema>;
