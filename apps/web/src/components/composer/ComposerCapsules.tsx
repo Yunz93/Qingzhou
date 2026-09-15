@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel } from "@qingzhou/protocol";
 import { approvalPolicies, interactionModes } from "@qingzhou/protocol";
-import { Check, ChevronDown, ChevronRight, RotateCw, Zap } from "lucide-react";
+import { Check, ChevronDown, RotateCw, Zap } from "lucide-react";
 import {
   THINKING_LABEL,
   THINKING_SHORT,
@@ -47,14 +47,12 @@ export function ComposerCapsules({
   onFastMode,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [intensityOpen, setIntensityOpen] = useState(false);
   const [modelListOpen, setModelListOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const modeLabel = interactionModes.find((item) => item.value === mode)?.label ?? mode;
   const policyLabel = approvalPolicies.find((item) => item.value === approvalPolicy)?.label ?? approvalPolicy;
   const currentModel = models.find((model) => modelKey(model) === modelId);
   const modelLabel = currentModel?.name ?? currentModel?.id ?? (models.length === 0 ? "暂无模型" : "选择模型");
-  const thinkingShort = THINKING_SHORT[thinkingLevel] ?? thinkingLevel;
   const showFast = typeof fastModeEnabled === "boolean" && onFastMode;
   const fastOn = fastModeActive === true || (fastModeActive !== false && fastModeEnabled === true);
   const modelIndex = indexOfModel(models, modelId);
@@ -65,7 +63,6 @@ export function ComposerCapsules({
     const onDoc = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
-        setIntensityOpen(false);
         setModelListOpen(false);
       }
     };
@@ -74,10 +71,7 @@ export function ComposerCapsules({
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      setIntensityOpen(false);
-      setModelListOpen(false);
-    }
+    if (!open) setModelListOpen(false);
   }, [open]);
 
   if (slot === "mode") {
@@ -216,23 +210,18 @@ export function ComposerCapsules({
                 <Zap size={15} strokeWidth={2} fill={fastOn ? "currentColor" : "none"} />
               </button>
             ) : (
-              <span className="model-picker-icon model-picker-icon-ghost" aria-hidden>
-                <Zap size={15} strokeWidth={2} />
-              </span>
+              <span className="model-picker-icon model-picker-icon-ghost" aria-hidden />
             )}
             <button
               type="button"
-              className="pressable model-picker-level"
+              className="pressable model-picker-name"
               aria-haspopup="menu"
-              aria-expanded={intensityOpen}
-              aria-label="思考强度"
-              onClick={() => {
-                setIntensityOpen((value) => !value);
-                setModelListOpen(false);
-              }}
+              aria-expanded={modelListOpen}
+              aria-label="选择模型"
+              disabled={models.length === 0}
+              onClick={() => setModelListOpen(true)}
             >
-              {thinkingShort}
-              <ChevronRight size={13} strokeWidth={2} />
+              {modelLabel}
             </button>
             <button
               type="button"
@@ -244,21 +233,6 @@ export function ComposerCapsules({
               <RotateCw size={14} strokeWidth={2} />
             </button>
           </div>
-
-          <button
-            type="button"
-            className="pressable model-picker-name"
-            aria-haspopup="menu"
-            aria-expanded={modelListOpen}
-            aria-label="选择模型"
-            disabled={models.length === 0}
-            onClick={() => {
-              setModelListOpen((value) => !value);
-              setIntensityOpen(false);
-            }}
-          >
-            {modelLabel}
-          </button>
 
           {models.length > 0 ? (
             <div className="model-picker-slider-wrap">
@@ -288,36 +262,19 @@ export function ComposerCapsules({
             <p className="model-picker-empty">暂无模型</p>
           )}
 
-          <div className="model-picker-foot">
-            <button
-              type="button"
-              className="pressable model-picker-intensity"
-              aria-haspopup="menu"
-              aria-expanded={intensityOpen}
-              onClick={() => {
-                setIntensityOpen((value) => !value);
-                setModelListOpen(false);
-              }}
-            >
-              选择强度
-              <ChevronDown size={12} strokeWidth={2} />
-            </button>
-          </div>
-
-          {intensityOpen ? (
-            <div className="model-picker-menu" role="menu" aria-label="思考强度">
+          {thinkingLevels.length > 1 ? (
+            <div className="model-picker-levels" role="radiogroup" aria-label="思考强度">
               {thinkingLevels.map((level, index) => (
                 <button
                   key={level}
                   type="button"
-                  role="menuitem"
-                  className={`pressable composer-popover-item ${thinkingLevel === level ? "composer-popover-active" : ""}`}
-                  onClick={() => {
-                    pickThinkingAt(index);
-                    setIntensityOpen(false);
-                  }}
+                  role="radio"
+                  aria-checked={thinkingLevel === level}
+                  aria-label={THINKING_LABEL[level] ?? level}
+                  className={`pressable model-picker-levels-item ${thinkingLevel === level ? "model-picker-levels-item-on" : ""}`}
+                  onClick={() => pickThinkingAt(index)}
                 >
-                  思考：{THINKING_LABEL[level] ?? level}
+                  {THINKING_SHORT[level] ?? level}
                 </button>
               ))}
             </div>

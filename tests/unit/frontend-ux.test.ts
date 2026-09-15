@@ -78,9 +78,11 @@ describe("conversation interaction chrome", () => {
     expect(composer).toContain("const showStop = running && !canSubmit");
     expect(capsules).toContain("Fast 模式");
     expect(capsules).toContain("model-picker");
-    expect(capsules).toContain("选择强度");
+    expect(capsules).toContain("思考强度");
     expect(capsules).toContain("滑动选择模型");
     expect(capsules).toContain("推荐模型集");
     expect(capsules).toContain("model-picker-list");
+    expect(capsules).toContain("model-picker-levels");
+    expect(capsules).not.toContain("选择强度");
   });
 });

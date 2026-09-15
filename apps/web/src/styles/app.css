@@ -583,7 +583,7 @@ html.dark {
     overflow: hidden;
     border-radius: 22px;
     background: var(--color-elevated);
-    padding: 14px 16px 12px;
+    padding: 12px 16px 12px;
     box-shadow: var(--shadow-dialog);
   }
 
@@ -622,27 +622,19 @@ html.dark {
     opacity: 0.35;
   }
 
-  .model-picker-level {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    justify-self: center;
-    color: var(--color-ink);
-    font-size: 13px;
-    font-weight: 560;
-    letter-spacing: 0.04em;
-  }
-
   .model-picker-name {
     display: block;
     width: 100%;
-    padding: 10px 4px 6px;
+    min-width: 0;
+    overflow: hidden;
+    padding: 4px 2px;
     color: var(--color-ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 560;
     letter-spacing: 0.01em;
     text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .model-picker-empty {
@@ -655,7 +647,7 @@ html.dark {
   .model-picker-slider-wrap {
     position: relative;
     height: 28px;
-    margin: 4px 2px 10px;
+    margin: 8px 2px 10px;
   }
 
   .model-picker-dots {
@@ -733,36 +725,31 @@ html.dark {
     box-shadow: 0 1px 4px oklch(0 0 0 / 0.22);
   }
 
-  .model-picker-foot {
+  .model-picker-levels {
     display: flex;
-    justify-content: center;
-    padding-top: 2px;
+    gap: 2px;
+    border-radius: 10px;
+    background: var(--color-fill);
+    padding: 3px;
   }
 
-  .model-picker-intensity {
-    display: inline-flex;
-    height: 28px;
-    align-items: center;
-    gap: 4px;
-    border-radius: 999px;
-    background: var(--color-fill);
-    padding: 0 12px;
+  .model-picker-levels-item {
+    flex: 1;
+    height: 26px;
+    border-radius: 8px;
     color: var(--color-mute);
     font-size: 12px;
+    font-weight: 560;
   }
 
-  .model-picker-menu {
-    margin-top: 8px;
-    max-height: 180px;
-    overflow: auto;
-    border-radius: 12px;
-    background: var(--color-surface);
-    padding: 4px;
-    box-shadow: inset 0 0 0 0.5px var(--color-line);
+  .model-picker-levels-item-on {
+    background: var(--color-elevated);
+    color: var(--color-ink);
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.12);
   }
 
-  html.dark .model-picker-menu {
-    background: oklch(0.18 0.01 264);
+  html.dark .model-picker-levels-item-on {
+    background: oklch(0.28 0.01 264);
   }
 
   .model-picker-list {
@@ -1521,9 +1508,13 @@ html.dark {
     .composer-tool-btn:hover,
     .composer-capsule:hover,
     .model-picker-icon:hover,
-    .model-picker-level:hover,
-    .model-picker-intensity:hover {
-      background: var(--color-fill);
+    .model-picker-levels-item:hover {
+      background: var(--color-fill-strong);
+      color: var(--color-ink);
+    }
+
+    .model-picker-levels-item-on:hover {
+      background: var(--color-elevated);
       color: var(--color-ink);
     }
 
