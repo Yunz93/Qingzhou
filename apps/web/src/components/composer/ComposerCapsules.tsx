@@ -210,7 +210,9 @@ export function ComposerCapsules({
                 <Zap size={15} strokeWidth={2} fill={fastOn ? "currentColor" : "none"} />
               </button>
             ) : (
-              <span className="model-picker-icon model-picker-icon-ghost" aria-hidden />
+              <span className="model-picker-icon model-picker-icon-ghost" aria-hidden>
+                <Zap size={15} strokeWidth={2} />
+              </span>
             )}
             <button
               type="button"
