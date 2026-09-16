@@ -1094,6 +1094,11 @@ html.dark {
     max-width: 34rem;
   }
 
+  .dialog-panel-xl {
+    max-width: 42rem;
+    max-height: min(88dvh, 720px);
+  }
+
   .dialog-panel-cmd {
     max-width: 32rem;
     padding: 6px;

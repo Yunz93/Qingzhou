@@ -3,7 +3,7 @@ import { Pin, PinOff, X, PanelRight, PanelRightClose } from "lucide-react";
 import {
   parseGitPatch,
   patchLineCounts,
-  PRESET_PI_PACKAGES,
+  type PiPackageCatalogItem,
   type PiResources,
   type SkillUpdateApplyResult,
   type SkillUpdateCheckResult,
@@ -18,6 +18,7 @@ import { InspectorBrowser } from "./InspectorBrowser";
 import { InspectorRules } from "./InspectorRules";
 import { InspectorSkills } from "./InspectorSkills";
 import { InspectorExtensions } from "./InspectorExtensions";
+import { InspectorPackageCenter } from "./InspectorPackageCenter";
 
 type Tab = "files" | "git" | "term" | "browser" | "resources";
 type ResourceTab = "rules" | "skills" | "plugins";
@@ -52,7 +53,8 @@ type Props = {
   onWriteResource?: (path: string, content: string) => Promise<void>;
   onToggleSkill?: (path: string, enabled: boolean) => void;
   onToggleExtension?: (path: string, enabled: boolean) => void;
-  onInstallPresets?: (ids?: string[]) => Promise<void>;
+  onInstallPackages?: (sources: string[]) => Promise<void>;
+  onLoadPackageCatalog?: () => Promise<{ items: PiPackageCatalogItem[] }>;
   onCheckSkillUpdates?: () => Promise<SkillUpdateCheckResult>;
   onUpdateSkills?: (paths?: string[]) => Promise<SkillUpdateApplyResult>;
   drawer?: boolean;
@@ -87,7 +89,8 @@ export function InspectorPanel({
   onWriteResource,
   onToggleSkill,
   onToggleExtension,
-  onInstallPresets,
+  onInstallPackages,
+  onLoadPackageCatalog,
   onCheckSkillUpdates,
   onUpdateSkills,
   drawer,
@@ -108,12 +111,15 @@ export function InspectorPanel({
   const [expandedGitPath, setExpandedGitPath] = useState<string | null>(null);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
   const [treeOpen, setTreeOpen] = useState(true);
-  const [claimedPresetIds, setClaimedPresetIds] = useState<string[]>([]);
   const [skillBusy, setSkillBusy] = useState<string | null>(null);
   const [skillError, setSkillError] = useState("");
   const [skillUpdates, setSkillUpdates] = useState<SkillUpdateItem[] | null>(null);
   const [pluginBusy, setPluginBusy] = useState<string | null>(null);
   const [pluginError, setPluginError] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogItems, setCatalogItems] = useState<PiPackageCatalogItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const skillAutoChecked = useRef(false);
   const onLoadTreeRef = useRef(onLoadTree);
   const onLoadGitRef = useRef(onLoadGit);
@@ -125,8 +131,10 @@ export function InspectorPanel({
   useEffect(() => {
     skillAutoChecked.current = false;
     setSkillUpdates(null);
-    setClaimedPresetIds([]);
     setPluginError("");
+    setCatalogOpen(false);
+    setCatalogItems([]);
+    setCatalogError("");
   }, [taskId]);
 
   useEffect(() => {
@@ -257,19 +265,31 @@ export function InspectorPanel({
     }
   }
 
-  async function installPresets(ids?: string[]) {
-    if (!onInstallPresets) return;
-    setPluginBusy(ids?.length === 1 ? ids[0]! : "all");
+  async function loadCatalog() {
+    if (!onLoadPackageCatalog) return;
+    setCatalogLoading(true);
+    setCatalogError("");
+    try {
+      const result = await onLoadPackageCatalog();
+      setCatalogItems(result.items);
+    } catch (caught) {
+      setCatalogError(caught instanceof Error ? caught.message : "无法加载插件中心");
+    } finally {
+      setCatalogLoading(false);
+    }
+  }
+
+  async function openCatalog() {
+    setCatalogOpen(true);
+    await loadCatalog();
+  }
+
+  async function installPackages(sources: string[]) {
+    if (!onInstallPackages) return;
+    setPluginBusy(sources.length === 1 ? sources[0]! : "all");
     setPluginError("");
     try {
-      await onInstallPresets(ids);
-      setClaimedPresetIds((prev) => {
-        const next = new Set(prev);
-        for (const id of ids?.length ? ids : PRESET_PI_PACKAGES.map((item) => item.id)) {
-          next.add(id);
-        }
-        return [...next];
-      });
+      await onInstallPackages(sources);
     } catch (caught) {
       setPluginError(caught instanceof Error ? caught.message : "安装失败");
     } finally {
@@ -584,12 +604,10 @@ export function InspectorPanel({
                 <InspectorExtensions
                   extensions={resources?.extensions ?? []}
                   packages={resources?.packages ?? []}
-                  claimedIds={claimedPresetIds}
                   trustProject={Boolean(resources?.trustProject)}
                   onToggle={(path, enabled) => onToggleExtension?.(path, enabled)}
-                  busy={pluginBusy}
                   error={pluginError}
-                  onInstallPresets={onInstallPresets ? (ids) => void installPresets(ids) : undefined}
+                  onOpenCatalog={onLoadPackageCatalog ? () => void openCatalog() : undefined}
                 />
               ) : null}
             </div>
@@ -715,6 +733,19 @@ export function InspectorPanel({
           </div>
         </form>
       </div>
+    ) : null}
+    {catalogOpen ? (
+      <InspectorPackageCenter
+        items={catalogItems}
+        loading={catalogLoading}
+        error={catalogError || pluginError}
+        extensions={resources?.extensions ?? []}
+        packages={resources?.packages ?? []}
+        busy={pluginBusy}
+        onClose={() => setCatalogOpen(false)}
+        onInstall={(source) => void installPackages([source])}
+        onRetry={() => void loadCatalog()}
+      />
     ) : null}
     </>
   );
