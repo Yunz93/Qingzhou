@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,9 +10,12 @@ import {
   githubHttpsRemoteUrl,
   hashSkillFolder,
   isGithubPermissionError,
+  isSkillSwapDir,
   parseGithubRepo,
   parseSkillFrontmatter,
   parseSkillLock,
+  reclaimSkillSwapDirs,
+  replaceSkillDir,
   shouldFetchSkillRemotes,
 } from "../../apps/server/src/tasks/pi-skill-updates.ts";
 
@@ -268,5 +271,43 @@ describe("system skill updates", () => {
       updateAvailable: true,
       latest: "remote-newer",
     });
+  });
+
+  it("replaces a skill folder without leaving .qingzhou-new siblings", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-skill-swap-"));
+    const dest = path.join(root, "check");
+    const source = path.join(root, "incoming");
+    await mkdir(dest, { recursive: true });
+    await mkdir(source, { recursive: true });
+    await writeFile(path.join(dest, "SKILL.md"), "# old\n");
+    await writeFile(path.join(source, "SKILL.md"), "# new\n");
+    await replaceSkillDir(source, dest);
+    expect(await readFile(path.join(dest, "SKILL.md"), "utf8")).toBe("# new\n");
+    const names = await readdir(root);
+    expect(names).toContain("check");
+    expect(names).not.toContain("check.qingzhou-new");
+    expect(names).not.toContain("check.qingzhou-old");
+  });
+
+  it("reclaims leftover swap folders so they are not listed as skills", async () => {
+    expect(isSkillSwapDir("check.qingzhou-new")).toBe(true);
+    expect(isSkillSwapDir("check.qingzhou-old")).toBe(true);
+    expect(isSkillSwapDir("check")).toBe(false);
+
+    const both = await mkdtemp(path.join(os.tmpdir(), "qingzhou-skill-dup-"));
+    await mkdir(path.join(both, "check"), { recursive: true });
+    await mkdir(path.join(both, "check.qingzhou-new"), { recursive: true });
+    await writeFile(path.join(both, "check", "SKILL.md"), "# current\n");
+    await writeFile(path.join(both, "check.qingzhou-new", "SKILL.md"), "# leftover\n");
+    await reclaimSkillSwapDirs(both);
+    expect(await readdir(both)).toEqual(["check"]);
+    expect(await readFile(path.join(both, "check", "SKILL.md"), "utf8")).toBe("# current\n");
+
+    const orphan = await mkdtemp(path.join(os.tmpdir(), "qingzhou-skill-orphan-"));
+    await mkdir(path.join(orphan, "health.qingzhou-new"), { recursive: true });
+    await writeFile(path.join(orphan, "health.qingzhou-new", "SKILL.md"), "# recovered\n");
+    await reclaimSkillSwapDirs(orphan);
+    expect(await readdir(orphan)).toEqual(["health"]);
+    expect(await readFile(path.join(orphan, "health", "SKILL.md"), "utf8")).toBe("# recovered\n");
   });
 });
