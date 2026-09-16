@@ -10,7 +10,7 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="pressable icon-btn"
+      className="pressable app-no-drag icon-btn"
       aria-label={label}
       title={label}
       onClick={() => setTheme(next)}

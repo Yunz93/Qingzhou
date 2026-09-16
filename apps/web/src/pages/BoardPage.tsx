@@ -164,10 +164,10 @@ export function BoardPage() {
           }}
           onCreate={() => setCreatingProject(true)}
         />
-        <div className="work-head-end">
+        <div className="work-head-end app-no-drag">
           <UpdateBanner />
           <ThemeToggle />
-          <Link to="/settings" aria-label="设置" className="pressable icon-btn">
+          <Link to="/settings" aria-label="设置" className="pressable app-no-drag icon-btn">
             <Settings size={15} />
           </Link>
         </div>

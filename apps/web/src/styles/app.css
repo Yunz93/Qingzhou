@@ -188,6 +188,15 @@ html.dark {
     app-region: no-drag;
   }
 
+  .app-drag a,
+  .app-drag button,
+  .app-drag input,
+  .app-drag textarea,
+  .app-drag select {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
   .titlebar {
     height: 52px;
     min-height: 52px;
