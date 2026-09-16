@@ -44,9 +44,4 @@ nsis:
   artifactName: Qingzhou-${os}-${arch}-setup.${ext}
 portable:
   artifactName: Qingzhou-${os}-${arch}-portable.${ext}
-linux:
-  icon: build/icon.png
-  target:
-    - AppImage
-  category: Development
 npmRebuild: false

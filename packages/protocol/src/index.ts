@@ -59,6 +59,8 @@ export {
   effectiveApprovalPolicy,
   interactionModes,
   isHighRiskCommand,
+  normalizeCommandForRisk,
+  splitCommandSegments,
   rememberKey,
   stripModePrefix,
 } from "./interaction-policy.js";

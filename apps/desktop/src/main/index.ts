@@ -130,7 +130,7 @@ async function createMainWindow(port: number): Promise<void> {
       preload: preloadPath(here),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       webviewTag: true,
     },
   });
@@ -143,6 +143,30 @@ async function createMainWindow(port: number): Promise<void> {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    // Inspector browser embeds arbitrary pages — never grant Node or a preload.
+    delete (webPreferences as { preload?: string }).preload;
+    delete (webPreferences as { preloadURL?: string }).preloadURL;
+    webPreferences.nodeIntegration = false;
+    webPreferences.nodeIntegrationInSubFrames = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    webPreferences.allowRunningInsecureContent = false;
+    const src = typeof params.src === "string" ? params.src : "";
+    if (!src) {
+      event.preventDefault();
+      return;
+    }
+    try {
+      const target = new URL(src);
+      if (target.protocol !== "http:" && target.protocol !== "https:") {
+        event.preventDefault();
+      }
+    } catch {
+      event.preventDefault();
+    }
   });
   let rendererReady = false;
   mainWindow.webContents.on("did-finish-load", () => {

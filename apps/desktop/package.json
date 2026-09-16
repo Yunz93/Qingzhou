@@ -1,7 +1,7 @@
 {
   "name": "@qingzhou/desktop",
   "version": "0.1.19",
-  "description": "Local-first 轻舟 / Qingzhou workbench for Windows and macOS",
+  "description": "Local-first 轻舟 / Qingzhou workbench for macOS (arm64/x64) and Windows",
   "author": "Qingzhou",
   "type": "module",
   "main": "out/main/index.js",
@@ -11,6 +11,8 @@
     "dev": "node scripts/bundle.mjs && electron .",
     "pack": "pnpm build && electron-builder --config electron-builder.yml",
     "pack:mac": "pnpm build && electron-builder --config electron-builder.yml --mac",
+    "pack:mac:arm64": "pnpm build && electron-builder --config electron-builder.yml --mac --arm64",
+    "pack:mac:x64": "pnpm build && electron-builder --config electron-builder.yml --mac --x64",
     "pack:win": "pnpm build && electron-builder --config electron-builder.yml --win",
     "pack:dir": "pnpm build && electron-builder --config electron-builder.yml --dir"
   },

@@ -21,6 +21,8 @@
     "desktop:dev": "pnpm --filter @qingzhou/protocol build && pnpm --filter @qingzhou/server build && pnpm --filter @qingzhou/desktop build && pnpm --parallel --filter @qingzhou/web --filter @qingzhou/desktop dev",
     "desktop:pack": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack",
     "desktop:pack:mac": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack:mac",
+    "desktop:pack:mac:arm64": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack:mac:arm64",
+    "desktop:pack:mac:x64": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack:mac:x64",
     "desktop:pack:win": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack:win",
     "desktop:install:mac": "bash scripts/install-macos.sh",
     "desktop:install:win": "pwsh -File scripts/install-windows.ps1",

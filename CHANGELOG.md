@@ -8,6 +8,13 @@
 - 工作模式顶栏的主题切换和设置不再落在窗口拖拽区里，可以点。
 - 更新技能时不再把 `.qingzhou-new` 临时目录列成重复技能；已留下的会在刷新时清掉。
 - 详情栏「插件」改为打开 Pi 插件中心弹窗，一键安装官方目录里的包，不再预置推荐列表。
+- 桌面窗口开启 Electron sandbox；webview 在附着时强制关闭 Node/preload，仅允许 http(s)。
+- TaskService 终端逻辑抽到 TermController。
+- TaskService 工作项逻辑抽到 WorkItemController。
+- 高危命令检测按管道/链式分段，并识别引号拆词与简单十六进制混淆。
+- Release 恢复 macOS x64（与 arm64 同机交叉编译），发版前跑 lint / typecheck / unit / integration；去掉未发布的 Linux AppImage 目标。
+- 环回会话 cookie 改为 12 小时滑动过期。
+- 自动审批的高危命令检测覆盖更多提权/管道执行/强制推送等模式，并做轻量空白规范化。
 
 ## 0.1.19
 

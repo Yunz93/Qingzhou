@@ -98,6 +98,8 @@ export function InspectorBrowser() {
           createElement("webview", {
             key: `${url}:${reloadKey}`,
             src: url,
+            // Disable Node/preload inside guest pages; main process also enforces this.
+            webpreferences: "contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes",
             title: "浏览器",
             partition: "persist:qingzhou-browser",
             allowpopups: "on",

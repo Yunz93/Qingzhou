@@ -56,6 +56,6 @@ pnpm test:e2e --grep-invert "visual workbench"
 ## 发版
 
 - 版本号写在各 `package.json`；服务端读取 `@qingzhou/server` 的 `package.json` 或 `QINGZHOU_VERSION`。
-- 打 `vX.Y.Z` tag 会走 Release：macOS arm64、macOS x64、Windows x64，并生成 `SHA256SUMS.txt`。
+- 打 `vX.Y.Z` tag 会走 Release：macOS arm64、macOS x64（同机交叉编译）、Windows x64，并生成 `SHA256SUMS.txt`。发版前跑 lint / typecheck / unit / integration。
 - 没有 Apple 公证。macOS 首次安装用 `scripts/install-macos.sh`，不要让用户双击 DMG。
 - 桌面版应用内更新下载已校验的 zip / setup，校验失败就终止，不退回网站安装脚本。

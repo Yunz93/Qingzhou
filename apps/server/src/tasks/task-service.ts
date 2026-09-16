@@ -17,11 +17,6 @@ import {
   type TaskRecord,
   type TimelineImage,
   type TimelineMessage,
-  workItemFeedbackPrompt,
-  workItemIsClosed,
-  workItemPrompt,
-  workLinkedPromptError,
-  workLinkedSessionRewriteError,
   type WorkItem,
   type WorkItemColumn,
   type WorkRunKind,
@@ -49,7 +44,6 @@ import { previewProjectFile, listProjectFiles } from "./file-browser.js";
 import { assertGitRelativePath, commitGit, initGit, pushGit, readGitDiff, readGitStatus, restoreGit } from "./git-status.js";
 import { RememberedApprovals } from "./remembered-approvals.js";
 import { TaskShells } from "./task-shell.js";
-import { openNativeTerminal } from "./open-native-terminal.js";
 import { scanPiResources, createProjectAgentsFile, setSkillEnabled, setExtensionEnabled, readContextFile, writeContextFile } from "./pi-resources.js";
 import { fetchPiPackageCatalog } from "./pi-package-catalog.js";
 import { installPiPackages } from "./pi-packages.js";
@@ -60,6 +54,8 @@ import { assertPiSessionPath, listPiSessions, piSessionsRoot } from "./pi-sessio
 import { TaskStore } from "./task-store.js";
 import { UploadStore } from "./upload-store.js";
 import { WorkItemStore } from "./work-item-store.js";
+import { TermController } from "./term-controller.js";
+import { WorkItemController } from "./work-item-controller.js";
 
 export type SetupHints = {
   authConfigured: boolean;
@@ -95,6 +91,8 @@ export class TaskService {
   private readonly resources = new Map<string, PiResources>();
   private readonly gitDiffs = new Map<string, string>();
   private readonly shells = new TaskShells();
+  private readonly terms: TermController;
+  private readonly work: WorkItemController;
 
   private readonly workItems: WorkItemStore;
   private defaultModel: ModelRef | null = null;
@@ -122,6 +120,27 @@ export class TaskService {
         void this.apply(taskId, "abort_confirmed");
       },
     );
+    this.terms = new TermController({
+      shells: this.shells,
+      requireTask: (taskId) => this.requireTask(taskId),
+      emit: (taskId, type, payload) => this.emit(taskId, type as ServerEvent["type"], payload),
+    });
+    this.work = new WorkItemController({
+      store: this.store,
+      workItems: this.workItems,
+      supervisor: this.supervisor,
+      emit: (taskId, type, payload) => this.emit(taskId, type, payload),
+      createTask: (cwd, title, sessionPath) => this.createTask(cwd, title, sessionPath),
+      activate: (taskId) => this.activate(taskId),
+      abort: (taskId) => this.abort(taskId),
+      prompt: (taskId, message, imageIds, mode, options) => this.prompt(taskId, message, imageIds, mode, options),
+      apply: (taskId, event, errorMessage) => this.apply(taskId, event as Parameters<typeof transition>[1], errorMessage),
+      removeQueued: (taskId) => this.removeQueued(taskId),
+      cwdRoots: () => this.cwdRoots(),
+      adoptAllowedRoot: (cwd) => this.adoptAllowedRoot(cwd),
+    });
+
+
     this.events = new EventDispatcher((taskId) => this.supervisor.nextSequence(taskId));
     this.remembered = new RememberedApprovals(config.dataDir);
     this.checkpoints = new CheckpointStore(config.dataDir);
@@ -979,61 +998,31 @@ export class TaskService {
   }
 
   private runTerm(taskId: string, command: string): { ok: true } {
-    const task = this.requireTask(taskId);
-    this.shells.run(taskId, {
-      cwd: task.cwd,
-      command,
-      onChunk: (text) => this.emit(taskId, "term.chunk", { text }),
-      onExit: (code, signal) => this.emit(taskId, "term.exit", { code, signal }),
-    });
-    return { ok: true };
+    return this.terms.runTerm(taskId, command);
   }
 
   private startTerm(taskId: string, payload?: { cols?: number; rows?: number }): { ok: true; shell: string; pid: number } {
-    const task = this.requireTask(taskId);
-    const result = this.shells.startTerminal(taskId, {
-      cwd: task.cwd,
-      cols: payload?.cols,
-      rows: payload?.rows,
-      onChunk: (text) => this.emit(taskId, "term.chunk", { text }),
-      onExit: (code, signal) => this.emit(taskId, "term.exit", { code, signal }),
-    });
-    this.emit(taskId, "term.ready", { shell: result.shell, cwd: task.cwd, pid: result.pid });
-    return { ok: true, ...result };
+    return this.terms.startTerm(taskId, payload);
   }
 
   private inputTerm(taskId: string, data: string): { ok: true } {
-    this.requireTask(taskId);
-    if (!this.shells.writeTerminal(taskId, data)) {
-      throw new Error("终端还没有启动。");
-    }
-    return { ok: true };
+    return this.terms.inputTerm(taskId, data);
   }
 
   private resizeTerm(taskId: string, cols: number, rows: number): { ok: true } {
-    this.requireTask(taskId);
-    if (!this.shells.resizeTerminal(taskId, cols, rows)) {
-      throw new Error("终端还没有启动。");
-    }
-    return { ok: true };
+    return this.terms.resizeTerm(taskId, cols, rows);
   }
 
   private closeTerm(taskId: string): { ok: true } {
-    this.requireTask(taskId);
-    this.shells.dispose(taskId);
-    return { ok: true };
+    return this.terms.closeTerm(taskId);
   }
 
   private interruptTerm(taskId: string): { ok: true } {
-    this.requireTask(taskId);
-    this.shells.interrupt(taskId);
-    return { ok: true };
+    return this.terms.interruptTerm(taskId);
   }
 
   private async openNativeTerm(taskId: string): Promise<{ ok: true }> {
-    const task = this.requireTask(taskId);
-    await openNativeTerminal(task.cwd);
-    return { ok: true };
+    return this.terms.openNativeTerm(taskId);
   }
 
   private async emitGitDiff(taskId: string): Promise<{ diff: string }> {
@@ -1598,18 +1587,11 @@ export class TaskService {
     mode: "prompt" | "steer" | "follow_up",
     options?: { recordedRun?: boolean },
   ): void {
-    const message = workLinkedPromptError(
-      this.workItems.findByTaskId(taskId),
-      this.workItems.activeRunForTask(taskId),
-      mode,
-      options,
-    );
-    if (message) throw new Error(message);
+    this.work.assertWorkLinkedPrompt(taskId, mode, options);
   }
 
   private assertWorkSessionNotRewritten(taskId: string): void {
-    const message = workLinkedSessionRewriteError(this.workItems.findByTaskId(taskId));
-    if (message) throw new Error(message);
+    this.work.assertWorkSessionNotRewritten(taskId);
   }
 
   private emitWorkItems(): {
@@ -1617,27 +1599,15 @@ export class TaskService {
     projects: ReturnType<WorkItemStore["listProjects"]>;
     activeProjectId: string | null;
   } {
-    const payload = {
-      items: this.workItems.list(),
-      projects: this.workItems.listProjects(),
-      activeProjectId: this.workItems.getActiveProjectId(),
-    };
-    this.emit("", "workItems.updated", payload);
-    return payload;
+    return this.work.emitWorkItems();
   }
 
   private async createWorkProject(name: string, cwd: string): Promise<{ project: ReturnType<WorkItemStore["listProjects"]>[number] }> {
-    const resolved = await assertAllowedCwd(cwd, this.cwdRoots());
-    this.adoptAllowedRoot(resolved);
-    const project = await this.workItems.createProject({ name, cwd: resolved });
-    this.emitWorkItems();
-    return { project };
+    return this.work.createWorkProject(name, cwd);
   }
 
   private async selectWorkProject(id: string): Promise<{ project: ReturnType<WorkItemStore["listProjects"]>[number] }> {
-    const project = await this.workItems.selectProject(id);
-    this.emitWorkItems();
-    return { project };
+    return this.work.selectWorkProject(id);
   }
 
   private async createWorkItem(
@@ -1648,32 +1618,7 @@ export class TaskService {
     projectId?: string,
     start = false,
   ): Promise<{ item: WorkItem }> {
-    let project = projectId ? this.workItems.getProject(projectId) : undefined;
-    if (projectId && !project) throw new Error("找不到这个项目");
-    if (!project && cwd) {
-      const resolved = await assertAllowedCwd(cwd, this.cwdRoots());
-      this.adoptAllowedRoot(resolved);
-      project =
-        this.workItems.findProjectByCwd(resolved) ??
-        (await this.workItems.createProject({ name: path.basename(resolved) || resolved, cwd: resolved }));
-    }
-    if (!project) {
-      const activeId = this.workItems.getActiveProjectId();
-      project = activeId ? this.workItems.getProject(activeId) : undefined;
-    }
-    if (!project) throw new Error("请先启动一个项目");
-    const resolved = await assertAllowedCwd(project.cwd, this.cwdRoots());
-    this.adoptAllowedRoot(resolved);
-    const item = await this.workItems.create({
-      title,
-      description,
-      acceptanceCriteria,
-      cwd: resolved,
-      projectId: project.id,
-    });
-    this.emitWorkItems();
-    if (start) return this.startWorkItem(item.id, "initial");
-    return { item: this.workItems.get(item.id) ?? item };
+    return this.work.createWorkItem(title, description, acceptanceCriteria, cwd, projectId, start);
   }
 
   private async updateWorkItem(
@@ -1682,27 +1627,15 @@ export class TaskService {
     description?: string,
     acceptanceCriteria?: string,
   ): Promise<{ item: WorkItem }> {
-    const item = await this.workItems.update(id, { title, description, acceptanceCriteria });
-    this.emitWorkItems();
-    return { item };
+    return this.work.updateWorkItem(id, title, description, acceptanceCriteria);
   }
 
   private workItemDetails(id: string): ReturnType<WorkItemStore["getDetails"]> {
-    const details = this.workItems.getDetails(id);
-    if (!details) throw new Error("找不到这个目标");
-    return details;
+    return this.work.workItemDetails(id);
   }
 
   private async feedbackWorkItem(id: string, text: string): Promise<{ item: WorkItem }> {
-    const item = this.workItems.get(id);
-    if (!item) throw new Error("找不到这个目标");
-    if (workItemIsClosed(item.state)) throw new Error("这个目标已经结束，请先重新打开。");
-    if (item.taskId && this.workItems.activeRunForTask(item.taskId)) {
-      throw new Error("这个目标正在执行，请在完整对话中直接补充。");
-    }
-    await this.workItems.addFeedback(id, text);
-    this.emitWorkItems();
-    return this.startWorkItem(id, "feedback", workItemFeedbackPrompt(item, text));
+    return this.work.feedbackWorkItem(id, text);
   }
 
   private async startWorkItem(
@@ -1710,81 +1643,19 @@ export class TaskService {
     kind: WorkRunKind,
     explicitInstruction?: string,
   ): Promise<{ item: WorkItem }> {
-    const item = this.workItems.get(id);
-    if (!item) throw new Error("找不到这个目标");
-    if (workItemIsClosed(item.state)) throw new Error("这个目标已经结束，请先重新打开。");
-    if (item.taskId && this.workItems.activeRunForTask(item.taskId)) {
-      throw new Error("这个目标已经在执行。");
-    }
-    let taskId = item.taskId;
-    if (!taskId || !this.store.get(taskId) || this.store.get(taskId)?.archivedAt) {
-      taskId = (await this.createTask(item.cwd, item.title)).task.id;
-    } else {
-      try {
-        await this.activate(taskId);
-      } catch {
-        // The run below records the boot failure and remains recoverable.
-      }
-    }
-    const feedback = this.workItems.listFeedback(id).filter((entry) => !entry.deliveredAt);
-    const instruction =
-      explicitInstruction ??
-      workItemPrompt({
-        title: item.title,
-        description: item.description,
-        acceptanceCriteria: item.acceptanceCriteria,
-        feedback,
-      });
-    const run = await this.workItems.createRun({ objectiveId: id, taskId, kind, instruction });
-    this.emitWorkItems();
-    const task = this.store.get(taskId);
-    if (task?.status === "error") {
-      await this.workItems.updateRun(run.id, {
-        status: "failed",
-        errorMessage: task.errorMessage ?? "AI 启动失败",
-      });
-      this.emitWorkItems();
-    } else {
-      await this.tryStartWorkItemsForTask(taskId);
-    }
-    return { item: this.workItems.get(id) ?? item };
+    return this.work.startWorkItem(id, kind, explicitInstruction);
   }
 
   private async stopWorkItem(id: string): Promise<{ item: WorkItem }> {
-    const item = this.workItems.get(id);
-    if (!item) throw new Error("找不到这个目标");
-    if (!item.taskId) return { item };
-    const task = this.store.get(item.taskId);
-    if (task?.status === "queued") {
-      this.removeQueued(item.taskId);
-      await this.apply(item.taskId, "dequeue");
-    } else if (task && (isBusyStatus(task.status) || task.status === "booting")) {
-      await this.abort(item.taskId);
-    }
-    const run = this.workItems.activeRunForTask(item.taskId);
-    if (run) await this.workItems.updateRun(run.id, { status: "aborted" });
-    this.emitWorkItems();
-    return { item: this.workItems.get(id) ?? item };
+    return this.work.stopWorkItem(id);
   }
 
   private async setWorkItemState(id: string, state: "open" | "completed" | "archived"): Promise<{ item: WorkItem }> {
-    const item = this.workItems.get(id);
-    if (!item) throw new Error("找不到这个目标");
-    if (state === "completed" && item.taskId && this.workItems.activeRunForTask(item.taskId)) {
-      throw new Error("Agent 还在执行，请先停止或等待本轮结束。");
-    }
-    if (state === "archived" && item.taskId && this.workItems.activeRunForTask(item.taskId)) {
-      await this.stopWorkItem(id);
-    }
-    const next = await this.workItems.setState(id, state);
-    this.emitWorkItems();
-    return { item: next };
+    return this.work.setWorkItemState(id, state);
   }
 
   private async reorderWorkItem(id: string, beforeId?: string | null): Promise<{ item: WorkItem }> {
-    const item = await this.workItems.reorder(id, beforeId);
-    this.emitWorkItems();
-    return { item };
+    return this.work.reorderWorkItem(id, beforeId);
   }
 
   private async legacyMoveWorkItem(
@@ -1792,68 +1663,19 @@ export class TaskService {
     column: WorkItemColumn,
     beforeId?: string | null,
   ): Promise<{ item: WorkItem }> {
-    if (column === "doing") return this.startWorkItem(id, "initial");
-    if (column === "done") return this.setWorkItemState(id, "completed");
-    if (column === "archived") return this.setWorkItemState(id, "archived");
-    if (column === "todo") {
-      const reopened = await this.setWorkItemState(id, "open");
-      if (beforeId !== undefined) return this.reorderWorkItem(id, beforeId);
-      return reopened;
-    }
-    throw new Error("待检视现在由 Agent 本轮完成后自动进入。");
+    return this.work.legacyMoveWorkItem(id, column, beforeId);
   }
 
   private async tryStartWorkItemsForTask(taskId: string): Promise<void> {
-    const task = this.store.get(taskId);
-    if (!task || task.archivedAt) return;
-    if (task.status === "queued" || task.status === "booting") return;
-    if (!this.supervisor.has(taskId) || task.status !== "idle") return;
-    const run = this.workItems.activeRunForTask(taskId);
-    if (!run || run.status !== "queued") return;
-    try {
-      await this.prompt(taskId, run.instruction, undefined, "prompt", { recordedRun: true });
-      await this.workItems.updateRun(run.id, { status: "running" });
-      const feedbackIds = this.workItems
-        .listFeedback(run.objectiveId)
-        .filter((entry) => !entry.deliveredAt)
-        .map((entry) => entry.id);
-      if (feedbackIds.length > 0) await this.workItems.markFeedbackDelivered(feedbackIds, run.id);
-      this.emitWorkItems();
-    } catch (error) {
-      const message = humanizeUserFacingError(error);
-      await this.workItems.updateRun(run.id, { status: "failed", errorMessage: message });
-      this.emitWorkItems();
-      this.emit(taskId, "server.error", { code: "workItem.run", message });
-    }
+    return this.work.tryStartWorkItemsForTask(taskId);
   }
 
   private async onWorkItemSettled(taskId: string): Promise<void> {
-    const task = this.store.get(taskId);
-    if (!task || task.status === "error") return;
-    const run = this.workItems.activeRunForTask(taskId);
-    if (run) {
-      const messages = this.supervisor.snapshot(taskId)?.messages ?? [];
-      const result = [...messages].reverse().find((message) => message.role === "assistant" && message.text.trim());
-      await this.workItems.updateRun(run.id, {
-        status: "succeeded",
-        resultSummary: result ? summarizeWorkResult(result.text) : "本轮执行已结束，请打开对话检查结果。",
-        resultMessageId: result?.id ?? null,
-      });
-      this.emitWorkItems();
-      const item = this.workItems.get(run.objectiveId);
-      this.emit(taskId, "notification.shown", {
-        message: item ? `“${item.title}”已完成一轮执行，等待你验收。` : "工作目标等待验收。",
-        notifyType: "info",
-      });
-    }
-    await this.tryStartWorkItemsForTask(taskId);
+    return this.work.onWorkItemSettled(taskId);
   }
 
   private async syncActiveWorkRun(taskId: string, status: WorkRunStatus): Promise<void> {
-    const run = this.workItems.activeRunForTask(taskId);
-    if (!run || run.status === status) return;
-    await this.workItems.updateRun(run.id, { status });
-    this.emitWorkItems();
+    return this.work.syncActiveWorkRun(taskId, status);
   }
 
   emit(taskId: string, type: ServerEvent["type"], payload: unknown): void {
@@ -1875,8 +1697,3 @@ export class TaskService {
 
 export { isActiveProcessStatus };
 
-function summarizeWorkResult(text: string): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= 280) return compact;
-  return `${compact.slice(0, 277)}...`;
-}

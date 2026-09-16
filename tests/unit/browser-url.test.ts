@@ -28,5 +28,7 @@ describe("inspector browser", () => {
     expect(browser).toMatch(/partition: "persist:qingzhou-browser"/);
     expect(browser).toMatch(/用系统浏览器打开/);
     expect(desktop).toMatch(/webviewTag:\s*true/);
+    expect(desktop).toMatch(/will-attach-webview/);
+    expect(desktop).toMatch(/sandbox:\s*true/);
   });
 });

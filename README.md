@@ -8,7 +8,7 @@
 
 **macOS（推荐）**
 
-支持 Apple 芯片（arm64）和 Intel（x64）。
+支持 Apple 芯片（arm64）和 Intel（x64）。GitHub Release 同时提供两种 macOS 包；也可用 `--build` 在本机打包。
 
 打开「终端」，粘贴后回车：
 
@@ -105,7 +105,7 @@ NODE_ENV=production pnpm start   # http://127.0.0.1:4310
 
 | 变量 | 默认 | 含义 |
 |------|------|------|
-| `HOST` / `PORT` | `127.0.0.1` / `4310` | 服务监听地址 |
+| `HOST` / `PORT` | `127.0.0.1` / `4310` | 服务监听地址（默认本机；环回会话 cookie 约 12 小时滑动过期） |
 | `PI_BIN` | `pi` | PATH 上的 Pi |
 | `QINGZHOU_PI_ENTRY` | （桌面版会设置） | 用 Node/Electron 跑的 Pi CLI |
 | `QINGZHOU_DATA_DIR` | `~/.qingzhou` | 会话和设置 |

@@ -35,12 +35,16 @@ jobs:
         include:
           - runner: macos-latest
             label: macOS arm64
-            pack: desktop:pack:mac
             artifact: mac-arm64
+            pack: desktop:pack:mac:arm64
+          - runner: macos-latest
+            label: macOS x64
+            artifact: mac-x64
+            pack: desktop:pack:mac:x64
           - runner: windows-latest
             label: Windows x64
-            pack: desktop:pack:win
             artifact: win-x64
+            pack: desktop:pack:win
     steps:
       - uses: actions/checkout@v5
 
@@ -53,11 +57,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install and test
+      - name: Install and verify
         run: |
           pnpm install --frozen-lockfile
-          pnpm test
+          pnpm lint
           pnpm typecheck
+          pnpm test
+          pnpm test:integration
 
       - name: Pack desktop app
         run: pnpm ${{ matrix.pack }}
