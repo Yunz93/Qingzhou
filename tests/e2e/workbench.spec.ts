@@ -646,6 +646,19 @@ test("work project picker is a centered titlebar button", async ({ page }) => {
   expect(fontSize).toBeGreaterThanOrEqual(15);
 });
 
+test("work titlebar theme and settings stay clickable", async ({ page }) => {
+  await page.goto("/board");
+  const theme = page.getByRole("button", { name: /切换到(浅色|深色)/ });
+  await expect(theme).toBeEnabled();
+  const beforeDark = await page.locator("html").evaluate((el) => el.classList.contains("dark"));
+  await theme.click();
+  await expect
+    .poll(async () => page.locator("html").evaluate((el) => el.classList.contains("dark")))
+    .toBe(!beforeDark);
+  await page.getByRole("link", { name: "设置" }).click();
+  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+});
+
 test("work mode creates an objective and starts an agent run", async ({ page }) => {
   await page.goto("/board");
   await expect(page.getByRole("tab", { name: "工作" })).toBeVisible();
