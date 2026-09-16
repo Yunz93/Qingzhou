@@ -77,6 +77,7 @@ export const snapshotPayloadSchema = z.object({
   approval: approvalRequestSchema.nullable(),
   models: z.array(modelRefSchema),
   thinkingLevels: z.array(thinkingLevelSchema),
+  defaultModel: modelRefSchema.nullable().optional(),
   stats: sessionStatsSchema.nullable(),
   piVersion: z.string().nullable(),
   piAvailable: z.boolean(),
@@ -285,6 +286,7 @@ export const serverEventSchema = z.discriminatedUnion("type", [
     payload: z.object({
       models: z.array(modelRefSchema),
       thinkingLevels: z.array(thinkingLevelSchema),
+      defaultModel: modelRefSchema.nullable().optional(),
     }),
   }),
   z.object({

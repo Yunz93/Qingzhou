@@ -27,6 +27,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
   );
   const models = useAgentStore((state) => state.models);
   const thinkingLevels = useAgentStore((state) => state.thinkingLevels);
+  const defaultModel = useAgentStore((state) => state.defaultModel);
   const files = useAgentStore((state) =>
     item.taskId ? (state.fileEntriesByTask[item.taskId] ?? state.fileEntries) : state.fileEntries,
   );
@@ -164,6 +165,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
           models={models}
           thinkingLevels={thinkingLevels}
           modelId={task.model ? `${task.model.provider}/${task.model.id}` : null}
+          defaultModelId={defaultModel ? `${defaultModel.provider}/${defaultModel.id}` : null}
           thinkingLevel={task.thinkingLevel ?? "off"}
           mode={task.mode ?? "agent"}
           approvalPolicy={task.approvalPolicy ?? "auto"}
@@ -181,6 +183,9 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
             })
           }
           onModel={(provider, modelId) => void socketClient.send("model.set", { provider, modelId }, task.id)}
+          onDefaultModel={(provider, modelId) =>
+            void socketClient.send("model.default.set", { provider, modelId }, task.id)
+          }
           onThinking={(level: ThinkingLevel) => void socketClient.send("thinking.set", { level }, task.id)}
           onPolicy={(mode: InteractionMode, approvalPolicy: ApprovalPolicy) =>
             void socketClient.send("task.policy.set", { mode, approvalPolicy }, task.id)
@@ -199,11 +204,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
           fastModeActive={runtime.fastModeActive}
           queuedSteering={runtime.steering}
           queuedFollowUp={runtime.followUp}
-          onFastMode={
-            typeof runtime.fastModeEnabled === "boolean"
-              ? (enabled) => void socketClient.send("runtime.set", { fastMode: enabled }, task.id)
-              : undefined
-          }
+          onFastMode={(enabled) => void socketClient.send("runtime.set", { fastMode: enabled }, task.id)}
         />
       </aside>
     </div>

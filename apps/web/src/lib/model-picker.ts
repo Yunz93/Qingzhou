@@ -42,6 +42,11 @@ export function indexOfModel(models: PickerModel[], modelId: string | null): num
   return index < 0 ? 0 : index;
 }
 
+export function indexOfThinking(levels: ThinkingLevel[], level: ThinkingLevel): number {
+  const index = levels.indexOf(level);
+  return index < 0 ? 0 : index;
+}
+
 export function nextModelIndex(models: PickerModel[], modelId: string | null): number {
   if (models.length === 0) return 0;
   return (indexOfModel(models, modelId) + 1) % models.length;
@@ -73,12 +78,12 @@ export function pickerThinkingLevels(
 
 export function groupPickerModels(
   models: PickerModel[],
-  modelId: string | null,
+  defaultModelId: string | null,
 ): { defaultModels: PickerModel[]; recommended: PickerModel[] } {
-  const current = models.find((model) => modelKey(model) === modelId);
-  const currentKey = current ? modelKey(current) : null;
+  const pinned = defaultModelId ? models.find((model) => modelKey(model) === defaultModelId) : undefined;
+  const pinnedKey = pinned ? modelKey(pinned) : null;
   return {
-    defaultModels: current ? [current] : [],
-    recommended: currentKey ? models.filter((model) => modelKey(model) !== currentKey) : models,
+    defaultModels: pinned ? [pinned] : [],
+    recommended: pinnedKey ? models.filter((model) => modelKey(model) !== pinnedKey) : models,
   };
 }

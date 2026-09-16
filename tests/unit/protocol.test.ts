@@ -88,6 +88,14 @@ describe("protocol", () => {
     ).toEqual({ autoCompaction: false, fastMode: true });
     expect(
       clientCommandSchema.parse({
+        id: "2b",
+        type: "model.default.set",
+        taskId: "11111111-1111-4111-8111-111111111111",
+        payload: { provider: "openai", modelId: "gpt-5.4" },
+      }).payload,
+    ).toEqual({ provider: "openai", modelId: "gpt-5.4" });
+    expect(
+      clientCommandSchema.parse({
         id: "3",
         type: "session.stats",
         taskId: "11111111-1111-4111-8111-111111111111",

@@ -66,7 +66,7 @@ describe("conversation interaction chrome", () => {
     expect(timeline).toContain("这条提示只显示在对话里，不会发给模型。");
   });
 
-  it("lets the composer switch 追加 and 排队, and Fast when the engine reports it", () => {
+  it("lets the composer switch 追加 and 排队, and always expose Fast", () => {
     const composer = readFileSync(path.resolve("apps/web/src/components/composer/PromptComposer.tsx"), "utf8");
     const capsules = readFileSync(path.resolve("apps/web/src/components/composer/ComposerCapsules.tsx"), "utf8");
     expect(composer).toContain("追加");
@@ -78,11 +78,16 @@ describe("conversation interaction chrome", () => {
     expect(composer).toContain("const showStop = running && !canSubmit");
     expect(capsules).toContain("Fast 模式");
     expect(capsules).toContain("model-picker");
-    expect(capsules).toContain("思考强度");
-    expect(capsules).toContain("滑动选择模型");
+    expect(capsules).toContain("滑动选择思考强度");
     expect(capsules).toContain("推荐模型集");
+    expect(capsules).toContain("设为默认");
     expect(capsules).toContain("model-picker-list");
     expect(capsules).toContain("pickerThinkingLevels");
+    expect(capsules).not.toContain("滑动选择模型");
     expect(capsules).not.toContain("选择强度");
+    expect(capsules).not.toContain("model-picker-levels");
+    const layout = readFileSync(path.resolve("apps/web/src/layouts/WorkbenchLayout.tsx"), "utf8");
+    expect(layout).toContain('onFastMode={(enabled) => void socketClient.send("runtime.set"');
+    expect(layout).not.toContain('typeof runtime.fastModeEnabled === "boolean"');
   });
 });

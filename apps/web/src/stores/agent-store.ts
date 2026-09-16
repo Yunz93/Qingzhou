@@ -249,6 +249,7 @@ type AgentState = {
   approval: ApprovalRequest | null;
   models: ModelRef[];
   thinkingLevels: ThinkingLevel[];
+  defaultModel: ModelRef | null;
   stats: SessionStats | null;
   piVersion: string | null;
   piAvailable: boolean;
@@ -379,6 +380,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
   approval: null,
   models: [],
   thinkingLevels: ["off"],
+  defaultModel: null,
   stats: null,
   piVersion: null,
   piAvailable: true,
@@ -495,6 +497,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       ...transcript,
       models: payload.models,
       thinkingLevels: payload.thinkingLevels,
+      defaultModel: payload.defaultModel ?? null,
       stats: payload.stats,
       piVersion: payload.piVersion,
       piAvailable: payload.piAvailable,
@@ -596,6 +599,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           ...transcript,
           models: event.payload.models,
           thinkingLevels: event.payload.thinkingLevels,
+          defaultModel: event.payload.defaultModel ?? current.defaultModel,
           stats: event.payload.stats,
           piVersion: event.payload.piVersion,
           piAvailable: event.payload.piAvailable,
@@ -852,6 +856,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           lastSeen,
           models: event.payload.models,
           thinkingLevels: event.payload.thinkingLevels,
+          ...(event.payload.defaultModel !== undefined ? { defaultModel: event.payload.defaultModel } : {}),
         });
         break;
       case "commands.updated": {

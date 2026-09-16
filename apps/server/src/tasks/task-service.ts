@@ -11,6 +11,7 @@ import {
   stripModePrefix,
   type AuthEntry,
   type ClientCommand,
+  type ModelRef,
   type PiResources,
   type ServerEvent,
   type TaskRecord,
@@ -52,6 +53,7 @@ import { scanPiResources, createProjectAgentsFile, setSkillEnabled, setExtension
 import { installPresetPiPackages } from "./pi-packages.js";
 import { applySystemSkillUpdates, checkSystemSkillUpdates } from "./pi-skill-updates.js";
 import { createModelChangeNotice, modelDisplayName } from "./model-change.js";
+import { readPiDefaultModelSync, writePiDefaultModel } from "./pi-default-model.js";
 import { assertPiSessionPath, listPiSessions, piSessionsRoot } from "./pi-sessions.js";
 import { TaskStore } from "./task-store.js";
 import { UploadStore } from "./upload-store.js";
@@ -93,6 +95,7 @@ export class TaskService {
   private readonly shells = new TaskShells();
 
   private readonly workItems: WorkItemStore;
+  private defaultModel: ModelRef | null = null;
 
   constructor(
     private config: AppConfig,
@@ -120,6 +123,7 @@ export class TaskService {
     this.events = new EventDispatcher((taskId) => this.supervisor.nextSequence(taskId));
     this.remembered = new RememberedApprovals(config.dataDir);
     this.checkpoints = new CheckpointStore(config.dataDir);
+    this.defaultModel = readPiDefaultModelSync(config.piAgentDir);
     void this.remembered.load();
     this.supervisor.onEvent((event) => {
       this.events.dispatch(event);
@@ -149,6 +153,7 @@ export class TaskService {
   updateConfig(config: AppConfig): void {
     this.config = config;
     this.supervisor.updateConfig(config);
+    this.defaultModel = readPiDefaultModelSync(config.piAgentDir);
   }
 
   setPi(version: string | null, error: string | null): void {
@@ -295,6 +300,15 @@ export class TaskService {
         if (notice) this.supervisor.appendNotice(command.taskId, notice);
         return { ok: true };
       }
+      case "model.default.set": {
+        const written = await writePiDefaultModel(this.config.piAgentDir, {
+          provider: command.payload.provider,
+          id: command.payload.modelId,
+        });
+        this.defaultModel = this.resolveDefaultModel(written.provider, written.id);
+        this.emitModelsUpdated(command.taskId);
+        return { ok: true, defaultModel: this.defaultModel };
+      }
       case "thinking.set":
         await this.supervisor.rpcData(command.taskId, {
           type: "set_thinking_level",
@@ -405,6 +419,7 @@ export class TaskService {
       approval: runtime?.approval ?? null,
       models: runtime?.models ?? [],
       thinkingLevels: runtime?.thinkingLevels ?? ["off"],
+      defaultModel: this.defaultModel,
       stats: runtime?.stats ?? null,
       piVersion: this.piVersion,
       piAvailable: Boolean(this.piVersion) && !this.piError,
@@ -591,10 +606,7 @@ export class TaskService {
       this.emit(taskId, "task.updated", { task: next });
       const runtime = this.supervisor.snapshot(taskId);
       if (runtime) {
-        this.emit(taskId, "models.updated", {
-          models: runtime.models,
-          thinkingLevels: runtime.thinkingLevels,
-        });
+        this.emit(taskId, "models.updated", this.modelsUpdatedPayload(runtime.models, runtime.thinkingLevels));
         this.emit(taskId, "commands.updated", { commands: runtime.commands });
         this.emit(taskId, "runtime.status", runtime.runtime);
         this.emit(taskId, "session.tree", {
@@ -817,10 +829,35 @@ export class TaskService {
     await this.refreshAvailableModels(taskId);
   }
 
+  private resolveDefaultModel(provider: string, id: string): ModelRef {
+    for (const task of this.listTasks()) {
+      const models = this.supervisor.snapshot(task.id)?.models ?? [];
+      const found = models.find((model) => model.provider === provider && model.id === id);
+      if (found) return { provider: found.provider, id: found.id, name: found.name };
+    }
+    return { provider, id };
+  }
+
+  private modelsUpdatedPayload(models: ModelRef[], thinkingLevels: TaskRecord["thinkingLevel"][]): {
+    models: ModelRef[];
+    thinkingLevels: TaskRecord["thinkingLevel"][];
+    defaultModel: ModelRef | null;
+  } {
+    return { models, thinkingLevels, defaultModel: this.defaultModel };
+  }
+
+  private emitModelsUpdated(taskId: string, models?: ModelRef[], thinkingLevels?: TaskRecord["thinkingLevel"][]): void {
+    const runtime = this.supervisor.snapshot(taskId);
+    this.emit(taskId, "models.updated", this.modelsUpdatedPayload(
+      models ?? runtime?.models ?? [],
+      thinkingLevels ?? runtime?.thinkingLevels ?? ["off"],
+    ));
+  }
+
   private async refreshAvailableModels(taskId: string): Promise<void> {
     if (!this.supervisor.has(taskId)) return;
     const { models, thinkingLevels } = await this.supervisor.refreshAvailableModels(taskId);
-    this.emit(taskId, "models.updated", { models, thinkingLevels });
+    this.emitModelsUpdated(taskId, models, thinkingLevels);
   }
 
   private async refreshStats(taskId: string): Promise<void> {

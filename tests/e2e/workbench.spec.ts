@@ -86,7 +86,7 @@ test("workbench core loop", async ({ page }) => {
   await expect(page.getByText("Steered: steer now").first()).toBeVisible();
 
   await page.getByRole("button", { name: "模型和思考" }).click();
-  await page.getByRole("radio", { name: "较高" }).click();
+  await page.getByRole("slider", { name: "滑动选择思考强度" }).fill("4");
   await page.getByRole("button", { name: /归档 E2E task/ }).click();
 });
 
@@ -101,15 +101,29 @@ test("shows an explicit banner when the model changes", async ({ page }) => {
   await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "模型和思考" }).click();
-  await expect(page.getByRole("radio", { name: "很少" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "最大" })).toHaveCount(0);
+  const slider = page.getByRole("slider", { name: "滑动选择思考强度" });
+  await expect(slider).toHaveAttribute("aria-valuetext", "关闭");
+  await slider.fill("1");
+  await expect(slider).toHaveAttribute("aria-valuetext", "很少");
+  await page.getByRole("button", { name: "Fast 模式" }).click();
+  await expect(page.getByRole("button", { name: "Fast 模式" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "选择模型" }).click();
   await expect(page.getByText("推荐模型集")).toBeVisible();
+  await page.getByRole("button", { name: "设为默认 Fake Model 2" }).click();
+  await expect(page.getByRole("button", { name: "默认模型 Fake Model 2" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Fake Model 2" }).click();
   await expect(page.getByRole("status").filter({ hasText: "模型已从 Fake Model 更改为 Fake Model 2。" })).toBeVisible();
   await page.getByRole("button", { name: "模型和思考" }).click();
-  await expect(page.getByRole("radio", { name: "最大" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "很少" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Fast 模式" })).toHaveAttribute("aria-pressed", "true");
+  const nextSlider = page.getByRole("slider", { name: "滑动选择思考强度" });
+  await nextSlider.fill("4");
+  await expect(nextSlider).toHaveAttribute("aria-valuetext", "最大");
+  const settings = JSON.parse(readFileSync(path.join(home, ".pi", "agent", "settings.json"), "utf8")) as {
+    defaultProvider?: string;
+    defaultModel?: string;
+  };
+  expect(settings.defaultProvider).toBe("fake");
+  expect(settings.defaultModel).toBe("fake-model-2");
 });
 
 test("keyboard and viewports", async ({ page }) => {

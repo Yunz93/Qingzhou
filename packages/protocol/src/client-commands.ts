@@ -100,6 +100,15 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ...commandBase,
+    type: z.literal("model.default.set"),
+    taskId: z.string().min(1),
+    payload: z.object({
+      provider: z.string().min(1),
+      modelId: z.string().min(1),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal("thinking.set"),
     taskId: z.string().min(1),
     payload: z.object({ level: thinkingLevelSchema }),

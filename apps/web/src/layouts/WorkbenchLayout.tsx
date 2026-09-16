@@ -85,6 +85,7 @@ export function WorkbenchLayout() {
   const pendingApprovals = useAgentStore((state) => state.pendingApprovals);
   const models = useAgentStore((state) => state.models);
   const thinkingLevels = useAgentStore((state) => state.thinkingLevels);
+  const defaultModel = useAgentStore((state) => state.defaultModel);
   const stats = useAgentStore((state) => state.stats);
   const files = useAgentStore((state) => state.fileEntries);
   const preview = useAgentStore((state) => state.filePreview);
@@ -978,6 +979,7 @@ export function WorkbenchLayout() {
             models={models}
             thinkingLevels={thinkingLevels}
             modelId={task.model ? `${task.model.provider}/${task.model.id}` : null}
+            defaultModelId={defaultModel ? `${defaultModel.provider}/${defaultModel.id}` : null}
             thinkingLevel={task.thinkingLevel ?? "off"}
             mode={task.mode ?? "agent"}
             approvalPolicy={task.approvalPolicy ?? "auto"}
@@ -992,6 +994,9 @@ export function WorkbenchLayout() {
             onAbort={abortRun}
             onModel={(provider, modelId) =>
               void socketClient.send("model.set", { provider, modelId }, task.id)
+            }
+            onDefaultModel={(provider, modelId) =>
+              void socketClient.send("model.default.set", { provider, modelId }, task.id)
             }
             onThinking={(level: ThinkingLevel) =>
               void socketClient.send("thinking.set", { level }, task.id)
@@ -1019,11 +1024,7 @@ export function WorkbenchLayout() {
                 throw error;
               }
             }}
-            onFastMode={
-              typeof runtime.fastModeEnabled === "boolean"
-                ? (enabled) => void socketClient.send("runtime.set", { fastMode: enabled }, task.id)
-                : undefined
-            }
+            onFastMode={(enabled) => void socketClient.send("runtime.set", { fastMode: enabled }, task.id)}
           />
         ) : null}
       </div>

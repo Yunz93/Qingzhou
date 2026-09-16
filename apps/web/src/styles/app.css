@@ -598,8 +598,7 @@ html.dark {
     gap: 8px;
   }
 
-  .model-picker-icon,
-  .model-picker-icon-ghost {
+  .model-picker-icon {
     display: inline-flex;
     height: 28px;
     width: 28px;
@@ -607,10 +606,6 @@ html.dark {
     justify-content: center;
     border-radius: 999px;
     color: var(--color-mute);
-  }
-
-  .model-picker-icon-ghost {
-    opacity: 0.35;
   }
 
   .model-picker-icon-on {
@@ -725,33 +720,6 @@ html.dark {
     box-shadow: 0 1px 4px oklch(0 0 0 / 0.22);
   }
 
-  .model-picker-levels {
-    display: flex;
-    gap: 2px;
-    border-radius: 10px;
-    background: var(--color-fill);
-    padding: 3px;
-  }
-
-  .model-picker-levels-item {
-    flex: 1;
-    height: 26px;
-    border-radius: 8px;
-    color: var(--color-mute);
-    font-size: 12px;
-    font-weight: 560;
-  }
-
-  .model-picker-levels-item-on {
-    background: var(--color-elevated);
-    color: var(--color-ink);
-    box-shadow: 0 1px 2px oklch(0 0 0 / 0.12);
-  }
-
-  html.dark .model-picker-levels-item-on {
-    background: oklch(0.28 0.01 264);
-  }
-
   .model-picker-list {
     position: absolute;
     right: 0;
@@ -792,7 +760,16 @@ html.dark {
 
   .model-picker-list-item {
     display: flex;
-    width: 100%;
+    align-items: center;
+    gap: 2px;
+    border-radius: 8px;
+    padding: 2px 4px 2px 2px;
+  }
+
+  .model-picker-list-name {
+    display: flex;
+    flex: 1;
+    min-width: 0;
     min-height: 34px;
     align-items: center;
     justify-content: space-between;
@@ -804,12 +781,27 @@ html.dark {
     text-align: left;
   }
 
-  .model-picker-list-item:hover {
+  .model-picker-list-item:hover .model-picker-list-name {
     background: var(--color-fill);
   }
 
-  .model-picker-list-item-on svg {
+  .model-picker-list-item-on .model-picker-list-name svg {
     color: var(--color-mute);
+  }
+
+  .model-picker-default-btn {
+    display: inline-flex;
+    height: 28px;
+    width: 28px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    color: var(--color-mute);
+  }
+
+  .model-picker-default-btn-on {
+    color: var(--color-accent);
   }
 
   .thinking-block {
@@ -1508,17 +1500,13 @@ html.dark {
     .composer-tool-btn:hover,
     .composer-capsule:hover,
     .model-picker-icon:hover,
-    .model-picker-levels-item:hover {
+    .model-picker-default-btn:hover {
       background: var(--color-fill-strong);
       color: var(--color-ink);
     }
 
-    .model-picker-levels-item-on:hover {
-      background: var(--color-elevated);
-      color: var(--color-ink);
-    }
-
-    .model-picker-icon-on:hover {
+    .model-picker-icon-on:hover,
+    .model-picker-default-btn-on:hover {
       color: var(--color-accent);
     }
 

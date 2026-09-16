@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -274,6 +274,54 @@ describe("task service process reservations", () => {
         payload: {},
       }),
     ).rejects.toThrow(/分叉/);
+    service.dispose();
+  });
+});
+
+describe("task service default model", () => {
+  it("writes Pi settings and includes defaultModel on the snapshot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-default-model-svc-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const taskId = "66666666-6666-4666-8666-666666666666";
+    await store.upsert(task(taskId, root));
+    const agentDir = path.join(root, ".pi", "agent");
+    const config: AppConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      piBin: "pi",
+      piCommand: "pi",
+      piPrefixArgs: [],
+      piExtraEnv: {},
+      dataDir: root,
+      allowedRoots: [root],
+      maxProcesses: 1,
+      mutations: "approval",
+      nodeEnv: "test",
+      approvalTimeoutMs: 1000,
+      allowedOrigins: [],
+      webDistDir: root,
+      approvalExtensionPath: path.join(root, "approval.ts"),
+      homeDir: root,
+      piBundled: false,
+      piAgentDir: agentDir,
+      trustProject: false,
+    };
+    const service = new TaskService(config, store, "test", null);
+    const result = (await service.handleCommand({
+      id: "default",
+      type: "model.default.set",
+      taskId,
+      payload: { provider: "openai", modelId: "gpt-5.4" },
+    })) as { ok: true; defaultModel: { provider: string; id: string } };
+    expect(result.defaultModel).toEqual({ provider: "openai", id: "gpt-5.4" });
+    expect(service.buildSnapshot(taskId).defaultModel).toEqual({ provider: "openai", id: "gpt-5.4" });
+    const settings = JSON.parse(await readFile(path.join(agentDir, "settings.json"), "utf8")) as {
+      defaultProvider: string;
+      defaultModel: string;
+    };
+    expect(settings.defaultProvider).toBe("openai");
+    expect(settings.defaultModel).toBe("gpt-5.4");
     service.dispose();
   });
 });

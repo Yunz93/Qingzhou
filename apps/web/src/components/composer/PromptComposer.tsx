@@ -15,9 +15,16 @@ export type ComposerImage = { id: string; previewUrl: string; name: string };
 type Props = {
   status: TaskStatus;
   disabled: boolean;
-  models: Array<{ provider: string; id: string; name?: string }>;
+  models: Array<{
+    provider: string;
+    id: string;
+    name?: string;
+    reasoning?: boolean;
+    thinkingLevels?: ThinkingLevel[];
+  }>;
   thinkingLevels: ThinkingLevel[];
   modelId: string | null;
+  defaultModelId?: string | null;
   thinkingLevel: ThinkingLevel;
   mode: InteractionMode;
   approvalPolicy: ApprovalPolicy;
@@ -31,6 +38,7 @@ type Props = {
   onFollowUp: () => void;
   onAbort: () => void;
   onModel: (provider: string, modelId: string) => void;
+  onDefaultModel?: (provider: string, modelId: string) => void;
   onThinking: (level: ThinkingLevel) => void;
   onPolicy: (mode: InteractionMode, approvalPolicy: ApprovalPolicy) => void;
   onImages: (files: FileList | File[]) => void;
@@ -70,6 +78,7 @@ export function PromptComposer({
   models,
   thinkingLevels,
   modelId,
+  defaultModelId = null,
   thinkingLevel,
   mode,
   approvalPolicy,
@@ -83,6 +92,7 @@ export function PromptComposer({
   onFollowUp,
   onAbort,
   onModel,
+  onDefaultModel,
   onThinking,
   onPolicy,
   onImages,
@@ -421,12 +431,14 @@ export function PromptComposer({
               approvalPolicy={approvalPolicy}
               models={models}
               modelId={modelId}
+              defaultModelId={defaultModelId}
               thinkingLevel={thinkingLevel}
               thinkingLevels={thinkingLevels}
               fastModeEnabled={fastModeEnabled}
               fastModeActive={fastModeActive}
               onPolicy={onPolicy}
               onModel={onModel}
+              onDefaultModel={onDefaultModel}
               onThinking={onThinking}
               onFastMode={onFastMode}
             />
@@ -461,12 +473,14 @@ export function PromptComposer({
               approvalPolicy={approvalPolicy}
               models={models}
               modelId={modelId}
+              defaultModelId={defaultModelId}
               thinkingLevel={thinkingLevel}
               thinkingLevels={thinkingLevels}
               fastModeEnabled={fastModeEnabled}
               fastModeActive={fastModeActive}
               onPolicy={onPolicy}
               onModel={onModel}
+              onDefaultModel={onDefaultModel}
               onThinking={onThinking}
               onFastMode={onFastMode}
             />

@@ -5,6 +5,7 @@ import {
   clampIndex,
   groupPickerModels,
   indexOfModel,
+  indexOfThinking,
   modelKey,
   nextModelIndex,
   pickerThinkingLevels,
@@ -35,11 +36,19 @@ describe("model picker helpers", () => {
     expect(capsuleModelLabel("GPT-6 Astra", "off", true)).toBe("GPT-6 Astra Fast");
   });
 
-  it("groups the current model as 默认 and the rest as 推荐模型集", () => {
+  it("groups the pinned default model as 默认 and the rest as 推荐模型集", () => {
     const grouped = groupPickerModels(models, "google/gemini");
     expect(grouped.defaultModels.map((model) => model.id)).toEqual(["gemini"]);
     expect(grouped.recommended.map((model) => model.id)).toEqual(["gpt-5.4", "opus"]);
     expect(groupPickerModels(models, null).recommended).toHaveLength(3);
+    expect(groupPickerModels(models, "openai/gpt-5.4").defaultModels[0]?.id).toBe("gpt-5.4");
+    expect(groupPickerModels(models, "missing/nope").recommended).toHaveLength(3);
+  });
+
+  it("maps thinking levels onto the intensity slider", () => {
+    expect(indexOfThinking(["off", "low", "high"], "high")).toBe(2);
+    expect(indexOfThinking(["off", "low"], "medium")).toBe(0);
+    expect(sliderPercent(2, 5)).toBe(50);
   });
 
   it("uses the selected model's thinking steps instead of the session list", () => {

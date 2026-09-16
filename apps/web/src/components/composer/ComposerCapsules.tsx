@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel } from "@qingzhou/protocol";
 import { approvalPolicies, interactionModes } from "@qingzhou/protocol";
-import { Check, ChevronDown, RotateCw, Zap } from "lucide-react";
+import { Check, ChevronDown, RotateCw, Star, Zap } from "lucide-react";
 import {
   THINKING_LABEL,
-  THINKING_SHORT,
   capsuleModelLabel,
   clampIndex,
   groupPickerModels,
-  indexOfModel,
+  indexOfThinking,
   modelKey,
   nextModelIndex,
   pickerThinkingLevels,
@@ -22,10 +21,12 @@ type Props = {
   approvalPolicy: ApprovalPolicy;
   models: PickerModel[];
   modelId: string | null;
+  defaultModelId?: string | null;
   thinkingLevel: ThinkingLevel;
   thinkingLevels: ThinkingLevel[];
   onPolicy: (mode: InteractionMode, approvalPolicy: ApprovalPolicy) => void;
   onModel: (provider: string, modelId: string) => void;
+  onDefaultModel?: (provider: string, modelId: string) => void;
   onThinking: (level: ThinkingLevel) => void;
   fastModeEnabled?: boolean;
   fastModeActive?: boolean;
@@ -38,10 +39,12 @@ export function ComposerCapsules({
   approvalPolicy,
   models,
   modelId,
+  defaultModelId = null,
   thinkingLevel,
   thinkingLevels,
   onPolicy,
   onModel,
+  onDefaultModel,
   onThinking,
   fastModeEnabled,
   fastModeActive,
@@ -50,6 +53,7 @@ export function ComposerCapsules({
   const [open, setOpen] = useState(false);
   const [modelListOpen, setModelListOpen] = useState(false);
   const [pendingModelKey, setPendingModelKey] = useState<string | null>(null);
+  const [pendingThinking, setPendingThinking] = useState<ThinkingLevel | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const modeLabel = interactionModes.find((item) => item.value === mode)?.label ?? mode;
   const policyLabel = approvalPolicies.find((item) => item.value === approvalPolicy)?.label ?? approvalPolicy;
@@ -62,16 +66,17 @@ export function ComposerCapsules({
     currentModel?.name ??
     currentModel?.id ??
     (models.length === 0 ? "暂无模型" : "选择模型");
-  const showFast = typeof fastModeEnabled === "boolean" && onFastMode;
   const fastOn = fastModeActive === true || (fastModeActive !== false && fastModeEnabled === true);
-  const grouped = groupPickerModels(models, modelId);
+  const grouped = groupPickerModels(models, defaultModelId);
   const capsuleLabel = capsuleModelLabel(
     currentModel?.name ?? currentModel?.id ?? modelLabel,
     thinkingLevel,
-    showFast && fastOn,
+    fastOn,
   );
-  const modelIndex = indexOfModel(models, activeModelKey);
   const intensityLevels = pickerThinkingLevels(activeModel ?? currentModel, thinkingLevels);
+  const activeThinking =
+    pendingThinking && intensityLevels.includes(pendingThinking) ? pendingThinking : thinkingLevel;
+  const thinkingIndex = indexOfThinking(intensityLevels, activeThinking);
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
@@ -91,6 +96,10 @@ export function ComposerCapsules({
   useEffect(() => {
     if (pendingModelKey && pendingModelKey === modelId) setPendingModelKey(null);
   }, [modelId, pendingModelKey]);
+
+  useEffect(() => {
+    if (pendingThinking && pendingThinking === thinkingLevel) setPendingThinking(null);
+  }, [thinkingLevel, pendingThinking]);
 
   if (slot === "mode") {
     return (
@@ -153,35 +162,56 @@ export function ComposerCapsules({
     const model = models[clampIndex(index, models.length)];
     if (!model) return;
     setPendingModelKey(modelKey(model));
+    setPendingThinking(null);
     onModel(model.provider, model.id);
   };
 
   const pickThinkingAt = (index: number) => {
     const level = intensityLevels[clampIndex(index, intensityLevels.length)];
-    if (level) onThinking(level);
+    if (!level) return;
+    setPendingThinking(level);
+    onThinking(level);
   };
 
   const renderModelItem = (model: PickerModel, keyPrefix: string) => {
     const id = modelKey(model);
     const selected = id === modelId;
+    const isDefault = id === defaultModelId;
+    const name = model.name ?? model.id;
     return (
-      <button
+      <div
         key={`${keyPrefix}-${id}`}
-        type="button"
-        role="menuitem"
-        aria-label={model.name ?? model.id}
-        className={`pressable model-picker-list-item ${selected ? "model-picker-list-item-on" : ""}`}
-        aria-current={selected ? "true" : undefined}
-        onClick={() => {
-          setPendingModelKey(id);
-          onModel(model.provider, model.id);
-          setModelListOpen(false);
-          setOpen(false);
-        }}
+        className={`model-picker-list-item ${selected ? "model-picker-list-item-on" : ""}`}
       >
-        <span>{model.name ?? model.id}</span>
-        {selected ? <Check size={14} strokeWidth={2.2} aria-hidden /> : null}
-      </button>
+        <button
+          type="button"
+          role="menuitem"
+          aria-label={name}
+          aria-current={selected ? "true" : undefined}
+          className="pressable model-picker-list-name"
+          onClick={() => {
+            setPendingModelKey(id);
+            setPendingThinking(null);
+            onModel(model.provider, model.id);
+            setModelListOpen(false);
+            setOpen(false);
+          }}
+        >
+          <span>{name}</span>
+          {selected ? <Check size={14} strokeWidth={2.2} aria-hidden /> : null}
+        </button>
+        <button
+          type="button"
+          className={`pressable model-picker-default-btn ${isDefault ? "model-picker-default-btn-on" : ""}`}
+          aria-label={isDefault ? `默认模型 ${name}` : `设为默认 ${name}`}
+          aria-pressed={isDefault}
+          title={isDefault ? "默认模型" : "设为默认模型"}
+          disabled={!onDefaultModel}
+          onClick={() => onDefaultModel?.(model.provider, model.id)}
+        >
+          <Star size={13} strokeWidth={2} fill={isDefault ? "currentColor" : "none"} />
+        </button>
+      </div>
     );
   };
 
@@ -219,22 +249,16 @@ export function ComposerCapsules({
       {open && !modelListOpen ? (
         <div className="model-picker" role="dialog" aria-label="模型和思考">
           <div className="model-picker-head">
-            {showFast ? (
-              <button
-                type="button"
-                className={`pressable model-picker-icon ${fastOn ? "model-picker-icon-on" : ""}`}
-                aria-label="Fast 模式"
-                aria-pressed={fastOn}
-                title={fastOn ? "Fast 模式 · 开" : "Fast 模式 · 关"}
-                onClick={() => onFastMode?.(!fastModeEnabled)}
-              >
-                <Zap size={15} strokeWidth={2} fill={fastOn ? "currentColor" : "none"} />
-              </button>
-            ) : (
-              <span className="model-picker-icon model-picker-icon-ghost" aria-hidden>
-                <Zap size={15} strokeWidth={2} />
-              </span>
-            )}
+            <button
+              type="button"
+              className={`pressable model-picker-icon ${fastOn ? "model-picker-icon-on" : ""}`}
+              aria-label="Fast 模式"
+              aria-pressed={fastOn}
+              title={fastOn ? "Fast 模式 · 开" : "Fast 模式 · 关"}
+              onClick={() => onFastMode?.(!fastOn)}
+            >
+              <Zap size={15} strokeWidth={2} fill={fastOn ? "currentColor" : "none"} />
+            </button>
             <button
               type="button"
               className="pressable model-picker-name"
@@ -257,51 +281,36 @@ export function ComposerCapsules({
             </button>
           </div>
 
-          {models.length > 0 ? (
+          {models.length === 0 ? (
+            <p className="model-picker-empty">暂无模型</p>
+          ) : intensityLevels.length > 1 ? (
             <div className="model-picker-slider-wrap">
               <input
                 type="range"
                 className="model-picker-slider"
                 min={0}
-                max={Math.max(0, models.length - 1)}
+                max={Math.max(0, intensityLevels.length - 1)}
                 step={1}
-                value={modelIndex}
-                aria-label="滑动选择模型"
-                style={{ "--slider-pct": `${sliderPercent(modelIndex, models.length)}%` } as CSSProperties}
-                onChange={(event) => pickModelAt(Number(event.target.value))}
+                value={thinkingIndex}
+                aria-label="滑动选择思考强度"
+                aria-valuetext={THINKING_LABEL[activeThinking] ?? activeThinking}
+                style={{ "--slider-pct": `${sliderPercent(thinkingIndex, intensityLevels.length)}%` } as CSSProperties}
+                onChange={(event) => pickThinkingAt(Number(event.target.value))}
               />
-              {models.length > 1 && models.length <= 8 ? (
+              {intensityLevels.length <= 8 ? (
                 <div className="model-picker-dots" aria-hidden>
-                  {models.map((model, index) => (
+                  {intensityLevels.map((level, index) => (
                     <span
-                      key={modelKey(model)}
-                      className={`model-picker-dot ${index <= modelIndex ? "model-picker-dot-on" : ""}`}
+                      key={level}
+                      className={`model-picker-dot ${index <= thinkingIndex ? "model-picker-dot-on" : ""}`}
                     />
                   ))}
                 </div>
               ) : null}
             </div>
           ) : (
-            <p className="model-picker-empty">暂无模型</p>
+            <p className="model-picker-empty">该模型不支持思考强度</p>
           )}
-
-          {intensityLevels.length > 1 ? (
-            <div className="model-picker-levels" role="radiogroup" aria-label="思考强度">
-              {intensityLevels.map((level, index) => (
-                <button
-                  key={level}
-                  type="button"
-                  role="radio"
-                  aria-checked={thinkingLevel === level}
-                  aria-label={THINKING_LABEL[level] ?? level}
-                  className={`pressable model-picker-levels-item ${thinkingLevel === level ? "model-picker-levels-item-on" : ""}`}
-                  onClick={() => pickThinkingAt(index)}
-                >
-                  {THINKING_SHORT[level] ?? level}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
