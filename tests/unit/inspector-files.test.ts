@@ -103,9 +103,14 @@ describe("InspectorPanel tabs", () => {
     expect(skills).not.toMatch(/刷新技能/);
     expect(plugins).not.toMatch(/刷新插件/);
     expect(skills).not.toMatch(/>系统技能</);
-    expect(plugins).toMatch(/推荐安装/);
+    expect(plugins).toMatch(/插件中心/);
     expect(plugins).toMatch(/已安装/);
-    expect(plugins).toMatch(/presetPackageInstalled/);
+    expect(plugins).not.toMatch(/推荐安装/);
+    expect(plugins).not.toMatch(/安装推荐/);
+    expect(plugins).not.toMatch(/PRESET_PI_PACKAGES/);
+    expect(src).toMatch(/InspectorPackageCenter/);
+    expect(layout).toMatch(/resources\.package\.catalog/);
+    expect(layout).toMatch(/resources\.package\.install/);
     expect(skills).toMatch(/检查更新/);
     expect(skills).not.toMatch(/导出 HTML/);
     expect(preview).toMatch(/whitespace-pre-wrap/);

@@ -197,9 +197,25 @@ describe("protocol", () => {
         id: "9c",
         type: "resources.package.install",
         taskId: "11111111-1111-4111-8111-111111111111",
-        payload: { ids: ["pi-web-access"] },
+        payload: { sources: ["npm:pi-web-access"] },
       }).payload,
-    ).toEqual({ ids: ["pi-web-access"] });
+    ).toEqual({ sources: ["npm:pi-web-access"] });
+    expect(
+      clientCommandSchema.parse({
+        id: "9c2",
+        type: "resources.package.catalog",
+        taskId: "11111111-1111-4111-8111-111111111111",
+        payload: {},
+      }).type,
+    ).toBe("resources.package.catalog");
+    expect(
+      clientCommandSchema.safeParse({
+        id: "9c3",
+        type: "resources.package.install",
+        taskId: "11111111-1111-4111-8111-111111111111",
+        payload: {},
+      }).success,
+    ).toBe(false);
     expect(
       clientCommandSchema.parse({
         id: "9d",

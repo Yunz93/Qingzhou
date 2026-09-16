@@ -28,6 +28,7 @@ import {
   type WorkRunStatus,
   type SkillUpdateApplyResult,
   type SkillUpdateCheckResult,
+  type PiPackageCatalogResult,
 } from "@qingzhou/protocol";
 import type { AppConfig } from "../config.js";
 import { piMessagesToTimeline } from "../pi/event-normalizer.js";
@@ -50,7 +51,8 @@ import { RememberedApprovals } from "./remembered-approvals.js";
 import { TaskShells } from "./task-shell.js";
 import { openNativeTerminal } from "./open-native-terminal.js";
 import { scanPiResources, createProjectAgentsFile, setSkillEnabled, setExtensionEnabled, readContextFile, writeContextFile } from "./pi-resources.js";
-import { installPresetPiPackages } from "./pi-packages.js";
+import { fetchPiPackageCatalog } from "./pi-package-catalog.js";
+import { installPiPackages } from "./pi-packages.js";
 import { applySystemSkillUpdates, checkSystemSkillUpdates } from "./pi-skill-updates.js";
 import { createModelChangeNotice, modelDisplayName } from "./model-change.js";
 import { readPiDefaultModelSync, writePiDefaultModel } from "./pi-default-model.js";
@@ -359,8 +361,10 @@ export class TaskService {
         return this.updateResourceSkills(command.taskId, command.payload?.paths);
       case "resources.extension.set":
         return this.setResourceExtension(command.taskId, command.payload.path, command.payload.enabled);
+      case "resources.package.catalog":
+        return this.catalogResourcePackages(command.taskId);
       case "resources.package.install":
-        return this.installResourcePackages(command.taskId, command.payload?.ids);
+        return this.installResourcePackages(command.taskId, command.payload.sources);
       case "files.open":
         return this.openFile(command.taskId, command.payload.path);
       case "interaction.respond":
@@ -1196,9 +1200,14 @@ export class TaskService {
     return { ok: true };
   }
 
+  private async catalogResourcePackages(taskId: string): Promise<PiPackageCatalogResult> {
+    this.requireTask(taskId);
+    return fetchPiPackageCatalog();
+  }
+
   private async installResourcePackages(
     taskId: string,
-    ids?: string[],
+    sources: string[],
   ): Promise<{
     ok: true;
     installed: string[];
@@ -1208,9 +1217,9 @@ export class TaskService {
   }> {
     this.requireTask(taskId);
     const resources = this.resources.get(taskId) ?? (await this.emitResources(taskId));
-    const result = await installPresetPiPackages({
+    const result = await installPiPackages({
       agentDir: this.config.piAgentDir,
-      ids,
+      sources,
       packages: resources.packages,
       extensions: resources.extensions,
       piCommand: this.config.piCommand,

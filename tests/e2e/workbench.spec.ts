@@ -241,7 +241,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   });
   await expect(page.getByRole("complementary", { name: "详情" }).getByText("用户 · 本地技能")).toBeVisible();
   await page.getByRole("button", { name: "插件" }).click();
-  await expect(page.getByRole("complementary", { name: "详情" }).getByText("pi-web-access")).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "详情" }).getByText("demo-ext")).toBeVisible();
   await page.getByRole("button", { name: "技能" }).click();
   await expect(page.getByRole("complementary", { name: "详情" }).getByText("没有可更新的系统技能。")).toBeVisible();
   await page.getByRole("button", { name: "文件" }).click();
@@ -249,18 +249,9 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByRole("complementary", { name: "详情" }).getByText("没有可更新的系统技能。")).toBeVisible();
   await page.getByRole("button", { name: "插件" }).click();
   await expect(page.getByRole("complementary", { name: "详情" }).getByText("demo-ext")).toBeVisible();
-  await expect(page.getByRole("complementary", { name: "详情" }).getByText("pi-web-access")).toBeVisible();
-  await expect(page.getByRole("button", { name: /安装推荐/ })).toBeVisible();
-  await expect(page.getByRole("complementary", { name: "详情" }).getByText("推荐安装")).toBeVisible();
-  await expect(page.getByRole("complementary", { name: "详情" }).getByText("已安装", { exact: true })).toHaveCount(0);
-  const presetSources = [
-    "npm:pi-web-access",
-    "npm:pi-memory",
-    "npm:@juicesharp/rpiv-todo",
-    "npm:pi-subagents",
-    "npm:pi-mcp-adapter",
-    "npm:context-mode",
-  ];
+  await expect(page.getByRole("button", { name: "插件中心" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "详情" }).getByText("推荐安装")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /安装推荐/ })).toHaveCount(0);
   const readPiPackages = () => {
     try {
       const parsed = JSON.parse(readFileSync(path.join(home, ".pi", "agent", "settings.json"), "utf8")) as {
@@ -271,26 +262,15 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
       return [] as string[];
     }
   };
+  await page.getByRole("button", { name: "插件中心" }).click();
+  await expect(page.getByRole("dialog", { name: "插件中心" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "插件中心" }).getByText("pi-web-access")).toBeVisible();
   await page.getByRole("button", { name: "安装 pi-web-access" }).click();
   await expect.poll(readPiPackages).toContain("npm:pi-web-access");
-  await page.getByRole("button", { name: /安装推荐/ }).click();
-  await expect(page.getByRole("button", { name: /安装推荐/ })).toHaveCount(0);
-  await expect(page.getByRole("complementary", { name: "详情" }).getByText("推荐安装")).toHaveCount(0);
-  await expect(page.getByRole("complementary", { name: "详情" }).getByText("已安装", { exact: true })).toHaveCount(7);
+  await expect(page.getByRole("dialog", { name: "插件中心" }).getByText("已安装", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "正在安装…" })).toHaveCount(0);
-  await expect.poll(readPiPackages).toEqual(expect.arrayContaining(presetSources));
-  await expect
-    .poll(() => {
-      try {
-        const parsed = JSON.parse(readFileSync(path.join(home, ".pi", "agent", "mcp.json"), "utf8")) as {
-          mcpServers?: Record<string, unknown>;
-        };
-        return parsed.mcpServers ?? {};
-      } catch {
-        return {};
-      }
-    })
-    .toHaveProperty("context-mode");
+  await page.getByRole("button", { name: "完成" }).click();
+  await expect(page.getByRole("dialog", { name: "插件中心" })).toHaveCount(0);
   await page.getByRole("button", { name: "关闭详情" }).click();
 
   await page.getByRole("button", { name: "上下文用量" }).click();

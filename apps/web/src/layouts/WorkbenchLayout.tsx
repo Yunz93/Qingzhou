@@ -17,7 +17,7 @@ import { ModeSwitcher } from "../components/app/ModeSwitcher";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { CommandPalette } from "../components/command-palette/CommandPalette";
 import { NewTaskDialog } from "../components/tasks/NewTaskDialog";
-import type { ApprovalPolicy, InteractionMode, ThinkingLevel } from "@qingzhou/protocol";
+import type { ApprovalPolicy, InteractionMode, PiPackageCatalogResult, ThinkingLevel } from "@qingzhou/protocol";
 import { stripModePrefix, workItemIsClosed } from "@qingzhou/protocol";
 import { headerSubtitle, STARTER_PROMPTS } from "../copy";
 import { tasksInSidebarOrder } from "../lib/task-list";
@@ -631,9 +631,13 @@ export function WorkbenchLayout() {
               setNotice(error instanceof Error ? error.message : "插件开关失败");
             });
         }}
-        onInstallPresets={async (ids) => {
+        onInstallPackages={async (sources) => {
           if (!task) throw new Error("没有对话");
-          await socketClient.send("resources.package.install", ids?.length ? { ids } : {}, task.id);
+          await socketClient.send("resources.package.install", { sources }, task.id);
+        }}
+        onLoadPackageCatalog={async () => {
+          if (!task) throw new Error("没有对话");
+          return socketClient.send<PiPackageCatalogResult>("resources.package.catalog", {}, task.id);
         }}
         onCheckSkillUpdates={async () => {
           if (!task?.id) throw new Error("没有对话");

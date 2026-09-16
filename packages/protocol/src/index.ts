@@ -143,16 +143,17 @@ export {
   type SessionTreeNode,
 } from "./pi-mvp.js";
 export {
-  PRESET_PI_PACKAGES,
+  PI_PACKAGES_CATALOG_URL,
   normalizePackageSource,
+  npmPackageName,
+  packageSourceInstalled,
+  packageSourceNames,
   packageSourcesEqual,
-  presetExtensionNames,
-  presetExtensionLoaded,
-  presetPackageInstalled,
-  resolvePresetPackages,
-  type PresetPiMcpServer,
-  type PresetPiPackage,
-} from "./preset-packages.js";
+  piPackageCatalogItemSchema,
+  piPackageCatalogResultSchema,
+  type PiPackageCatalogItem,
+  type PiPackageCatalogResult,
+} from "./package-source.js";
 export {
   skillUpdateSourceSchema,
   skillUpdateItemSchema,

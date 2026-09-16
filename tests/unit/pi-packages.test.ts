@@ -6,13 +6,13 @@ import {
   addPackageSources,
   ensureMcpServer,
   formatPiInstallError,
-  installPresetPiPackages,
+  installPiPackages,
   piCliInstallArgs,
   runPiCliInstall,
   shouldRunPiCliInstall,
 } from "../../apps/server/src/tasks/pi-packages.ts";
 
-describe("preset pi package install", () => {
+describe("pi package install", () => {
   it("skips the Pi CLI in tests", () => {
     expect(shouldRunPiCliInstall({ VITEST: "true" })).toBe(false);
     expect(shouldRunPiCliInstall({ QINGZHOU_E2E: "1" })).toBe(false);
@@ -56,22 +56,22 @@ describe("preset pi package install", () => {
     });
   });
 
-  it("installs missing presets into settings without calling the Pi CLI", async () => {
-    const agentDir = await mkdtemp(path.join(os.tmpdir(), "qingzhou-preset-"));
-    const result = await installPresetPiPackages({
+  it("installs missing sources into settings without calling the Pi CLI", async () => {
+    const agentDir = await mkdtemp(path.join(os.tmpdir(), "qingzhou-pkg-install-"));
+    const result = await installPiPackages({
       agentDir,
-      ids: ["pi-web-access", "context-mode"],
+      sources: ["pi-web-access", "npm:pi-memory"],
       packages: [],
       extensions: [],
       piCommand: "pi",
       prefixArgs: [],
       runCli: false,
     });
-    expect(result.installed).toEqual(["pi-web-access", "context-mode"]);
-    expect(result.addedSources).toEqual(["npm:pi-web-access", "npm:context-mode"]);
-    const again = await installPresetPiPackages({
+    expect(result.installed).toEqual(["npm:pi-web-access", "npm:pi-memory"]);
+    expect(result.addedSources).toEqual(["npm:pi-web-access", "npm:pi-memory"]);
+    const again = await installPiPackages({
       agentDir,
-      ids: ["pi-web-access", "context-mode"],
+      sources: ["pi-web-access", "npm:pi-memory"],
       packages: result.addedSources.map((source) => ({ source })),
       extensions: [],
       piCommand: "pi",
@@ -79,26 +79,22 @@ describe("preset pi package install", () => {
       runCli: false,
     });
     expect(again.installed).toEqual([]);
-    expect(again.already).toEqual(["pi-web-access", "context-mode"]);
-    const loaded = await installPresetPiPackages({
+    expect(again.already).toEqual(["npm:pi-web-access", "npm:pi-memory"]);
+    const loaded = await installPiPackages({
       agentDir,
-      ids: ["pi-web-access", "context-mode"],
+      sources: ["pi-web-access", "npm:pi-memory"],
       packages: result.addedSources.map((source) => ({ source })),
-      extensions: [{ name: "pi-web-access" }, { name: "context-mode" }],
+      extensions: [{ name: "pi-web-access" }, { name: "pi-memory" }],
       piCommand: "pi",
       prefixArgs: [],
       runCli: false,
     });
     expect(loaded.installed).toEqual([]);
-    expect(loaded.already).toEqual(["pi-web-access", "context-mode"]);
+    expect(loaded.already).toEqual(["npm:pi-web-access", "npm:pi-memory"]);
     const settings = JSON.parse(await readFile(path.join(agentDir, "settings.json"), "utf8")) as {
       packages: string[];
     };
-    const mcp = JSON.parse(await readFile(path.join(agentDir, "mcp.json"), "utf8")) as {
-      mcpServers: Record<string, unknown>;
-    };
-    expect(settings.packages).toEqual(["npm:pi-web-access", "npm:context-mode"]);
-    expect(mcp.mcpServers).toHaveProperty("context-mode");
+    expect(settings.packages).toEqual(["npm:pi-web-access", "npm:pi-memory"]);
   });
 
   it("turns npm EACCES plus a Pi source dump into a short Chinese error", () => {
@@ -124,16 +120,11 @@ describe("preset pi package install", () => {
   });
 
   it("treats settings packages as already installed and only rolls back newly added sources", async () => {
-    const agentDir = await mkdtemp(path.join(os.tmpdir(), "qingzhou-preset-fail-"));
+    const agentDir = await mkdtemp(path.join(os.tmpdir(), "qingzhou-pkg-fail-"));
     await addPackageSources(agentDir, ["npm:pi-web-access"]);
-    await ensureMcpServer(agentDir, {
-      name: "context-mode",
-      command: "npx",
-      args: ["-y", "context-mode"],
-    });
-    const result = await installPresetPiPackages({
+    const result = await installPiPackages({
       agentDir,
-      ids: ["pi-web-access", "context-mode"],
+      sources: ["npm:pi-web-access", "npm:pi-memory"],
       packages: [{ source: "npm:pi-web-access" }],
       extensions: [],
       piCommand: process.execPath,
@@ -143,18 +134,14 @@ describe("preset pi package install", () => {
       ],
       runCli: true,
     });
-    expect(result.already).toEqual(["pi-web-access"]);
-    expect(result.installed).toEqual(["context-mode"]);
+    expect(result.already).toEqual(["npm:pi-web-access"]);
+    expect(result.installed).toEqual(["npm:pi-memory"]);
     expect(result.piInstallError).toMatch(/插件下载失败/);
     expect(result.piInstallError).toMatch(/npm 缓存/);
     const settings = JSON.parse(await readFile(path.join(agentDir, "settings.json"), "utf8")) as {
       packages?: string[];
     };
-    const mcp = JSON.parse(await readFile(path.join(agentDir, "mcp.json"), "utf8")) as {
-      mcpServers?: Record<string, unknown>;
-    };
     expect(settings.packages ?? []).toEqual(["npm:pi-web-access"]);
-    expect(mcp.mcpServers ?? {}).toHaveProperty("context-mode");
   });
 
   it("runs pi install once per source because the CLI only accepts one", async () => {

@@ -2,13 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import {
-  normalizePackageSource,
-  packageSourcesEqual,
-  presetPackageInstalled,
-  resolvePresetPackages,
-  type PresetPiPackage,
-} from "@qingzhou/protocol";
+import { normalizePackageSource, packageSourceInstalled, packageSourcesEqual } from "@qingzhou/protocol";
 import { envWithElectronAsNode, qingzhouEnv } from "../config.js";
 import { isInsideRoot } from "../security/path-policy.js";
 import { extractErrorText, humanizeUserFacingError, piNpmEnv } from "../setup/pi-agent-dir.js";
@@ -191,9 +185,9 @@ export function formatPiInstallError(error: unknown): string {
   return `插件下载失败。${humanizeUserFacingError(new Error(combined || String(error)))}`;
 }
 
-export async function installPresetPiPackages(input: {
+export async function installPiPackages(input: {
   agentDir: string;
-  ids?: string[];
+  sources: string[];
   packages: Array<{ source: string }>;
   extensions?: Array<{ name: string }>;
   piCommand: string;
@@ -207,50 +201,51 @@ export async function installPresetPiPackages(input: {
   addedSources: string[];
   piInstallError: string | null;
 }> {
-  const presets = resolvePresetPackages(input.ids);
+  const unique: string[] = [];
+  for (const raw of input.sources) {
+    const source = normalizePackageSource(raw);
+    if (!source) continue;
+    if (unique.some((item) => packageSourcesEqual(item, source))) continue;
+    unique.push(source);
+  }
+  if (unique.length === 0) throw new Error("需要指定要安装的插件");
+
   const already: string[] = [];
-  const toInstall: PresetPiPackage[] = [];
-  for (const preset of presets) {
-    if (presetPackageInstalled(preset, input.packages, input.extensions ?? [])) {
-      already.push(preset.id);
+  const toInstall: string[] = [];
+  for (const source of unique) {
+    if (packageSourceInstalled(source, input.packages, input.extensions ?? [])) {
+      already.push(source);
     } else {
-      toInstall.push(preset);
+      toInstall.push(source);
     }
   }
 
   const addedSources: string[] = [];
-  const addedMcp: string[] = [];
-  for (const preset of toInstall) {
-    const result = await addPackageSources(input.agentDir, [preset.source]);
+  if (toInstall.length > 0) {
+    const result = await addPackageSources(input.agentDir, toInstall);
     addedSources.push(...result.added);
-    if (preset.mcp) {
-      const created = await ensureMcpServer(input.agentDir, preset.mcp);
-      if (created) addedMcp.push(preset.mcp.name);
-    }
   }
 
-  const cliSources = toInstall.map((item) => normalizePackageSource(item.source));
   let piInstallError: string | null = null;
   const runCli = input.runCli ?? shouldRunPiCliInstall(input.env ?? process.env);
-  if (runCli && cliSources.length > 0) {
+  if (runCli && toInstall.length > 0) {
     try {
       await runPiCliInstall({
         piCommand: input.piCommand,
         prefixArgs: input.prefixArgs,
         extraEnv: input.extraEnv,
-        sources: cliSources,
+        sources: toInstall,
         env: input.env,
         agentDir: input.agentDir,
       });
     } catch (error) {
       if (addedSources.length > 0) await removePackageSources(input.agentDir, addedSources);
-      for (const name of addedMcp) await removeMcpServer(input.agentDir, name);
       piInstallError = formatPiInstallError(error);
     }
   }
 
   return {
-    installed: toInstall.map((item) => item.id),
+    installed: toInstall,
     already,
     addedSources,
     piInstallError,
