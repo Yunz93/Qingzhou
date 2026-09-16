@@ -1,6 +1,7 @@
-import { mkdir, open, readFile, rename } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { CoalescedJsonFile } from "./coalesced-json-file.js";
 import {
   WORK_ITEM_SCHEMA_VERSION,
   workItemDetailsSchema,
@@ -47,11 +48,17 @@ export class WorkItemStore {
   private state: PersistedState = emptyState();
   private readonly filePath: string;
   private readonly backupPath: string;
-  private writeChain: Promise<void> = Promise.resolve();
+  private readonly file: CoalescedJsonFile<PersistedState>;
 
   constructor(dataDir: string) {
     this.filePath = path.join(dataDir, "work-items.json");
     this.backupPath = path.join(dataDir, "work-items.v2.backup.json");
+    this.file = new CoalescedJsonFile(this.filePath, () => this.state, { debounceMs: 50, fsync: false });
+  }
+
+  /** Force a durable write (used on shutdown). */
+  async flushSync(): Promise<void> {
+    await this.file.flushNow({ fsync: true });
   }
 
   list(): WorkItemSummary[] {
@@ -415,6 +422,8 @@ export class WorkItemStore {
   private async writeBackupIfMissing(rawText: string): Promise<void> {
     let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
+      const { mkdir } = await import("node:fs/promises");
+      await mkdir(path.dirname(this.backupPath), { recursive: true });
       handle = await open(this.backupPath, "wx");
       await handle.writeFile(rawText, "utf8");
       await handle.sync();
@@ -426,24 +435,7 @@ export class WorkItemStore {
   }
 
   private async flush(): Promise<void> {
-    this.writeChain = this.writeChain.then(
-      () => this.flushNow(),
-      () => this.flushNow(),
-    );
-    await this.writeChain;
-  }
-
-  private async flushNow(): Promise<void> {
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.tmp-${process.pid}-${randomUUID()}`;
-    const handle = await open(tmp, "w");
-    try {
-      await handle.writeFile(JSON.stringify(this.state, null, 2), "utf8");
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(tmp, this.filePath);
+    await this.file.flush();
   }
 }
 

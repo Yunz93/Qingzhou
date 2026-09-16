@@ -111,7 +111,7 @@ NODE_ENV=production pnpm start   # http://127.0.0.1:4310
 | `QINGZHOU_DATA_DIR` | `~/.qingzhou` | 会话和设置 |
 | `QINGZHOU_ALLOWED_ROOTS` | 家目录或向导所选文件夹 | 允许访问的根目录 |
 | `QINGZHOU_MUTATIONS` | `approval` | `approval` 或 `disabled` |
-| `QINGZHOU_MAX_PROCESSES` | `3` | 同时运行的 Pi 进程数 |
+| `QINGZHOU_MAX_PROCESSES` | `5` | 同时运行的 Pi 进程数 |
 | `QINGZHOU_REPO` | `Yunz93/Qingzhou` | 安装脚本下载用的仓库 |
 
 仍识别旧的 `MOWEN_*` / `OHMYPI_*` 变量，以及 `~/.mowen`、`~/.ohmypi` 数据目录。`.env` 会自动加载。真正的环境变量优先于 `.env`。

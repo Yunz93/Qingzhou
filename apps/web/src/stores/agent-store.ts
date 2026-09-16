@@ -294,6 +294,7 @@ type AgentState = {
   // the max per task is sufficient (unlike a per-event map, this doesn't grow).
   lastSeen: Record<string, number>;
   applyEvent: (event: ServerEvent) => void;
+  applyEvents: (events: ServerEvent[]) => void;
   applySnapshot: (payload: SnapshotPayload, taskId?: string) => void;
   setConnection: (status: ConnectionStatus) => void;
   setActiveTask: (taskId: string | null) => void;
@@ -535,6 +536,60 @@ export const useAgentStore = create<AgentState>((set, get) => {
         null,
     });
   },
+  applyEvents: (events) => {
+    if (events.length === 0) return;
+    if (events.length === 1) {
+      get().applyEvent(events[0]!);
+      return;
+    }
+    // Coalesce consecutive message.delta for the same message into one store update.
+    let current = get();
+    let lastSeen = { ...current.lastSeen };
+    const messagesByTask = { ...current.messagesByTask };
+    let dirty = false;
+    const flush = () => {
+      if (!dirty) return;
+      const activeId = current.activeTaskId;
+      set({
+        lastSeen,
+        messagesByTask,
+        messages: activeId ? (messagesByTask[activeId] ?? current.messages) : current.messages,
+      });
+      dirty = false;
+      current = get();
+      lastSeen = { ...current.lastSeen };
+    };
+    for (const event of events) {
+      if (current.serverInstanceId !== event.serverInstanceId) {
+        flush();
+        get().applyEvent(event);
+        current = get();
+        lastSeen = { ...current.lastSeen };
+        continue;
+      }
+      const last = lastSeen[event.taskId] ?? -1;
+      if (event.sequence <= last) continue;
+      lastSeen = { ...lastSeen, [event.taskId]: event.sequence };
+      if (event.type === "message.delta") {
+        const prev = messagesByTask[event.taskId] ?? (event.taskId === current.activeTaskId ? current.messages : []);
+        const messages = prev.map((item) => {
+          if (item.id !== event.payload.messageId) return item;
+          if (event.payload.field === "thinking") {
+            return { ...item, thinking: `${item.thinking ?? ""}${event.payload.delta}` };
+          }
+          return { ...item, text: item.text + event.payload.delta };
+        });
+        messagesByTask[event.taskId] = messages;
+        dirty = true;
+        continue;
+      }
+      flush();
+      get().applyEvent(event);
+      current = get();
+      lastSeen = { ...current.lastSeen };
+    }
+    flush();
+  },
   applyEvent: (event) => {
     let current = get();
     if (current.serverInstanceId !== event.serverInstanceId) {
@@ -566,9 +621,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
           current.activeTaskId,
           event.payload.activeTaskId,
         );
-        const transcript = snapshotTaskId
-          ? withTranscript({ ...current, activeTaskId: nextActive }, snapshotTaskId, event.payload.messages, event.payload.tools)
-          : { messagesByTask: current.messagesByTask, toolsByTask: current.toolsByTask };
+        // Partial warm snapshots omit messages/tools — keep the local transcript.
+        const transcript =
+          snapshotTaskId && event.payload.messages !== undefined
+            ? withTranscript(
+                { ...current, activeTaskId: nextActive },
+                snapshotTaskId,
+                event.payload.messages,
+                event.payload.tools ?? [],
+              )
+            : { messagesByTask: current.messagesByTask, toolsByTask: current.toolsByTask };
         const runtimeByTask =
           snapshotTaskId && event.payload.runtime
             ? { ...current.runtimeByTask, [snapshotTaskId]: event.payload.runtime }
@@ -637,8 +699,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
           trustProject: event.payload.trustProject ?? current.trustProject,
           pendingInteractions: event.payload.pendingInteractions ?? current.pendingInteractions,
           gitDiff: event.payload.gitDiff !== undefined ? event.payload.gitDiff : current.gitDiff,
-          workItems: event.payload.workItems ?? current.workItems,
-          workProjects: event.payload.workProjects ?? current.workProjects,
+          workItems: event.payload.workItems ?? current.workItems ?? current.workItems,
+          workProjects: event.payload.workProjects ?? current.workProjects ?? current.workProjects,
           activeProjectId:
             event.payload.activeProjectId !== undefined ? event.payload.activeProjectId : current.activeProjectId,
           approval:
@@ -989,10 +1051,16 @@ if (typeof sessionStorage !== "undefined") {
       return;
     }
     if (persistTimer) return;
+    const onlyTranscript =
+      state.tasks === prev.tasks &&
+      state.activeTaskId === prev.activeTaskId &&
+      state.tools === prev.tools &&
+      state.toolsByTask === prev.toolsByTask;
+    // Streaming deltas thrash sessionStorage; wait longer when only transcript changed.
     persistTimer = setTimeout(() => {
       persistTimer = null;
       persistWorkbenchCache(useAgentStore.getState());
-    }, 200);
+    }, onlyTranscript ? 1000 : 200);
   });
 }
 

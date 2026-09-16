@@ -7,6 +7,25 @@ type Pending = {
   reject: (error: Error) => void;
 };
 
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+/** Skip full Zod for high-rate streaming frames from our own server. */
+function isTrustedDeltaEvent(value: unknown): value is ServerEvent {
+  if (!isRecord(value)) return false;
+  if (value.type !== "message.delta" && value.type !== "term.chunk") return false;
+  if (typeof value.taskId !== "string" || typeof value.sequence !== "number") return false;
+  if (typeof value.eventId !== "string" || typeof value.serverInstanceId !== "string") return false;
+  return isRecord(value.payload);
+}
+
+function isTrustedBatchFrame(value: unknown): value is { __batch: true; events: ServerEvent[] } {
+  if (!isRecord(value) || value.__batch !== true || !Array.isArray(value.events)) return false;
+  return value.events.every((event) => isTrustedDeltaEvent(event) || isRecord(event));
+}
+
 export class SocketClient {
   private socket: WebSocket | null = null;
   private pending = new Map<string, Pending>();
@@ -104,13 +123,35 @@ export class SocketClient {
       } catch {
         return;
       }
-      const result = serverFrameSchema.safeParse(parsed);
-      if (!result.success) {
-        console.warn("[qingzhou] dropped event", result.error.issues[0]?.message);
+      let events: ServerEvent[];
+      if (isTrustedDeltaEvent(parsed)) {
+        events = [parsed];
+      } else if (isTrustedBatchFrame(parsed)) {
+        // Batch frames are almost always streaming deltas; avoid full Zod fan-out.
+        const trusted = parsed.events.every((item) => isTrustedDeltaEvent(item));
+        if (trusted) {
+          events = parsed.events;
+        } else {
+          const result = serverFrameSchema.safeParse(parsed);
+          if (!result.success) {
+            console.warn("[qingzhou] dropped event", result.error.issues[0]?.message);
+            return;
+          }
+          events = "__batch" in result.data ? result.data.events : [result.data];
+        }
+      } else {
+        const result = serverFrameSchema.safeParse(parsed);
+        if (!result.success) {
+          console.warn("[qingzhou] dropped event", result.error.issues[0]?.message);
+          return;
+        }
+        const frame = result.data;
+        events = "__batch" in frame ? frame.events : [frame];
+      }
+      if (events.length > 1 && events.every((item) => item.type === "message.delta" || item.type === "term.chunk")) {
+        useAgentStore.getState().applyEvents(events);
         return;
       }
-      const frame = result.data;
-      const events = "__batch" in frame ? frame.events : [frame];
       for (const serverEvent of events) {
         this.handleEvent(serverEvent);
       }

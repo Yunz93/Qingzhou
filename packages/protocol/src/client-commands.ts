@@ -313,7 +313,13 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   z.object({
     ...commandBase,
     type: z.literal("snapshot.request"),
-    payload: z.object({ taskId: z.string().optional() }).optional(),
+    payload: z
+      .object({
+        taskId: z.string().optional(),
+        includeTranscript: z.boolean().optional(),
+        includeWorkBoard: z.boolean().optional(),
+      })
+      .optional(),
   }),
   z.object({
     ...commandBase,

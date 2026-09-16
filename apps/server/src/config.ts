@@ -253,7 +253,7 @@ export function loadConfig(
     piExtraEnv: pi.extraEnv,
     dataDir: path.resolve(expandHome(qingzhouEnv(env, "DATA_DIR") ?? defaultDataDir(homeDir), homeDir)),
     allowedRoots: envRoots,
-    maxProcesses: Number(qingzhouEnv(env, "MAX_PROCESSES") ?? "3"),
+    maxProcesses: Number(qingzhouEnv(env, "MAX_PROCESSES") ?? "5"),
     mutations: mutationsSchema.parse(qingzhouEnv(env, "MUTATIONS") ?? "approval"),
     nodeEnv,
     approvalTimeoutMs: Number(qingzhouEnv(env, "APPROVAL_TIMEOUT_MS") ?? String(5 * 60 * 1000)),

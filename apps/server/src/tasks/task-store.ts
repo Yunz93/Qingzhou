@@ -1,7 +1,7 @@
-import { copyFile, mkdir, open, readFile, rename } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { TASK_SCHEMA_VERSION, taskRecordSchema, type TaskRecord, type TaskStatus } from "@qingzhou/protocol";
+import { CoalescedJsonFile } from "./coalesced-json-file.js";
 
 export type PersistedState = {
   schemaVersion: number;
@@ -36,10 +36,16 @@ function wasInterruptedByRestart(status: TaskStatus): boolean {
 export class TaskStore {
   private state: PersistedState = emptyState();
   private readonly filePath: string;
-  private writeChain: Promise<void> = Promise.resolve();
+  private readonly file: CoalescedJsonFile<PersistedState>;
 
   constructor(dataDir: string) {
     this.filePath = path.join(dataDir, "state.json");
+    this.file = new CoalescedJsonFile(this.filePath, () => this.state, { debounceMs: 50, fsync: false });
+  }
+
+  /** Force a durable write (used on shutdown). */
+  async flushSync(): Promise<void> {
+    await this.file.flushNow({ fsync: true });
   }
 
   getSnapshot(): TaskRecord[] {
@@ -138,21 +144,6 @@ export class TaskStore {
   }
 
   private async flush(): Promise<void> {
-    this.writeChain = this.writeChain.then(() => this.flushNow(), () => this.flushNow());
-    await this.writeChain;
-  }
-
-  private async flushNow(): Promise<void> {
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.tmp-${process.pid}-${randomUUID()}`;
-    const payload = JSON.stringify(this.state, null, 2);
-    const handle = await open(tmp, "w");
-    try {
-      await handle.writeFile(payload, "utf8");
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(tmp, this.filePath);
+    await this.file.flush();
   }
 }

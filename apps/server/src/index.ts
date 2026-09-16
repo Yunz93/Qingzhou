@@ -254,10 +254,26 @@ export async function createApp(env: NodeJS.ProcessEnv = process.env) {
 }
 
 async function main(): Promise<void> {
-  const { app, config } = await createApp();
+  const { app, config, service } = await createApp();
   await app.listen({ host: config.host, port: config.port });
   console.log(`[qingzhou] listening on http://${config.host}:${config.port}`);
   console.log(`[qingzhou] open that address in your browser to finish setup if needed`);
+
+  const shutdown = async (signal: string) => {
+    console.log(`[qingzhou] ${signal}: flushing stores…`);
+    try {
+      await service.flushPersist();
+    } catch (error) {
+      console.error("[qingzhou] flush failed", error);
+    }
+    try {
+      await app.close();
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

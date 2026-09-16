@@ -72,8 +72,8 @@ const eventBase = {
 export const snapshotPayloadSchema = z.object({
   tasks: z.array(taskRecordSchema),
   activeTaskId: z.string().nullable(),
-  messages: z.array(timelineMessageSchema),
-  tools: z.array(toolExecutionSchema),
+  messages: z.array(timelineMessageSchema).optional(),
+  tools: z.array(toolExecutionSchema).optional(),
   approval: approvalRequestSchema.nullable(),
   models: z.array(modelRefSchema),
   thinkingLevels: z.array(thinkingLevelSchema),
@@ -134,9 +134,11 @@ export const snapshotPayloadSchema = z.object({
   trustProject: z.boolean().optional(),
   pendingInteractions: z.array(interactionRequestSchema).optional(),
   gitDiff: z.string().nullable().optional(),
-  workItems: z.array(workItemSummarySchema).default([]),
-  workProjects: z.array(workProjectSchema).default([]),
+  workItems: z.array(workItemSummarySchema).optional(),
+  workProjects: z.array(workProjectSchema).optional(),
   activeProjectId: z.string().uuid().nullable().optional(),
+  snapshotPartial: z.boolean().optional(),
+  runtimeGeneration: z.number().optional(),
 });
 
 export type SnapshotPayload = z.infer<typeof snapshotPayloadSchema>;

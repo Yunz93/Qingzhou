@@ -205,6 +205,11 @@ export class TaskService {
     return this.store.listVisible();
   }
 
+  /** Durably flush coalesced task/work-item stores (shutdown). */
+  async flushPersist(): Promise<void> {
+    await Promise.all([this.store.flushSync(), this.workItems.flushSync()]);
+  }
+
   storeUpload(id: string, mimeType: string, data: Buffer): boolean {
     return this.uploads.add(id, mimeType, data);
   }
@@ -283,9 +288,10 @@ export class TaskService {
         return this.feedbackWorkItem(command.payload.id, command.payload.text);
       case "workItem.move":
         return this.legacyMoveWorkItem(command.payload.id, command.payload.column, command.payload.beforeId);
-      case "task.activate":
-        await this.activate(command.taskId);
-        return { task: this.store.get(command.taskId) };
+      case "task.activate": {
+        const result = await this.activate(command.taskId);
+        return { task: this.store.get(command.taskId), warm: result.warm };
+      }
       case "task.rename":
         return this.rename(command.taskId, command.payload.title);
       case "task.archive":
@@ -407,10 +413,11 @@ export class TaskService {
         return { ok: true };
       case "snapshot.request": {
         const snapshotTaskId = command.payload?.taskId ?? this.activeTaskId;
-        if (snapshotTaskId && this.supervisor.has(snapshotTaskId)) {
-          await this.refreshAvailableModels(snapshotTaskId);
-        }
-        return this.buildSnapshot(snapshotTaskId);
+        // Warm snapshot: reuse cached models — refresh only on auth/settings paths.
+        return this.buildSnapshot(snapshotTaskId, {
+          includeTranscript: command.payload?.includeTranscript !== false,
+          includeWorkBoard: command.payload?.includeWorkBoard !== false,
+        });
       }
       case "files.tree":
         return this.fileTree(command.taskId);
@@ -429,7 +436,12 @@ export class TaskService {
     }
   }
 
-  buildSnapshot(taskId: string | null): Record<string, unknown> {
+  buildSnapshot(
+    taskId: string | null,
+    options?: { includeTranscript?: boolean; includeWorkBoard?: boolean },
+  ): Record<string, unknown> {
+    const includeTranscript = options?.includeTranscript !== false;
+    const includeWorkBoard = options?.includeWorkBoard !== false;
     const tasks = this.listTasks();
     const activeId = taskId && tasks.some((task) => task.id === taskId) ? taskId : this.activeTaskId;
     const runtime = activeId ? this.supervisor.snapshot(activeId) : null;
@@ -437,8 +449,8 @@ export class TaskService {
     return {
       tasks,
       activeTaskId: activeId,
-      messages: runtime?.messages ?? [],
-      tools: runtime?.tools ?? [],
+      messages: includeTranscript ? (runtime?.messages ?? []) : undefined,
+      tools: includeTranscript ? (runtime?.tools ?? []) : undefined,
       approval: runtime?.approval ?? null,
       models: runtime?.models ?? [],
       thinkingLevels: runtime?.thinkingLevels ?? ["off"],
@@ -461,15 +473,17 @@ export class TaskService {
       commands: runtime?.commands ?? [],
       runtime: runtime?.runtime ?? emptyRuntime(),
       resources: activeId ? this.resources.get(activeId) : undefined,
-      sessionTree: runtime?.sessionTree ?? [],
+      sessionTree: includeTranscript ? (runtime?.sessionTree ?? []) : undefined,
       sessionLeafId: runtime?.sessionLeafId ?? null,
       authEntries: this.setupHints.authEntries,
       trustProject: this.config.trustProject,
       pendingInteractions: this.supervisor.listInteractions(),
       gitDiff: activeId ? (this.gitDiffs.get(activeId) ?? null) : null,
-      workItems: this.workItems.list(),
-      workProjects: this.workItems.listProjects(),
-      activeProjectId: this.workItems.getActiveProjectId(),
+      workItems: includeWorkBoard ? this.workItems.list() : undefined,
+      workProjects: includeWorkBoard ? this.workItems.listProjects() : undefined,
+      activeProjectId: includeWorkBoard ? this.workItems.getActiveProjectId() : undefined,
+      snapshotPartial: !includeTranscript || !includeWorkBoard,
+      runtimeGeneration: activeId ? this.supervisor.getGeneration(activeId) : 0,
     };
   }
 
@@ -571,7 +585,7 @@ export class TaskService {
     return { ok: true };
   }
 
-  async activate(taskId: string): Promise<void> {
+  async activate(taskId: string): Promise<{ warm: boolean }> {
     const task = this.requireTask(taskId);
     this.activeTaskId = taskId;
     const next = await this.store.upsert({
@@ -581,18 +595,54 @@ export class TaskService {
     });
     this.emit(taskId, "task.updated", { task: next });
     if (this.supervisor.has(taskId)) {
-      await this.refreshAvailableModels(taskId);
+      this.supervisor.touch(taskId);
+      // Warm activate: reuse cached models (no RPC) so the UI still gets models.updated.
+      const runtime = this.supervisor.snapshot(taskId);
+      if (runtime) {
+        this.emit(taskId, "models.updated", {
+          models: runtime.models,
+          thinkingLevels: runtime.thinkingLevels,
+        });
+      }
       void this.refreshStats(taskId);
-      return;
+      return { warm: true };
     }
     const pendingBoot = this.booting.get(taskId);
-    if (pendingBoot) return pendingBoot;
+    if (pendingBoot) {
+      await pendingBoot;
+      return { warm: false };
+    }
     if (this.processSlotsUsed() >= this.config.maxProcesses) {
-      if (!this.queue.includes(taskId)) this.queue.push(taskId);
-      await this.apply(taskId, "queued");
-      return;
+      const evicted = await this.evictWarmIdle(taskId);
+      if (!evicted) {
+        if (!this.queue.includes(taskId)) this.queue.push(taskId);
+        await this.apply(taskId, "queued");
+        return { warm: false };
+      }
     }
     await this.startBoot(taskId);
+    return { warm: false };
+  }
+
+  /** Stop the least-recently-used idle warm process to free a slot. */
+  private async evictWarmIdle(forTaskId: string): Promise<boolean> {
+    // Skip freshly booted warms so bursty create/activate still queues under maxProcesses
+    // instead of thrashing brand-new idle slots.
+    const minWarmAgeMs = 3_000;
+    const now = Date.now();
+    const candidates = this.supervisor.listWarmIdle(forTaskId);
+    for (const candidate of candidates) {
+      if (candidate.taskId === this.activeTaskId) continue;
+      if (now - candidate.lastUsedAt < minWarmAgeMs) continue;
+      const task = this.store.get(candidate.taskId);
+      if (!task) continue;
+      if (task.status === "running" || task.status === "waiting_approval" || task.status === "aborting" || task.status === "booting") {
+        continue;
+      }
+      await this.supervisor.stop(candidate.taskId);
+      return true;
+    }
+    return false;
   }
 
   private processSlotsUsed(): number {
@@ -637,8 +687,9 @@ export class TaskService {
           leafId: runtime.sessionLeafId,
         });
       }
-      await this.emitResources(taskId);
-      await this.refreshStats(taskId);
+      // Don't block pi_ready on resource scans / stats RPC.
+      void this.emitResources(taskId);
+      void this.refreshStats(taskId);
       await this.tryStartWorkItemsForTask(taskId);
     } catch (error) {
       const message = humanizeUserFacingError(error);

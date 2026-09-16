@@ -82,11 +82,20 @@ export function registerWebsocket(app: FastifyInstance, config: AppConfig, servi
             command.type === "task.create" ||
             command.type === "session.resume"
           ) {
-            service.emit(taskId || ((data as { task?: { id: string } }).task?.id ?? ""), "snapshot", service.buildSnapshot(
+            const snapshotTaskId =
               command.type === "task.create" || command.type === "session.resume"
                 ? (data as { task: { id: string } }).task.id
-                : command.taskId ?? null,
-            ));
+                : command.taskId ?? null;
+            // Warm activate already has the transcript client-side; skip bulky snapshot.
+            if (command.type === "task.activate" && (data as { warm?: boolean } | null)?.warm) {
+              // models.updated was emitted from activate with cached lists.
+            } else {
+              service.emit(
+                taskId || snapshotTaskId || "",
+                "snapshot",
+                service.buildSnapshot(snapshotTaskId),
+              );
+            }
           }
         } catch (error) {
           service.emit(taskId, "request.failed", {

@@ -104,7 +104,7 @@ export class RpcClient {
       this.handleLine(line);
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     if (child.exitCode !== null) {
       throw this.exitError ?? new Error(`Pi exited immediately. Stderr: ${this.stderr}`);
     }
@@ -149,13 +149,11 @@ export class RpcClient {
         reject(new Error(`Timeout waiting for ${command.type}. Stderr: ${this.stderr}`));
       }, timeoutMs ?? this.options.responseTimeoutMs ?? 30_000);
       this.pending.set(id, { resolve, reject, timer });
-      try {
-        stdin.write(serializeJsonLine(payload));
-      } catch (error) {
+      void this.writeLine(stdin, serializeJsonLine(payload)).catch((error) => {
         this.pending.delete(id);
         clearTimeout(timer);
         reject(error instanceof Error ? error : new Error(String(error)));
-      }
+      });
     });
   }
 
@@ -164,7 +162,34 @@ export class RpcClient {
     if (!stdin) {
       throw new Error("RPC client not started");
     }
-    stdin.write(serializeJsonLine({ type: "extension_ui_response", ...body }));
+    void this.writeLine(stdin, serializeJsonLine({ type: "extension_ui_response", ...body }));
+  }
+
+  /** Respect stdin backpressure instead of unbounded buffering. */
+  private writeLine(stdin: NodeJS.WritableStream, line: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        const ok = stdin.write(line, (error) => {
+          if (error) reject(error);
+        });
+        if (ok) {
+          resolve();
+          return;
+        }
+        const onDrain = () => {
+          stdin.off("error", onError);
+          resolve();
+        };
+        const onError = (error: Error) => {
+          stdin.off("drain", onDrain);
+          reject(error);
+        };
+        stdin.once("drain", onDrain);
+        stdin.once("error", onError);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
   }
 
   private handleLine(line: string): void {

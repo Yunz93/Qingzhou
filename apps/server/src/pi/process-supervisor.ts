@@ -140,6 +140,8 @@ export class ProcessSupervisor {
       messages: TimelineMessage[];
       tools: Map<string, ToolExecution>;
       liveAssistantId: string | null;
+      liveAssistantIndex: number | null;
+      lastUsedAt: number;
       pendingImages?: TimelineImage[];
       approval: ApprovalRequest | null;
       models: ModelRef[];
@@ -179,6 +181,23 @@ export class ProcessSupervisor {
     return this.runtimes.size;
   }
 
+  touch(taskId: string): void {
+    const runtime = this.runtimes.get(taskId);
+    if (runtime) runtime.lastUsedAt = Date.now();
+  }
+
+  /** Warm idle processes eligible for LRU eviction (no live stream / approval). */
+  listWarmIdle(excludeTaskId?: string): Array<{ taskId: string; lastUsedAt: number }> {
+    const out: Array<{ taskId: string; lastUsedAt: number }> = [];
+    for (const [taskId, runtime] of this.runtimes) {
+      if (excludeTaskId && taskId === excludeTaskId) continue;
+      if (runtime.liveAssistantId || runtime.approval) continue;
+      out.push({ taskId, lastUsedAt: runtime.lastUsedAt });
+    }
+    out.sort((a, b) => a.lastUsedAt - b.lastUsedAt);
+    return out;
+  }
+
   has(taskId: string): boolean {
     return this.runtimes.has(taskId);
   }
@@ -206,6 +225,7 @@ export class ProcessSupervisor {
     if (!runtime) return;
     runtime.messages = messages.map((item) => ({ ...item }));
     runtime.liveAssistantId = null;
+    runtime.liveAssistantIndex = null;
   }
 
   appendNotice(taskId: string, message: TimelineMessage): TimelineMessage | null {
@@ -289,6 +309,8 @@ export class ProcessSupervisor {
       messages: [] as TimelineMessage[],
       tools: new Map<string, ToolExecution>(),
       liveAssistantId: null as string | null,
+      liveAssistantIndex: null as number | null,
+      lastUsedAt: Date.now(),
       approval: null as ApprovalRequest | null,
       models: [] as ModelRef[],
       thinkingLevels: ["off"] as ThinkingLevel[],
@@ -349,22 +371,21 @@ export class ProcessSupervisor {
     this.runtimes.set(task.id, runtime);
 
     await client.start();
-    const state = await this.rpcData(task.id, { type: "get_state" });
-    const messages = await this.rpcData(task.id, { type: "get_messages" });
-    const models = await this.rpcData(task.id, { type: "get_available_models" });
-    const levels = await this.rpcData(task.id, { type: "get_available_thinking_levels" });
-    try {
-      const commands = await this.rpcData(task.id, { type: "get_commands" });
-      runtime.commands = Array.isArray((commands as { commands?: unknown[] })?.commands)
-        ? ((commands as { commands: Array<Record<string, unknown>> }).commands).map((command) => ({
-            name: String(command.name ?? ""),
-            description: typeof command.description === "string" ? command.description : undefined,
-            source: typeof command.source === "string" ? command.source : undefined,
-          }))
-        : [];
-    } catch {
-      runtime.commands = [];
-    }
+    const [state, messages, models, levels, commandsResult] = await Promise.all([
+      this.rpcData(task.id, { type: "get_state" }),
+      this.rpcData(task.id, { type: "get_messages" }),
+      this.rpcData(task.id, { type: "get_available_models" }),
+      this.rpcData(task.id, { type: "get_available_thinking_levels" }),
+      this.rpcData(task.id, { type: "get_commands" }).catch(() => null),
+    ]);
+    const commands = commandsResult;
+    runtime.commands = Array.isArray((commands as { commands?: unknown[] } | null)?.commands)
+      ? ((commands as { commands: Array<Record<string, unknown>> }).commands).map((command) => ({
+          name: String(command.name ?? ""),
+          description: typeof command.description === "string" ? command.description : undefined,
+          source: typeof command.source === "string" ? command.source : undefined,
+        }))
+      : [];
 
     const stateData = (state ?? {}) as Record<string, unknown>;
     const messageData = (messages ?? {}) as { messages?: unknown[] };
@@ -526,27 +547,36 @@ export class ProcessSupervisor {
   private handlePiEvent(taskId: string, generation: number, event: RpcEvent): void {
     const runtime = this.runtimes.get(taskId);
     if (!runtime || runtime.generation !== generation) return;
+    runtime.lastUsedAt = Date.now();
 
     const normalized = normalizePiEvent(event);
     switch (normalized.kind) {
       case "status":
         if (normalized.settled) {
           runtime.liveAssistantId = null;
+          runtime.liveAssistantIndex = null;
           this.onSettled(taskId);
         }
         break;
       case "message.started": {
         const message = attachPendingImages(runtime, normalized.message);
+        runtime.messages.push(message);
         if (message.role === "assistant" && message.streaming) {
           runtime.liveAssistantId = message.id;
+          runtime.liveAssistantIndex = runtime.messages.length - 1;
         }
-        runtime.messages.push(message);
         this.emit(taskId, "message.started", { message });
         break;
       }
       case "message.delta": {
         const id = runtime.liveAssistantId ?? normalized.messageId;
-        const existing = runtime.messages.find((item) => item.id === id);
+        let existing =
+          runtime.liveAssistantIndex != null ? runtime.messages[runtime.liveAssistantIndex] : undefined;
+        if (!existing || existing.id !== id) {
+          const index = runtime.messages.findIndex((item) => item.id === id);
+          existing = index >= 0 ? runtime.messages[index] : undefined;
+          runtime.liveAssistantIndex = index >= 0 ? index : null;
+        }
         if (existing) {
           if (normalized.field === "text") existing.text += normalized.delta;
           if (normalized.field === "thinking") {
@@ -565,7 +595,10 @@ export class ProcessSupervisor {
           normalized.message.role === "assistant" && runtime.liveAssistantId
             ? runtime.liveAssistantId
             : normalized.message.id;
-        const index = runtime.messages.findIndex((item) => item.id === id);
+        const index =
+          runtime.liveAssistantIndex != null && runtime.messages[runtime.liveAssistantIndex]?.id === id
+            ? runtime.liveAssistantIndex
+            : runtime.messages.findIndex((item) => item.id === id);
         const existing = index >= 0 ? runtime.messages[index] : undefined;
         const message = mergeCompletedTimelineMessage(existing, { ...normalized.message, id });
         if (index >= 0) {
@@ -575,6 +608,7 @@ export class ProcessSupervisor {
         }
         if (normalized.message.role === "assistant") {
           runtime.liveAssistantId = null;
+          runtime.liveAssistantIndex = null;
         }
         this.emit(taskId, "message.completed", { message });
         break;
@@ -752,8 +786,9 @@ export class ProcessSupervisor {
   }
 
   emit(taskId: string, type: ServerEvent["type"], payload: unknown): void {
+    const cheapId = type === "message.delta" || type === "term.chunk";
     const event = {
-      ...this.nextSequence(taskId),
+      ...this.nextSequence(taskId, { cheapId }),
       taskId,
       type,
       payload,
@@ -763,11 +798,14 @@ export class ProcessSupervisor {
     }
   }
 
-  nextSequence(taskId: string): { eventId: string; serverInstanceId: string; timestamp: string; sequence: number } {
+  nextSequence(
+    taskId: string,
+    options?: { cheapId?: boolean },
+  ): { eventId: string; serverInstanceId: string; timestamp: string; sequence: number } {
     const sequence = (this.sequences.get(taskId) ?? 0) + 1;
     this.sequences.set(taskId, sequence);
     return {
-      eventId: randomUUID(),
+      eventId: options?.cheapId ? `${taskId}:${sequence}` : randomUUID(),
       serverInstanceId: this.serverInstanceId,
       timestamp: new Date().toISOString(),
       sequence,
