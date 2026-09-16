@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.20
+
 - 模型卡片滑条改成当前模型的思考强度，不再用来换模型。
 - 去掉底部手动点选强度横栏；闪电按钮始终可开关 Fast。
 - 模型列表可设默认模型，写入 Pi `settings.json` 的 `defaultProvider` / `defaultModel`。
