@@ -25,7 +25,7 @@ export type WorkItemControllerHost = {
   supervisor: ProcessSupervisor;
   emit: (taskId: string, type: ServerEvent["type"], payload: unknown) => void;
   createTask: (cwd?: string, title?: string, sessionPath?: string) => Promise<{ task: TaskRecord }>;
-  activate: (taskId: string) => Promise<void>;
+  activate: (taskId: string) => Promise<{ warm: boolean } | void>;
   abort: (taskId: string) => Promise<{ ok: true }>;
   prompt: (
     taskId: string,
