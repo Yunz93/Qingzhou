@@ -3,6 +3,7 @@ import path from "node:path";
 import type { PiResources } from "@qingzhou/protocol";
 import { defaultPiAgentDir } from "../setup/pi-agent-dir.js";
 import { isInsideRoot } from "../security/path-policy.js";
+import { isSkillSwapDir, reclaimSkillSwapDirs } from "./pi-skill-updates.js";
 
 const INDEX_RE = /^index\.(ts|js|mts|mjs)$/i;
 const EXT_FILE_RE = /\.(ts|js|mts|mjs)$/i;
@@ -51,9 +52,11 @@ async function walkParents(cwd: string): Promise<string[]> {
 
 async function listSkillDirs(dir: string, scope: "user" | "project"): Promise<PiResources["skills"]> {
   try {
+    await reclaimSkillSwapDirs(dir);
     const names = await readdir(dir);
     const skills: PiResources["skills"] = [];
     for (const name of names) {
+      if (isSkillSwapDir(name)) continue;
       const skillMd = path.join(dir, name, "SKILL.md");
       if (await exists(skillMd)) skills.push({ name, path: skillMd, scope, enabled: true });
     }

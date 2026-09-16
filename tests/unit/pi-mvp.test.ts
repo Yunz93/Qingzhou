@@ -69,6 +69,8 @@ describe("pi mvp helpers", () => {
     await writeFile(path.join(cwd, "AGENTS.md"), "# agents");
     await writeFile(path.join(cwd, ".agents", "skills", "review", "SKILL.md"), "# review");
     await writeFile(path.join(home, ".pi", "agent", "skills", "user-skill", "SKILL.md"), "# user");
+    await mkdir(path.join(home, ".pi", "agent", "skills", "user-skill.qingzhou-new"), { recursive: true });
+    await writeFile(path.join(home, ".pi", "agent", "skills", "user-skill.qingzhou-new", "SKILL.md"), "# leftover");
 
     const untrusted = await scanPiResources(cwd, home, false);
     expect(untrusted.agentsFiles.some((item) => item.kind === "agents")).toBe(true);

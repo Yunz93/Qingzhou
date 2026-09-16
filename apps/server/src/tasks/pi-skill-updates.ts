@@ -178,6 +178,74 @@ export function githubFolderHash(tree: GithubTree, skillPath?: string): string |
   return entry?.sha ?? null;
 }
 
+export const SKILL_STAGING_SUFFIX = ".qingzhou-new";
+export const SKILL_BACKUP_SUFFIX = ".qingzhou-old";
+
+export function isSkillSwapDir(name: string): boolean {
+  return name.endsWith(SKILL_STAGING_SUFFIX) || name.endsWith(SKILL_BACKUP_SUFFIX);
+}
+
+async function hasSkillMd(dir: string): Promise<boolean> {
+  try {
+    await readFile(path.join(dir, "SKILL.md"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Finish or discard leftover swap folders so they are never listed as skills. */
+export async function reclaimSkillSwapDirs(root: string): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!isSkillSwapDir(name)) continue;
+    const full = path.join(root, name);
+    const dest = name.endsWith(SKILL_STAGING_SUFFIX)
+      ? full.slice(0, -SKILL_STAGING_SUFFIX.length)
+      : full.slice(0, -SKILL_BACKUP_SUFFIX.length);
+    if (name.endsWith(SKILL_STAGING_SUFFIX) && !(await hasSkillMd(dest))) {
+      try {
+        await rename(full, dest);
+        continue;
+      } catch {
+        // dest may have appeared; drop the leftover instead
+      }
+    }
+    await rm(full, { recursive: true, force: true });
+  }
+}
+
+export async function replaceSkillDir(source: string, dest: string): Promise<void> {
+  const staging = `${dest}${SKILL_STAGING_SUFFIX}`;
+  const backup = `${dest}${SKILL_BACKUP_SUFFIX}`;
+  await rm(staging, { recursive: true, force: true });
+  await rm(backup, { recursive: true, force: true });
+  await cp(source, staging, { recursive: true });
+  try {
+    await rename(dest, backup);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      await rename(staging, dest);
+      return;
+    }
+    await rm(staging, { recursive: true, force: true });
+    throw error;
+  }
+  try {
+    await rename(staging, dest);
+  } catch (error) {
+    await rename(backup, dest).catch(() => undefined);
+    await rm(staging, { recursive: true, force: true });
+    throw error;
+  }
+  await rm(backup, { recursive: true, force: true });
+}
+
 function skillDir(skillMdPath: string): string {
   return path.dirname(path.resolve(skillMdPath));
 }
@@ -341,11 +409,7 @@ async function defaultApplyGithub(input: {
   try {
     const source = skillFolderFromExtract(extractedRoot, input.remote.skillPath);
     if (!isInsideRoot(source, extractedRoot)) throw new Error("技能路径不合法。");
-    const staging = `${input.dest}.qingzhou-new`;
-    await rm(staging, { recursive: true, force: true });
-    await cp(source, staging, { recursive: true });
-    await rm(input.dest, { recursive: true, force: true });
-    await rename(staging, input.dest);
+    await replaceSkillDir(source, input.dest);
     try {
       const tree = await defaultFetchGithubTree(input.remote, input.token);
       return (tree && githubFolderHash(tree, input.remote.skillPath)) || (await hashSkillFolder(input.dest));
