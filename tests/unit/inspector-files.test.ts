@@ -109,6 +109,9 @@ describe("InspectorPanel tabs", () => {
     expect(plugins).not.toMatch(/安装推荐/);
     expect(plugins).not.toMatch(/PRESET_PI_PACKAGES/);
     expect(src).toMatch(/InspectorPackageCenter/);
+    const center = readFileSync(path.resolve("apps/web/src/components/inspector/InspectorPackageCenter.tsx"), "utf8");
+    expect(center).toMatch(/热门/);
+    expect(center).toMatch(/hotPackageItems/);
     expect(layout).toMatch(/resources\.package\.catalog/);
     expect(layout).toMatch(/resources\.package\.install/);
     expect(skills).toMatch(/检查更新/);

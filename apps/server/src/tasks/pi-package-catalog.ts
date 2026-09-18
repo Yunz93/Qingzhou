@@ -18,6 +18,7 @@ export const E2E_PI_PACKAGE_CATALOG: PiPackageCatalogItem[] = [
     source: "npm:pi-web-access",
     summary: "Web search, URL fetching, GitHub cloning, and PDF extraction for Pi.",
     types: ["extension"],
+    downloads: 400_000,
     href: "https://pi.dev/packages/pi-web-access",
   },
   {
@@ -25,6 +26,7 @@ export const E2E_PI_PACKAGE_CATALOG: PiPackageCatalogItem[] = [
     source: "npm:pi-memory",
     summary: "Long-term memory, daily logs, and scratchpad for Pi.",
     types: ["extension"],
+    downloads: 200_000,
     href: "https://pi.dev/packages/pi-memory",
   },
 ];
