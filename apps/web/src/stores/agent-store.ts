@@ -19,6 +19,7 @@ import type {
   WorkItemSummary,
   WorkProject,
 } from "@qingzhou/protocol";
+import { clientErrorMessage } from "../lib/client-error";
 import { emptyRuntime, mergeCompletedTimelineMessage } from "@qingzhou/protocol";
 
 export type AgentCommand = { name: string; description?: string; source?: string };
@@ -885,7 +886,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
         });
         break;
       case "request.failed":
-        set({ lastSeen, requestError: event.payload.error });
+        set({
+          lastSeen,
+          requestError: clientErrorMessage(event.payload.error, "发送失败"),
+        });
         break;
       case "request.succeeded":
         set({ lastSeen });
@@ -893,7 +897,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       case "server.error":
         set({
           lastSeen,
-          serverError: event.payload.message,
+          serverError: clientErrorMessage(event.payload.message, "出错了"),
           authHint: Boolean(event.payload.authHint),
         });
         break;
