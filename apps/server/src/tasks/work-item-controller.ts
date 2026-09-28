@@ -167,13 +167,15 @@ export class WorkItemController {
       throw new Error("这个目标已经在执行。");
     }
     let taskId = item.taskId;
+    let activateError: string | null = null;
     if (!taskId || !this.host.store.get(taskId) || this.host.store.get(taskId)?.archivedAt) {
       taskId = (await this.host.createTask(item.cwd, item.title)).task.id;
     } else {
       try {
         await this.host.activate(taskId);
-      } catch {
-        // The run below records the boot failure and remains recoverable.
+      } catch (error) {
+        // Record the failed run below, then surface the reason to the client.
+        activateError = humanizeUserFacingError(error).trim() || "AI 启动失败";
       }
     }
     const feedback = this.host.workItems.listFeedback(id).filter((entry) => !entry.deliveredAt);
@@ -188,15 +190,19 @@ export class WorkItemController {
     const run = await this.host.workItems.createRun({ objectiveId: id, taskId, kind, instruction });
     this.emitWorkItems();
     const task = this.host.store.get(taskId);
-    if (task?.status === "error") {
+    const failMessage =
+      activateError ??
+      (task?.status === "error" ? task.errorMessage?.trim() || "AI 启动失败" : null);
+    if (failMessage) {
       await this.host.workItems.updateRun(run.id, {
         status: "failed",
-        errorMessage: task.errorMessage ?? "AI 启动失败",
+        errorMessage: failMessage,
       });
       this.emitWorkItems();
-    } else {
-      await this.tryStartWorkItemsForTask(taskId);
+      this.host.emit(taskId, "server.error", { code: "workItem.run", message: failMessage });
+      throw new Error(failMessage);
     }
+    await this.tryStartWorkItemsForTask(taskId);
     return { item: this.host.workItems.get(id) ?? item };
   }
 
@@ -270,10 +276,12 @@ export class WorkItemController {
       if (feedbackIds.length > 0) await this.host.workItems.markFeedbackDelivered(feedbackIds, run.id);
       this.emitWorkItems();
     } catch (error) {
-      const message = humanizeUserFacingError(error);
+      const message = humanizeUserFacingError(error).trim() || "发送失败";
       await this.host.workItems.updateRun(run.id, { status: "failed", errorMessage: message });
       this.emitWorkItems();
       this.host.emit(taskId, "server.error", { code: "workItem.run", message });
+      // Surface to the RPC client so the composer keeps draft + shows the reason.
+      throw new Error(message);
     }
   }
 

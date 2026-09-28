@@ -153,7 +153,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
         ) : null}
         {requestError || serverError || task.errorMessage ? (
           <p className="px-4 pb-1 text-[12px] text-danger" role="alert">
-            {requestError ?? serverError ?? task.errorMessage}
+            {requestError || serverError || task.errorMessage}
           </p>
         ) : null}
         {itemClosed ? (

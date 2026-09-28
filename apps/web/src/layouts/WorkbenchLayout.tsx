@@ -805,7 +805,7 @@ export function WorkbenchLayout() {
           tools={tools}
           hasChanges={hasChanges}
           runtime={runtime}
-          errorMessage={task?.errorMessage ?? serverError ?? requestError}
+          errorMessage={task?.errorMessage || serverError || requestError}
         />
         {!piAvailable ? (
           <div className="banner-note text-danger" role="alert">
@@ -825,7 +825,7 @@ export function WorkbenchLayout() {
         ) : null}
         {serverError || requestError || task?.errorMessage ? (
           <div className="banner-note whitespace-pre-wrap text-danger" role="alert">
-            <span className="min-w-0 flex-1">{requestError ?? serverError ?? task?.errorMessage}</span>
+            <span className="min-w-0 flex-1">{requestError || serverError || task?.errorMessage}</span>
             <button
               type="button"
               className="pressable app-no-drag shrink-0 text-accent"

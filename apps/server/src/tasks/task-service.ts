@@ -762,14 +762,17 @@ export class TaskService {
       const raw = error instanceof Error ? error.message : String(error);
       const text = humanizeUserFacingError(error);
       const authHint = isMissingCredentialError(raw);
+      const visible = (
+        authHint
+          ? "连不上 AI 服务商。打开设置登录或粘贴密钥。轻舟不会显示完整密钥。"
+          : text
+      ).trim() || "发送失败";
       this.emit(taskId, "server.error", {
         code: authHint ? "pi.auth" : "pi.prompt",
-        message: authHint
-          ? "连不上 AI 服务商。打开设置登录或粘贴密钥。轻舟不会显示完整密钥。"
-          : text,
+        message: visible,
         authHint,
       });
-      throw new Error(text);
+      throw new Error(visible);
     }
 
     if (rpcMode === "prompt") {
