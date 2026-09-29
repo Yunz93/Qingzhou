@@ -5,8 +5,11 @@ import { useAgentStore } from "../stores/agent-store";
 type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout> | null;
 };
 
+/** Default ceiling so a stuck server command cannot freeze the composer forever. */
+export const SOCKET_RPC_TIMEOUT_MS = 60_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -70,18 +73,36 @@ export class SocketClient {
     type: ClientCommand["type"],
     payload?: unknown,
     taskId?: string,
+    timeoutMs: number = SOCKET_RPC_TIMEOUT_MS,
   ): Promise<T> {
     const id = `c${++this.requestId}`;
     const body: { id: string; type: ClientCommand["type"]; taskId?: string; payload?: unknown } = { id, type };
     if (taskId) body.taskId = taskId;
     if (payload !== undefined) body.payload = payload;
     return new Promise<T>((resolve, reject) => {
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              if (!this.pending.has(id)) return;
+              this.pending.delete(id);
+              reject(new Error("请求超时，请重试。"));
+            }, timeoutMs)
+          : null;
       this.pending.set(id, {
-        resolve: (value) => resolve(value as T),
-        reject,
+        resolve: (value) => {
+          if (timer) clearTimeout(timer);
+          resolve(value as T);
+        },
+        reject: (error) => {
+          if (timer) clearTimeout(timer);
+          reject(error);
+        },
+        timer,
       });
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        const pending = this.pending.get(id);
         this.pending.delete(id);
+        if (pending?.timer) clearTimeout(pending.timer);
         reject(new Error("还没连上服务，请稍后再发。"));
         return;
       }

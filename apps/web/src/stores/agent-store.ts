@@ -287,6 +287,8 @@ type AgentState = {
   activeProjectId: string | null;
   toast: { message: string; notifyType?: "info" | "warning" | "error" } | null;
   termByTask: Record<string, TermSession>;
+  /** Task ids removed optimistically while task.archive is in flight. */
+  archivingByTask: Record<string, true>;
   /** True when workspace is this repo under watched `pnpm dev`. */
   devSelfWorkspace: boolean;
   serverInstanceId: string | null;
@@ -308,6 +310,7 @@ type AgentState = {
   removeMessage: (taskId: string, messageId: string) => void;
   /** Optimistic sidebar remove while task.archive is in flight. */
   removeTaskOptimistic: (taskId: string) => void;
+  clearArchivingTask: (taskId: string) => void;
   setSetupState: (payload: {
     needsSetup: boolean;
     authConfigured: boolean;
@@ -337,8 +340,14 @@ function taskWasBusy(status: TaskStatus): boolean {
   );
 }
 
-function upsertTask(tasks: TaskRecord[], task: TaskRecord): TaskRecord[] {
-  if (task.archivedAt) return tasks.filter((item) => item.id !== task.id);
+function upsertTask(
+  tasks: TaskRecord[],
+  task: TaskRecord,
+  archivingByTask: Record<string, true> = {},
+): TaskRecord[] {
+  if (task.archivedAt || archivingByTask[task.id]) {
+    return tasks.filter((item) => item.id !== task.id);
+  }
   const index = tasks.findIndex((item) => item.id === task.id);
   if (index === -1) return [task, ...tasks];
   const next = tasks.slice();
@@ -462,6 +471,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
   activeProjectId: null,
   toast: null,
   termByTask: {},
+  archivingByTask: {},
   devSelfWorkspace: false,
   serverInstanceId: null,
   lastSeen: {},
@@ -511,8 +521,21 @@ export const useAgentStore = create<AgentState>((set, get) => {
   },
   removeTaskOptimistic: (taskId) => {
     const current = get();
-    if (!current.tasks.some((task) => task.id === taskId)) return;
-    set(removeTaskState(current, taskId));
+    if (!current.tasks.some((task) => task.id === taskId) && !current.archivingByTask[taskId]) {
+      set({ archivingByTask: { ...current.archivingByTask, [taskId]: true } });
+      return;
+    }
+    set({
+      ...removeTaskState(current, taskId),
+      archivingByTask: { ...current.archivingByTask, [taskId]: true },
+    });
+  },
+  clearArchivingTask: (taskId) => {
+    const current = get();
+    if (!current.archivingByTask[taskId]) return;
+    const archivingByTask = { ...current.archivingByTask };
+    delete archivingByTask[taskId];
+    set({ archivingByTask });
   },
   setSetupState: (payload) =>
     set({
@@ -789,9 +812,13 @@ export const useAgentStore = create<AgentState>((set, get) => {
           messagesByTask,
           toolsByTask,
         };
+        if (current.archivingByTask[createdId]) {
+          set({ lastSeen });
+          break;
+        }
         set({
           lastSeen,
-          tasks: upsertTask(current.tasks, event.payload.task),
+          tasks: upsertTask(current.tasks, event.payload.task, current.archivingByTask),
           messagesByTask,
           toolsByTask,
           ...(stealFocus
@@ -801,14 +828,24 @@ export const useAgentStore = create<AgentState>((set, get) => {
         break;
       }
       case "task.updated":
-        set({ lastSeen, tasks: upsertTask(current.tasks, event.payload.task) });
+        if (current.archivingByTask[event.payload.task.id] && !event.payload.task.archivedAt) {
+          set({ lastSeen });
+          break;
+        }
+        set({
+          lastSeen,
+          tasks: upsertTask(current.tasks, event.payload.task, current.archivingByTask),
+        });
         break;
       case "tasks.reordered":
         set({ lastSeen, tasks: applyCwdReorder(current.tasks, event.payload.cwd, event.payload.taskIds) });
         break;
       case "task.archived": {
+        const archivingByTask = { ...current.archivingByTask };
+        delete archivingByTask[event.payload.taskId];
         set({
           lastSeen,
+          archivingByTask,
           ...removeTaskState(current, event.payload.taskId),
         });
         break;

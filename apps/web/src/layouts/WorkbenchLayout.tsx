@@ -155,19 +155,11 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     if (connection !== "open" || !activeTaskId) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        await socketClient.send("task.activate", {}, activeTaskId);
-        if (cancelled) return;
-        await socketClient.send("snapshot.request", { taskId: activeTaskId }, activeTaskId);
-      } catch {
-        // Boot errors surface via task status / server.error.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    // Cold activate already pushes a snapshot on the WS reply path; warm
+    // intentionally skips the bulky transcript — do not queue a second snap.
+    void socketClient.send("task.activate", {}, activeTaskId).catch(() => {
+      // Boot errors surface via task status / server.error.
+    });
   }, [connection, activeTaskId]);
 
   useEffect(() => {
@@ -379,12 +371,8 @@ export function WorkbenchLayout() {
 
   async function selectTask(taskId: string) {
     useAgentStore.getState().setActiveTask(taskId);
-    try {
-      await socketClient.send("task.activate", {}, taskId);
-      await socketClient.send("snapshot.request", { taskId }, taskId);
-    } catch {
-      // Activate/snapshot errors surface via task status / server.error.
-    }
+    // Activation + snapshot are owned by the connection/activeTaskId effect —
+    // avoiding a second serialized activate/snapshot pair on every click.
     setTaskOpen(false);
   }
 
@@ -582,6 +570,7 @@ export function WorkbenchLayout() {
         onArchive={(id) => {
           useAgentStore.getState().removeTaskOptimistic(id);
           void socketClient.send("task.archive", {}, id).catch((error: unknown) => {
+            useAgentStore.getState().clearArchivingTask(id);
             setNotice(error instanceof Error ? error.message : "归档失败");
             void socketClient.send("snapshot.request", {}).catch(() => undefined);
           });

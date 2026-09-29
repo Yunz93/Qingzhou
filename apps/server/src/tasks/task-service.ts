@@ -571,12 +571,15 @@ export class TaskService {
     }
     this.emit(taskId, "task.archived", { taskId: next.id });
 
-    if (this.supervisor.has(taskId)) {
-      await this.supervisor.stop(taskId);
-    }
-    // Don't await drain — starting the next queued boot must not block this WS reply
-    // (or the client's subsequent commands on the serialized socket chain).
-    void this.drainQueue().catch(() => undefined);
+    // Stop Pi + drain in the background so archive RPC returns immediately.
+    void (async () => {
+      try {
+        if (this.supervisor.has(taskId)) await this.supervisor.stop(taskId);
+      } catch {
+        // Best-effort; session is already archived.
+      }
+      await this.drainQueue().catch(() => undefined);
+    })();
     return { ok: true };
   }
 
@@ -597,6 +600,7 @@ export class TaskService {
   async activate(taskId: string): Promise<{ warm: boolean }> {
     const task = this.requireTask(taskId);
     this.activeTaskId = taskId;
+    this.removeQueued(taskId);
     const next = await this.store.upsert({
       ...task,
       lastOpenedAt: new Date().toISOString(),
@@ -616,9 +620,8 @@ export class TaskService {
       void this.refreshStats(taskId);
       return { warm: true };
     }
-    const pendingBoot = this.booting.get(taskId);
-    if (pendingBoot) {
-      await pendingBoot;
+    if (this.booting.has(taskId)) {
+      // Boot already in flight; prompt()/work-item start will await the same Promise.
       return { warm: false };
     }
     if (this.processSlotsUsed() >= this.config.maxProcesses) {
@@ -629,7 +632,8 @@ export class TaskService {
         return { warm: false };
       }
     }
-    await this.startBoot(taskId);
+    // Do not await boot on the WS chain — return so abort/prompt/activate stay responsive.
+    void this.startBoot(taskId).catch(() => undefined);
     return { warm: false };
   }
 
@@ -707,10 +711,15 @@ export class TaskService {
           leafId: runtime.sessionLeafId,
         });
       }
-      // Don't block pi_ready on resource scans / stats RPC.
+      // Don't block pi_ready on resource scans / stats / work-item start.
       void this.emitResources(taskId);
       void this.refreshStats(taskId);
-      await this.tryStartWorkItemsForTask(taskId);
+      void this.tryStartWorkItemsForTask(taskId).catch((error) => {
+        console.warn(
+          `[work-item ${taskId}] start after boot failed:`,
+          error instanceof Error ? error.message : error,
+        );
+      });
     } catch (error) {
       const current = this.store.get(taskId);
       if (!current || current.archivedAt) {
@@ -738,14 +747,23 @@ export class TaskService {
     if (task.status === "stopped" || task.status === "error") {
       await this.activate(taskId);
     }
-    // Wait for an in-flight background boot (e.g. casual chat create) before failing.
+    // activate no longer awaits boot — wait on the boot Promise (or re-check queue).
     if (!this.supervisor.has(taskId)) {
-      const pendingBoot = this.booting.get(taskId);
-      if (pendingBoot) {
-        await pendingBoot;
-      } else if (task.status === "booting") {
-        await this.activate(taskId);
+      const latestAfterActivate = this.requireTask(taskId);
+      if (latestAfterActivate.status === "queued") {
+        throw new Error("正在排队，请稍等。");
       }
+      let pendingBoot = this.booting.get(taskId);
+      if (
+        !pendingBoot &&
+        (latestAfterActivate.status === "booting" ||
+          latestAfterActivate.status === "stopped" ||
+          latestAfterActivate.status === "error")
+      ) {
+        void this.startBoot(taskId).catch(() => undefined);
+        pendingBoot = this.booting.get(taskId);
+      }
+      if (pendingBoot) await pendingBoot;
     }
     const latest = this.requireTask(taskId);
     // Pi queues `follow_up` until a later `prompt`. After settle that queue never
@@ -1126,9 +1144,19 @@ export class TaskService {
   private async commitTaskGit(taskId: string, message: string, push?: boolean): Promise<{ ok: true }> {
     const task = this.requireTask(taskId);
     await commitGit(task.cwd, message);
-    if (push) await pushGit(task.cwd);
     await this.emitGitStatus(taskId);
     await this.emitGitDiff(taskId);
+    if (push) {
+      void pushGit(task.cwd)
+        .then(async () => {
+          await this.emitGitStatus(taskId);
+          await this.emitGitDiff(taskId);
+        })
+        .catch((error: unknown) => {
+          const messageText = humanizeUserFacingError(error);
+          this.emit(taskId, "server.error", { code: "git.push", message: messageText });
+        });
+    }
     return { ok: true };
   }
 
@@ -1157,14 +1185,11 @@ export class TaskService {
   private async reloadResources(taskId: string): Promise<PiResources> {
     this.requireTask(taskId);
     if (this.supervisor.has(taskId)) {
-      try {
-        await this.supervisor.rpcData(taskId, { type: "reload_skills" });
-      } catch {
-        // Optional on fake-pi / older Pi builds.
-      }
+      // Don't block the WS chain on Pi reload_skills (can hang while busy).
+      void this.supervisor.rpcData(taskId, { type: "reload_skills" }).catch(() => undefined);
     }
     const resources = await this.emitResources(taskId);
-    await this.emitCommands(taskId);
+    void this.emitCommands(taskId).catch(() => undefined);
     return resources;
   }
 
@@ -1565,11 +1590,9 @@ export class TaskService {
     await this.store.upsert(cloned);
     this.activeTaskId = cloned.id;
     this.emit(cloned.id, "task.created", { task: cloned });
-    try {
-      await this.activate(cloned.id);
-    } catch {
+    void this.activate(cloned.id).catch(() => {
       // Keep the cloned task even if Pi is unavailable.
-    }
+    });
     return { task: this.store.get(cloned.id) ?? cloned };
   }
 
@@ -1579,7 +1602,7 @@ export class TaskService {
     }
     await this.supervisor.stop(taskId, "SIGKILL");
     await this.apply(taskId, "pi_exit", error);
-    await this.drainQueue();
+    void this.drainQueue().catch(() => undefined);
   }
 
   private async drainQueue(): Promise<void> {

@@ -315,20 +315,31 @@ describe("agent store transcripts", () => {
       fileEntriesByTask: {},
       commandsByTask: {},
       termByTask: {},
+      archivingByTask: {},
     });
     const store = useAgentStore.getState();
     store.removeTaskOptimistic(gone.id);
     expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
     expect(useAgentStore.getState().activeTaskId).toBe(keep.id);
+    expect(useAgentStore.getState().archivingByTask[gone.id]).toBe(true);
     store.applyEvent(
       event({
         taskId: gone.id,
         sequence: 2,
         type: "task.updated",
-        payload: { task: { ...gone, status: "idle", archivedAt: now } },
+        payload: { task: { ...gone, status: "idle", archivedAt: null } },
       }),
     );
     expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
+    store.applyEvent(
+      event({
+        taskId: gone.id,
+        sequence: 3,
+        type: "task.archived",
+        payload: { taskId: gone.id },
+      }),
+    );
+    expect(useAgentStore.getState().archivingByTask[gone.id]).toBeUndefined();
   });
 });
 

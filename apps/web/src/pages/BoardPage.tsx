@@ -98,10 +98,8 @@ export function BoardPage() {
     const taskId = item.taskId;
     if (taskId) {
       useAgentStore.getState().setActiveTask(taskId);
-      void socketClient
-        .send("task.activate", {}, taskId)
-        .then(() => socketClient.send("snapshot.request", { taskId }, taskId))
-        .catch(() => undefined);
+      // Cold activate pushes snapshot on the reply path; skip a second request.
+      void socketClient.send("task.activate", {}, taskId).catch(() => undefined);
     }
     setConversationItem(item);
   }
@@ -109,11 +107,8 @@ export function BoardPage() {
   function openConversationFull(item: WorkItemSummary) {
     const taskId = item.taskId;
     if (taskId) {
+      // WorkbenchLayout's activeTaskId effect owns activate — avoid a duplicate pair.
       useAgentStore.getState().setActiveTask(taskId);
-      void socketClient
-        .send("task.activate", {}, taskId)
-        .then(() => socketClient.send("snapshot.request", { taskId }, taskId))
-        .catch(() => undefined);
     }
     navigate("/");
   }

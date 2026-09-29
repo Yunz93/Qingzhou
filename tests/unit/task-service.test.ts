@@ -129,8 +129,12 @@ describe("task service process reservations", () => {
     await service.activate(secondId);
     expect(store.get(secondId)?.status).toBe("queued");
 
-    release();
+    // activate no longer awaits boot — wait on the boot Promise itself.
     await Promise.all([first, duplicate]);
+    await vi.waitFor(() => expect(store.get(firstId)?.status).toBe("booting"));
+    release();
+    await vi.waitFor(() => expect(store.get(firstId)?.status).toBe("idle"));
+    service.dispose();
   });
 
   it("stays aborting until Pi settles instead of flipping idle on abort ack", async () => {
@@ -402,10 +406,9 @@ describe("task service process reservations", () => {
     });
     expect(archived).toEqual({ ok: true });
     expect(store.get(activeId)?.archivedAt).toBeTruthy();
-    expect(stop).toHaveBeenCalledWith(activeId);
     expect(events.some((event) => event.type === "task.archived")).toBe(true);
-    // drainQueue may start the queued boot in the background — archive itself must not wait on it.
-    expect(boot).not.toHaveBeenCalled();
+    // stop + drainQueue run in the background after the RPC returns.
+    await vi.waitFor(() => expect(stop).toHaveBeenCalledWith(activeId));
     await vi.waitFor(() => expect(boot).toHaveBeenCalledTimes(1));
     releaseBoot();
     await vi.waitFor(() => expect(store.get(queuedId)?.status).toBe("idle"));
