@@ -83,7 +83,11 @@ describe("agent-native work mode", () => {
     expect(board).toMatch(/await socketClient\.send\("workProject\.create"/);
     expect(board).toMatch(/await socketClient\.send\("workItem\.create"/);
     expect(board).not.toMatch(/setCreating\(false\);\s*void socketClient/);
-    expect(itemDialog).toMatch(/setBusy\(true\)/);
+    expect(itemDialog).toMatch(/setBusy\(start \? "start" : "plan"\)/);
+    expect(itemDialog).toMatch(/正在保存/);
+    expect(itemDialog).toMatch(/finally/);
+    expect(board).toMatch(/setFilter\("ready"\)/);
+    expect(board).toMatch(/已保存到计划/);
     expect(projectDialog).toMatch(/setBusy\(true\)/);
     expect(taskDialog).toMatch(/await onCreate\(/);
     expect(panel).toMatch(/Promise\.resolve\(onFeedback\(text\)\)/);
