@@ -79,6 +79,7 @@ export function busySubmitKind(mode: BusySendMode, shiftKey: boolean): BusySendM
 }
 
 export function clampInspectorWidth(width: number, viewport = typeof window === "undefined" ? 1280 : window.innerWidth): number {
-  const max = Math.max(INSPECTOR_WIDTH_MIN, Math.floor(viewport * 0.6));
+  // Keep ~2/3 of the previous ~40% conversation floor so the chat pane can shrink further.
+  const max = Math.max(INSPECTOR_WIDTH_MIN, Math.floor(viewport * (1 - (0.4 * 2) / 3)));
   return Math.min(max, Math.max(INSPECTOR_WIDTH_MIN, Math.round(width)));
 }

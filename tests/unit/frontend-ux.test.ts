@@ -40,7 +40,7 @@ describe("approval risk", () => {
 describe("ui prefs and tones", () => {
   it("clamps inspector width and maps status colors", () => {
     expect(clampInspectorWidth(120, 1200)).toBe(INSPECTOR_WIDTH_MIN);
-    expect(clampInspectorWidth(900, 1000)).toBe(600);
+    expect(clampInspectorWidth(900, 1000)).toBe(733);
     expect(taskStatusTone("running")).toBe("busy");
     expect(taskStatusTone("waiting_approval")).toBe("wait");
     expect(taskStatusTone("error")).toBe("danger");

@@ -113,7 +113,7 @@ async function createMainWindow(port: number): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
-    minWidth: 800,
+    minWidth: 533,
     minHeight: 600,
     title: "轻舟",
     backgroundColor: "#f5f5f7",
