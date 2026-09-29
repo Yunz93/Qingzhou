@@ -1340,7 +1340,8 @@ html.dark {
   .term-xterm {
     min-height: 0;
     flex: 1;
-    padding: 8px 10px 10px;
+    /* No top padding — it reads as a blank row above the shell prompt. */
+    padding: 0 10px 10px;
     background: transparent;
   }
 

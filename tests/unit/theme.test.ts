@@ -27,6 +27,7 @@ describe("theme", () => {
     expect(styles).toMatch(/\.term-shell\s*\{[^}]*background:\s*transparent/);
     expect(styles).toMatch(/\.term-head\s*\{[^}]*background:\s*transparent/);
     expect(styles).toMatch(/\.term-xterm \.xterm-viewport\s*\{[^}]*background:\s*transparent/);
+    expect(styles).toMatch(/\.term-xterm\s*\{[^}]*padding:\s*0 10px 10px/);
     expect(styles).not.toMatch(/always-dark terminal/);
   });
 });
