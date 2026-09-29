@@ -110,5 +110,7 @@ export function resolvePiToolsDir(): string | null {
 }
 
 export function preloadPath(mainDir: string): string {
+  const cjs = path.join(mainDir, "../preload/index.cjs");
+  if (fs.existsSync(cjs)) return cjs;
   return path.join(mainDir, "../preload/index.js");
 }
