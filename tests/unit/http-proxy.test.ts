@@ -3,6 +3,7 @@ import {
   isUnsupportedRegionError,
   normalizeProxyEnv,
   parsePacProxyResult,
+  proxiedFetch,
   readProxyUrl,
 } from "../../apps/server/src/setup/http-proxy.ts";
 import { humanizeAuthHttpError, humanizeUserFacingError } from "../../apps/server/src/setup/pi-agent-dir.ts";
@@ -32,5 +33,20 @@ describe("HTTP proxy and region errors", () => {
     expect(text).toMatch(/unsupported_country_region_territory/);
     expect(text).toMatch(/HTTPS_PROXY/);
     expect(text).not.toMatch(/密钥没有权限/);
+  });
+
+  it("routes proxiedFetch through the proxy when HTTPS_PROXY is set", async () => {
+    const prevHttps = process.env.HTTPS_PROXY;
+    const prevHttp = process.env.HTTP_PROXY;
+    process.env.HTTPS_PROXY = "http://127.0.0.1:9";
+    process.env.HTTP_PROXY = "http://127.0.0.1:9";
+    try {
+      await expect(proxiedFetch("https://example.com", { signal: AbortSignal.timeout(2000) })).rejects.toThrow();
+    } finally {
+      if (prevHttps === undefined) delete process.env.HTTPS_PROXY;
+      else process.env.HTTPS_PROXY = prevHttps;
+      if (prevHttp === undefined) delete process.env.HTTP_PROXY;
+      else process.env.HTTP_PROXY = prevHttp;
+    }
   });
 });

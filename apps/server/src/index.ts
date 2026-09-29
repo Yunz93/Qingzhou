@@ -35,6 +35,7 @@ export {
   applyEnvHttpProxy,
   normalizeProxyEnv,
   parsePacProxyResult,
+  proxiedFetch,
   readProxyUrl,
 } from "./setup/http-proxy.js";
 

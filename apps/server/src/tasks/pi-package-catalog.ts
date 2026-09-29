@@ -6,6 +6,7 @@ import {
   type PiPackageCatalogResult,
 } from "@qingzhou/protocol";
 import { qingzhouEnv } from "../config.js";
+import { proxiedFetch } from "../setup/http-proxy.js";
 
 const CATALOG_TIMEOUT_MS = 12_000;
 const CATALOG_TTL_MS = 5 * 60 * 1000;
@@ -172,7 +173,7 @@ export async function fetchPiPackageCatalog(input: {
     return cache.result;
   }
 
-  const fetchImpl = input.fetchImpl ?? fetch;
+  const fetchImpl = input.fetchImpl ?? proxiedFetch;
   const catalogUrl = piPackagesCatalogUrl(env);
   let lastError: unknown;
   try {
@@ -200,5 +201,6 @@ export async function fetchPiPackageCatalog(input: {
   }
 
   const detail = lastError instanceof Error ? lastError.message : "";
-  throw new Error(detail ? `无法加载插件中心。${detail}` : "无法加载插件中心。请检查网络后重试。");
+  const hint = "请检查网络，或设置 HTTPS_PROXY 后重启轻舟。";
+  throw new Error(detail ? `无法加载插件中心。${detail} ${hint}` : `无法加载插件中心。${hint}`);
 }

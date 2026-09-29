@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clearPiPackageCatalogCache,
@@ -75,5 +77,20 @@ describe("pi package catalog", () => {
         href: "https://pi.dev/packages/pi-lens",
       },
     ]);
+  });
+
+  it("mentions HTTPS_PROXY when both catalog sources fail", async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error("fetch failed");
+    };
+    await expect(fetchPiPackageCatalog({ fetchImpl, skipCache: true, env: {} })).rejects.toThrow(
+      /HTTPS_PROXY/,
+    );
+  });
+
+  it("uses proxiedFetch by default so catalog honors HTTP(S)_PROXY", () => {
+    const src = readFileSync(path.resolve("apps/server/src/tasks/pi-package-catalog.ts"), "utf8");
+    expect(src).toMatch(/proxiedFetch/);
+    expect(src).toMatch(/fetchImpl \?\? proxiedFetch/);
   });
 });

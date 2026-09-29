@@ -1194,7 +1194,7 @@ export class TaskService {
 
   private async checkResourceSkillUpdates(taskId: string, paths?: string[]): Promise<SkillUpdateCheckResult> {
     const task = this.requireTask(taskId);
-    await this.reloadResources(taskId);
+    // Scan the filesystem only — do not wait on Pi reload_skills (can hang while booting).
     const resources = this.resources.get(taskId) ?? (await this.emitResources(taskId));
     return checkSystemSkillUpdates({
       skills: resources.skills,
