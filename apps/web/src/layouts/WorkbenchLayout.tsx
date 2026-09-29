@@ -174,6 +174,20 @@ export function WorkbenchLayout() {
     () => (task ? workItems.find((item) => item.taskId === task.id) : undefined),
     [task, workItems],
   );
+  const resourceSummary = useMemo(() => {
+    if (!resources) return "";
+    return [
+      resources.agentsFiles.some((item) => item.kind === "agents")
+        ? "已加载 AGENTS.md"
+        : resources.agentsFiles.length > 0
+          ? "已加载上下文文件"
+          : null,
+      resources.skills.length ? `${resources.skills.length} 个技能` : null,
+      resources.extensions?.length ? `${resources.extensions.length} 个插件` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }, [resources]);
   const workTaskIds = useMemo(
     () => new Set(workItems.map((item) => item.taskId).filter((id): id is string => Boolean(id))),
     [workItems],
@@ -705,7 +719,7 @@ export function WorkbenchLayout() {
       {dockLeft ? <div className="flex h-full">{renderSidebar()}</div> : null}
       <div className="flex min-w-0 flex-1 flex-col bg-surface">
         <header
-          className={`titlebar app-drag flex items-center gap-2 border-b border-line px-3 ${dockLeft ? "" : "traffic-inline"}`}
+          className={`titlebar app-drag flex items-center gap-1.5 border-b border-line px-3 ${dockLeft ? "" : "traffic-inline"}`}
         >
           <button
             type="button"
@@ -724,112 +738,105 @@ export function WorkbenchLayout() {
             <Plus size={15} />
           </button>
           <ModeSwitcher />
-          <PiStatusRing status={status} size={16} />
-          <div className="app-no-drag min-w-0 flex-1">
-            {editingTitle && task ? (
-              <input
-                autoFocus
-                value={titleDraft}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                onBlur={() => {
-                  const skip = skipTitleCommitRef.current;
-                  skipTitleCommitRef.current = false;
-                  setEditingTitle(false);
-                  if (!skip) void renameTask(task.id, titleDraft);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
+          <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2 pl-0.5">
+            <PiStatusRing status={status} size={16} />
+            <div className="min-w-0 flex-1">
+              {editingTitle && task ? (
+                <input
+                  autoFocus
+                  value={titleDraft}
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onBlur={() => {
+                    const skip = skipTitleCommitRef.current;
                     skipTitleCommitRef.current = false;
                     setEditingTitle(false);
-                    void renameTask(task.id, titleDraft);
-                  }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    skipTitleCommitRef.current = true;
-                    setEditingTitle(false);
-                  }
-                }}
-                aria-label="会话标题"
-                className="h-7 w-full max-w-[min(100%,360px)] rounded-md bg-fill-strong px-1.5 text-[12.5px] font-medium tracking-tight text-ink"
-              />
-            ) : (
-              <div className="group/title flex min-w-0 items-center gap-1">
-                <p
-                  className="truncate text-[12.5px] font-medium tracking-tight text-ink"
-                  title={task ? "双击重命名" : undefined}
-                  onDoubleClick={() => {
-                    if (!task) return;
-                    setTitleDraft(task.title);
-                    setEditingTitle(true);
+                    if (!skip) void renameTask(task.id, titleDraft);
                   }}
-                >
-                  {task?.title ?? "还没有对话"}
-                </p>
-                {task ? (
-                  <button
-                    type="button"
-                    className="pressable icon-btn title-rename-btn"
-                    aria-label="重命名"
-                    onClick={() => {
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      skipTitleCommitRef.current = false;
+                      setEditingTitle(false);
+                      void renameTask(task.id, titleDraft);
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      skipTitleCommitRef.current = true;
+                      setEditingTitle(false);
+                    }
+                  }}
+                  aria-label="会话标题"
+                  className="h-7 w-full max-w-[min(100%,360px)] rounded-md bg-fill-strong px-1.5 text-[12.5px] font-medium tracking-tight text-ink"
+                />
+              ) : (
+                <div className="group/title flex min-w-0 items-center gap-1">
+                  <p
+                    className="truncate text-[12.5px] font-medium tracking-tight text-ink"
+                    title={task ? "双击重命名" : undefined}
+                    onDoubleClick={() => {
+                      if (!task) return;
                       setTitleDraft(task.title);
                       setEditingTitle(true);
                     }}
                   >
-                    <Pencil size={12} />
-                  </button>
+                    {task?.title ?? "还没有对话"}
+                  </p>
+                  {task ? (
+                    <button
+                      type="button"
+                      className="pressable icon-btn title-rename-btn"
+                      aria-label="重命名"
+                      onClick={() => {
+                        setTitleDraft(task.title);
+                        setEditingTitle(true);
+                      }}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  ) : null}
+                </div>
+              )}
+              <p className="titlebar-meta">
+                <span className="truncate">{headerSubtitle(task?.cwd, Boolean(task), status)}</span>
+                {resourceSummary ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="truncate">{resourceSummary}</span>
+                  </>
                 ) : null}
-              </div>
-            )}
-            <p className="hidden truncate text-[11px] text-mute sm:block">
-              {headerSubtitle(task?.cwd, Boolean(task), status)}
-            </p>
-          </div>
-          {resources &&
-          (resources.agentsFiles.length > 0 ||
-            resources.skills.length > 0 ||
-            (resources.extensions?.length ?? 0) > 0) ? (
-            <p className="chip app-no-drag hidden max-w-[260px] truncate lg:inline-flex">
-              {[
-                resources.agentsFiles.some((item) => item.kind === "agents")
-                  ? "已加载 AGENTS.md"
-                  : resources.agentsFiles.length > 0
-                    ? "已加载上下文文件"
-                    : null,
-                resources.skills.length ? `${resources.skills.length} 个技能` : null,
-                resources.extensions?.length ? `${resources.extensions.length} 个插件` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
-          ) : null}
-          {linkedWorkItem ? (
-            <Link
-              to={`/board?item=${linkedWorkItem.id}`}
-              className="chip app-no-drag hidden max-w-[200px] truncate text-accent lg:inline-flex"
-              title={linkedWorkItem.title}
-            >
-              任务 · {linkedWorkItem.title}
-            </Link>
-          ) : null}
-          {task ? (
-            <div className="app-no-drag hidden sm:block">
-              <ContextMeter
-                stats={stats}
-                runtime={runtime}
-                compact
-                messageCount={messageCount}
-                toolCount={tools.length}
-                onRefresh={() => void socketClient.send("session.stats", {}, task.id)}
-                onCompact={(customInstructions) =>
-                  void socketClient.send("session.compact", { customInstructions }, task.id)
-                }
-                onRuntimeSet={(payload) => void socketClient.send("runtime.set", payload, task.id)}
-              />
+                {linkedWorkItem ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <Link
+                      to={`/board?item=${linkedWorkItem.id}`}
+                      className="pressable shrink-0 text-accent hover:underline"
+                      title={linkedWorkItem.title}
+                    >
+                      任务 · {linkedWorkItem.title}
+                    </Link>
+                  </>
+                ) : null}
+              </p>
             </div>
-          ) : null}
-          <div className="app-no-drag flex items-center gap-0.5">
+          </div>
+          <div className="app-no-drag ml-auto flex shrink-0 items-center gap-0.5">
+            {task ? (
+              <div className="hidden sm:block">
+                <ContextMeter
+                  stats={stats}
+                  runtime={runtime}
+                  compact
+                  messageCount={messageCount}
+                  toolCount={tools.length}
+                  onRefresh={() => void socketClient.send("session.stats", {}, task.id)}
+                  onCompact={(customInstructions) =>
+                    void socketClient.send("session.compact", { customInstructions }, task.id)
+                  }
+                  onRuntimeSet={(payload) => void socketClient.send("runtime.set", payload, task.id)}
+                />
+              </div>
+            ) : null}
             <UpdateBanner />
             <ThemeToggle />
             <button
