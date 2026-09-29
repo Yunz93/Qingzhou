@@ -77,6 +77,10 @@ describe("running status copy", () => {
     expect(stage?.detail).toBe("");
   });
 
+  it("shows sending while waiting for prompt ack", () => {
+    expect(runStatusStage("idle", [], false, null, null, true)?.label).toBe("正在发送");
+  });
+
   it("uses the tool name without a second 正在 prefix", () => {
     expect(toolNameLabel("bash")).toBe("运行命令");
   });

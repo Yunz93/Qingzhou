@@ -276,6 +276,73 @@ describe("task service process reservations", () => {
     ).rejects.toThrow(/分叉/);
     service.dispose();
   });
+
+  it("returns task.create before Pi boot finishes and lets prompt wait on the same boot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "mypi-bg-boot-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const config: AppConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      piBin: "pi",
+      piCommand: "pi",
+      piPrefixArgs: [],
+      piExtraEnv: {},
+      dataDir: root,
+      allowedRoots: [root],
+      maxProcesses: 2,
+      mutations: "approval",
+      nodeEnv: "test",
+      approvalTimeoutMs: 1000,
+      allowedOrigins: [],
+      webDistDir: root,
+      approvalExtensionPath: path.join(root, "approval.ts"),
+      homeDir: root,
+      piBundled: false,
+      piAgentDir: path.join(root, ".pi", "agent"),
+      trustProject: false,
+    };
+    const service = new TaskService(config, store, "test", null);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let hasRuntime = false;
+    vi.spyOn(service.supervisor, "boot").mockImplementation(async () => {
+      await gate;
+      hasRuntime = true;
+      return { sessionPath: null, model: null, thinkingLevel: "off" };
+    });
+    vi.spyOn(service.supervisor, "has").mockImplementation(() => hasRuntime);
+    const rpc = vi.spyOn(service.supervisor, "rpcData").mockResolvedValue({});
+    vi.spyOn(service.supervisor, "setPendingClientMessageId").mockImplementation(() => undefined);
+
+    const created = (await service.handleCommand({
+      id: "create",
+      type: "task.create",
+      payload: { cwd: root, title: "bg boot" },
+    })) as { task: TaskRecord };
+    expect(created.task.id).toBeTruthy();
+    expect(hasRuntime).toBe(false);
+
+    const clientMessageId = "77777777-7777-4777-8777-777777777777";
+    const promptPromise = service.handleCommand({
+      id: "prompt",
+      type: "prompt.send",
+      taskId: created.task.id,
+      payload: { message: "hello after create", clientMessageId },
+    });
+    await vi.waitFor(() => expect(service.supervisor.boot).toHaveBeenCalled());
+    expect(rpc).not.toHaveBeenCalled();
+    release();
+    await expect(promptPromise).resolves.toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith(
+      created.task.id,
+      expect.objectContaining({ type: "prompt", message: expect.stringContaining("hello after create") }),
+    );
+    expect(service.supervisor.setPendingClientMessageId).toHaveBeenCalledWith(created.task.id, clientMessageId);
+    service.dispose();
+  });
 });
 
 describe("task service default model", () => {

@@ -34,6 +34,8 @@ export class SocketClient {
   private closedByUser = false;
   private connecting = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private deltaQueue: ServerEvent[] = [];
+  private deltaRaf: number | null = null;
 
   async connect(): Promise<void> {
     this.closedByUser = false;
@@ -55,6 +57,7 @@ export class SocketClient {
 
   disconnect(): void {
     this.closedByUser = true;
+    this.flushDeltaQueue();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -86,7 +89,34 @@ export class SocketClient {
     });
   }
 
+  private enqueueDeltas(events: ServerEvent[]): void {
+    this.deltaQueue.push(...events);
+    if (this.deltaRaf != null) return;
+    const schedule =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (cb: FrameRequestCallback) => setTimeout(cb, 16) as unknown as number;
+    this.deltaRaf = schedule(() => {
+      this.deltaRaf = null;
+      this.flushDeltaQueue();
+    });
+  }
+
+  private flushDeltaQueue(): void {
+    if (this.deltaRaf != null) {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.deltaRaf);
+      this.deltaRaf = null;
+    }
+    if (this.deltaQueue.length === 0) return;
+    const batch = this.deltaQueue.splice(0);
+    useAgentStore.getState().applyEvents(batch);
+  }
+
   private handleEvent(serverEvent: ServerEvent): void {
+    // Flush pending deltas before non-delta events so store order stays consistent.
+    if (serverEvent.type !== "message.delta" && serverEvent.type !== "term.chunk") {
+      this.flushDeltaQueue();
+    }
     useAgentStore.getState().applyEvent(serverEvent);
     if (serverEvent.type === "request.succeeded") {
       const pending = this.pending.get(serverEvent.payload.requestId);
@@ -148,18 +178,23 @@ export class SocketClient {
         const frame = result.data;
         events = "__batch" in frame ? frame.events : [frame];
       }
-      if (events.length > 1 && events.every((item) => item.type === "message.delta" || item.type === "term.chunk")) {
-        useAgentStore.getState().applyEvents(events);
+      if (events.every((item) => item.type === "message.delta" || item.type === "term.chunk")) {
+        this.enqueueDeltas(events);
         return;
       }
       for (const serverEvent of events) {
-        this.handleEvent(serverEvent);
+        if (serverEvent.type === "message.delta" || serverEvent.type === "term.chunk") {
+          this.enqueueDeltas([serverEvent]);
+        } else {
+          this.handleEvent(serverEvent);
+        }
       }
     });
 
     socket.addEventListener("close", () => {
       if (socket !== this.socket) return;
       this.socket = null;
+      this.flushDeltaQueue();
       useAgentStore.getState().setConnection("closed");
       failPendingRequests(this.pending, new Error("连接已断开，请稍后再发。"));
       this.scheduleReconnect();

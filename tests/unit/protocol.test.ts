@@ -45,6 +45,26 @@ describe("protocol", () => {
     ).toBe(false);
   });
 
+  it("accepts optional clientMessageId for optimistic prompts", () => {
+    const clientMessageId = "22222222-2222-4222-8222-222222222222";
+    expect(
+      clientCommandSchema.parse({
+        id: "opt",
+        type: "prompt.send",
+        taskId: "11111111-1111-4111-8111-111111111111",
+        payload: { message: "hi", clientMessageId },
+      }).payload.clientMessageId,
+    ).toBe(clientMessageId);
+    expect(
+      clientCommandSchema.safeParse({
+        id: "bad-id",
+        type: "prompt.send",
+        taskId: "11111111-1111-4111-8111-111111111111",
+        payload: { message: "hi", clientMessageId: "not-a-uuid" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates edits to queued prompts", () => {
     const command = {
       id: "queue-edit",

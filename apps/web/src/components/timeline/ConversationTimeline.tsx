@@ -112,7 +112,9 @@ function UserMessage({
   return (
     <article
       id={conversationMessageDomId(message.id)}
-      className={`flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-[16px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.6] tracking-[-0.01em] text-ink ${highlighted ? "conversation-search-hit" : ""}`}
+      className={`flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-[16px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.6] tracking-[-0.01em] text-ink ${
+        message.isError ? "opacity-70 ring-1 ring-danger/40" : ""
+      } ${highlighted ? "conversation-search-hit" : ""}`}
     >
       {editing ? (
         <div className="space-y-2">
@@ -146,6 +148,7 @@ function UserMessage({
             <p className="text-[12px] text-mute">附 {message.images.length} 张图</p>
           ) : null}
           <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {message.isError ? <span className="text-[11px] text-danger">发送失败</span> : null}
             {visible ? (
               <button
                 type="button"
@@ -253,6 +256,7 @@ export function ConversationTimeline({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pinnedRef = useRef(true);
   const userCountRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
   const [following, setFollowing] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -306,8 +310,23 @@ export function ConversationTimeline({
     }
     userCountRef.current = userCount;
     if (!pinnedRef.current) return;
-    scroller.scrollTop = scroller.scrollHeight;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (!pinnedRef.current) return;
+      const node = document.getElementById("main-content") ?? findScrollParent(rootRef.current);
+      if (node) node.scrollTop = node.scrollHeight;
+    });
   }, [messages, tools, searchOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!searchOpen || !activeMessageId) return;

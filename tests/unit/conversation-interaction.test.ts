@@ -75,6 +75,29 @@ describe("agent store transcripts", () => {
     expect(useAgentStore.getState().messages.map((item) => item.text)).toEqual(["from A", "still A"]);
   });
 
+  it("dedupes optimistic user bubbles when the server echoes the same clientMessageId", () => {
+    const store = useAgentStore.getState();
+    store.setActiveTask("task-opt");
+    const clientMessageId = "33333333-3333-4333-8333-333333333333";
+    store.appendOptimisticUserMessage("task-opt", userMessage(clientMessageId, "hello"));
+    expect(useAgentStore.getState().messages).toHaveLength(1);
+    store.applyEvent(
+      event({
+        taskId: "task-opt",
+        sequence: 1,
+        type: "message.started",
+        payload: { message: { ...userMessage(clientMessageId, "hello"), images: [{ mimeType: "image/png" }] } },
+      }),
+    );
+    const messages = useAgentStore.getState().messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.images?.[0]?.mimeType).toBe("image/png");
+    store.markMessageFailed("task-opt", clientMessageId);
+    expect(useAgentStore.getState().messages[0]?.isError).toBe(true);
+    store.removeMessage("task-opt", clientMessageId);
+    expect(useAgentStore.getState().messages).toEqual([]);
+  });
+
   it("keeps request errors after later unrelated successes", () => {
     const store = useAgentStore.getState();
     store.clearRequestError();

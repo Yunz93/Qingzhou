@@ -138,6 +138,7 @@ export function WorkbenchLayout() {
   composerImagesRef.current = composerImages;
   const [retryPrompt, setRetryPrompt] = useState<string | null>(null);
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
+  const [promptSending, setPromptSending] = useState(false);
   const sendingRef = useRef(false);
   const navigate = useNavigate();
 
@@ -396,45 +397,78 @@ export function WorkbenchLayout() {
     const taskId = task.id;
     const text = draft;
     const images = composerImages;
-    writeComposerDraft(taskId, text);
+    const clientMessageId = crypto.randomUUID();
+    const optimistic =
+      type === "prompt.send" && !linkedWorkItem
+        ? {
+            id: clientMessageId,
+            role: "user" as const,
+            text,
+            createdAt: new Date().toISOString(),
+            images: images.map((item) => ({
+              mimeType: "image/*",
+              name: item.name,
+              dataUrl: item.previewUrl,
+            })),
+          }
+        : null;
+
+    // Optimistic UI: show the user bubble and clear the composer on the next frame.
+    if (optimistic) {
+      useAgentStore.getState().appendOptimisticUserMessage(taskId, optimistic);
+    }
+    writeComposerDraft(taskId, "");
+    setDraft("");
+    setComposerImages([]);
+    for (const item of images) {
+      // Keep object URLs alive while the optimistic bubble references them.
+      if (!optimistic) URL.revokeObjectURL(item.previewUrl);
+    }
     sendingRef.current = true;
+    setPromptSending(true);
     setRetryPrompt(null);
     useAgentStore.getState().clearRequestError();
+
     try {
       if (type === "prompt.send" && linkedWorkItem) {
         await socketClient.send("workItem.feedback", { id: linkedWorkItem.id, text });
       } else {
-        if (type === "prompt.send" && (task.status === "stopped" || task.status === "error")) {
-          await socketClient.send("task.activate", {}, task.id);
+        if (type === "prompt.send" && (task.status === "stopped" || task.status === "error" || task.status === "booting")) {
+          // activate is safe while booting — it awaits the shared boot Promise.
+          if (task.status === "stopped" || task.status === "error") {
+            await socketClient.send("task.activate", {}, task.id);
+          }
         }
-        await socketClient.send(type, { message: text, imageIds: images.map((item) => item.id) }, task.id);
+        await socketClient.send(
+          type,
+          {
+            message: text,
+            imageIds: images.map((item) => item.id),
+            ...(optimistic ? { clientMessageId } : {}),
+          },
+          task.id,
+        );
       }
-      const stillThisTask = useAgentStore.getState().activeTaskId === taskId;
-      if (stillThisTask) {
-        setDraft((current) => {
-          if (current === text) writeComposerDraft(taskId, "");
-          return current === text ? "" : current;
-        });
-        setComposerImages((current) => {
-          const unchanged =
-            current.length === images.length && current.every((item, index) => item.id === images[index]?.id);
-          if (!unchanged) return current;
+      if (optimistic && images.length > 0) {
+        window.setTimeout(() => {
           for (const item of images) URL.revokeObjectURL(item.previewUrl);
-          return [];
-        });
-      } else {
-        writeComposerDraft(taskId, "");
-        for (const item of images) URL.revokeObjectURL(item.previewUrl);
+        }, 4000);
       }
     } catch (error) {
-      writeComposerDraft(taskId, text);
-      if (useAgentStore.getState().activeTaskId === taskId) {
-        setDraft((current) => current || text);
-        setComposerImages((current) => (current.length > 0 ? current : images));
+      if (optimistic) {
+        useAgentStore.getState().markMessageFailed(taskId, clientMessageId);
+        setRetryPrompt(text);
+      } else {
+        writeComposerDraft(taskId, text);
+        if (useAgentStore.getState().activeTaskId === taskId) {
+          setDraft((current) => current || text);
+          setComposerImages((current) => (current.length > 0 ? current : images));
+        }
       }
       reportRequestError(error);
     } finally {
       sendingRef.current = false;
+      setPromptSending(false);
     }
   };
 
@@ -444,18 +478,35 @@ export function WorkbenchLayout() {
   async function retryLastPrompt() {
     if (sendingRef.current || !task || !retryPrompt) return;
     const text = retryPrompt;
+    const clientMessageId = crypto.randomUUID();
+    // Drop previous failed optimistic bubble(s) with the same text before retrying.
+    const failed = useAgentStore
+      .getState()
+      .messages.filter((item) => item.role === "user" && item.isError && item.text === text);
+    for (const item of failed) {
+      useAgentStore.getState().removeMessage(task.id, item.id);
+    }
+    useAgentStore.getState().appendOptimisticUserMessage(task.id, {
+      id: clientMessageId,
+      role: "user",
+      text,
+      createdAt: new Date().toISOString(),
+    });
     sendingRef.current = true;
+    setPromptSending(true);
     try {
       if (task.status === "stopped" || task.status === "error") {
         await socketClient.send("task.activate", {}, task.id);
       }
-      await socketClient.send("prompt.send", { message: text }, task.id);
+      await socketClient.send("prompt.send", { message: text, clientMessageId }, task.id);
       setRetryPrompt(null);
     } catch (error) {
+      useAgentStore.getState().markMessageFailed(task.id, clientMessageId);
       setRetryPrompt(text);
       reportRequestError(error);
     } finally {
       sendingRef.current = false;
+      setPromptSending(false);
     }
   }
 
@@ -806,6 +857,7 @@ export function WorkbenchLayout() {
           hasChanges={hasChanges}
           runtime={runtime}
           errorMessage={task?.errorMessage || serverError || requestError}
+          sending={promptSending}
         />
         {!piAvailable ? (
           <div className="banner-note text-danger" role="alert">
@@ -857,7 +909,7 @@ export function WorkbenchLayout() {
         ) : null}
         {retryPrompt && (status === "idle" || status === "error" || status === "stopped") ? (
           <div className="banner-note text-ink" role="status">
-            已停止。
+            发送失败。
             <button type="button" className="pressable app-no-drag text-accent" onClick={() => void retryLastPrompt()}>
               重试上一条
             </button>
