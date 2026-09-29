@@ -4,7 +4,12 @@ import { X } from "lucide-react";
 type Props = {
   projectName: string;
   onCancel: () => void;
-  onCreate: (input: { title: string; description: string; acceptanceCriteria: string; start: boolean }) => void | Promise<void>;
+  onCreate: (input: {
+    title: string;
+    description: string;
+    acceptanceCriteria: string;
+    start: boolean;
+  }) => void | Promise<void>;
 };
 
 export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
@@ -12,7 +17,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
   const [description, setDescription] = useState("");
   const [acceptanceCriteria, setAcceptanceCriteria] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"plan" | "start" | null>(null);
 
   async function submit(start: boolean) {
     if (busy) return;
@@ -20,7 +25,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
       setError("请填写任务标题。");
       return;
     }
-    setBusy(true);
+    setBusy(start ? "start" : "plan");
     setError("");
     try {
       await onCreate({
@@ -31,7 +36,8 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
       });
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : "创建任务失败");
-      setBusy(false);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -109,14 +115,19 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
           ) : null}
         </div>
         <div className="dialog-actions">
-          <button type="button" className="pressable btn btn-ghost" onClick={onCancel} disabled={busy}>
+          <button type="button" className="pressable btn btn-ghost" onClick={onCancel} disabled={busy !== null}>
             取消
           </button>
-          <button type="button" className="pressable btn btn-secondary" onClick={() => void submit(false)} disabled={busy}>
-            保存到计划
+          <button
+            type="button"
+            className="pressable btn btn-secondary"
+            onClick={() => void submit(false)}
+            disabled={busy !== null}
+          >
+            {busy === "plan" ? "正在保存…" : "保存到计划"}
           </button>
-          <button type="submit" className="pressable btn btn-primary" disabled={busy}>
-            创建并开始
+          <button type="submit" className="pressable btn btn-primary" disabled={busy !== null}>
+            {busy === "start" ? "正在创建…" : "创建并开始"}
           </button>
         </div>
       </form>

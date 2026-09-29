@@ -28,7 +28,7 @@ export function BoardPage() {
   const allowedRoots = useAgentStore((state) => state.allowedRoots);
   const [creatingProject, setCreatingProject] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; kind: "error" | "ok" } | null>(null);
   const [filter, setFilter] = useState<WorkFilter>("all");
   const [query, setQuery] = useState("");
   const [details, setDetails] = useState<WorkItemDetails | null>(null);
@@ -70,7 +70,7 @@ export function BoardPage() {
       })
       .catch((error: unknown) => {
         if (!current) return;
-        setNotice(clientErrorMessage(error, "读取任务详情失败"));
+        setNotice({ text: clientErrorMessage(error, "读取任务详情失败"), kind: "error" });
         setDetails(null);
         setSearchParams({});
       });
@@ -80,7 +80,7 @@ export function BoardPage() {
   }, [focusItemId, selectedSummary?.updatedAt, selectedSummary?.runCount, selectedSummary?.feedbackCount, setSearchParams]);
 
   function showError(error: unknown, fallback: string) {
-    setNotice(clientErrorMessage(error, fallback));
+    setNotice({ text: clientErrorMessage(error, fallback), kind: "error" });
   }
 
   function openDetails(item: WorkItemSummary) {
@@ -173,8 +173,11 @@ export function BoardPage() {
         </div>
       </header>
       {notice ? (
-        <div className="banner-note flex items-center justify-between gap-3 text-danger" role="alert">
-          <span>{notice}</span>
+        <div
+          className={`banner-note flex items-center justify-between gap-3 ${notice.kind === "error" ? "text-danger" : "text-ink"}`}
+          role={notice.kind === "error" ? "alert" : "status"}
+        >
+          <span>{notice.text}</span>
           <button type="button" className="pressable btn btn-ghost" onClick={() => setNotice(null)}>
             关闭
           </button>
@@ -234,6 +237,14 @@ export function BoardPage() {
           onCreate={async (input) => {
             await socketClient.send("workItem.create", { ...input, projectId: project.id });
             setCreating(false);
+            setQuery("");
+            if (input.start) {
+              setFilter("working");
+              setNotice(null);
+            } else {
+              setFilter("ready");
+              setNotice({ text: "已保存到计划，可在「准备开始」里启动。", kind: "ok" });
+            }
           }}
         />
       ) : null}
