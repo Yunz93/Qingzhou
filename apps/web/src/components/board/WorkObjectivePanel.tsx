@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Check, RotateCcw, Send, X } from "lucide-react";
+import { ArrowUpRight, Check, RotateCcw, Send, Trash2, X } from "lucide-react";
 import type { WorkItemDetails, WorkRun } from "@qingzhou/protocol";
 
 type Props = {
@@ -9,6 +9,7 @@ type Props = {
   onFeedback: (text: string) => void | Promise<void>;
   onAccept: () => void;
   onReopen: () => void;
+  onDelete: () => void | Promise<void>;
   onOpenConversation: () => void;
 };
 
@@ -36,6 +37,7 @@ export function WorkObjectivePanel({
   onFeedback,
   onAccept,
   onReopen,
+  onDelete,
   onOpenConversation,
 }: Props) {
   const { item, runs, feedback } = details;
@@ -44,11 +46,15 @@ export function WorkObjectivePanel({
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(item.acceptanceCriteria);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     setTitle(item.title);
     setDescription(item.description);
     setAcceptanceCriteria(item.acceptanceCriteria);
+    setConfirmDelete(false);
+    setDeleteBusy(false);
   }, [item.id, item.title, item.description, item.acceptanceCriteria]);
 
   const dirty =
@@ -167,7 +173,9 @@ export function WorkObjectivePanel({
             <div className="work-panel-section-head">
               <div>
                 <h3 id="work-history-heading">执行记录</h3>
-                <p>{runs.length} 轮执行，{feedback.length} 条补充要求</p>
+                <p>
+                  {runs.length} 轮执行，{feedback.length} 条补充要求
+                </p>
               </div>
               {item.taskId ? (
                 <button type="button" className="pressable btn btn-ghost" onClick={onOpenConversation}>
@@ -197,17 +205,56 @@ export function WorkObjectivePanel({
         </div>
 
         <footer className="work-panel-foot">
-          {item.state === "completed" ? (
-            <button type="button" className="pressable btn btn-secondary" onClick={onReopen}>
-              <RotateCcw size={13} />
-              重新打开
-            </button>
-          ) : !activeRun && runs.at(0)?.status === "succeeded" ? (
-            <button type="button" className="pressable btn btn-primary" onClick={onAccept}>
-              <Check size={13} />
-              接受并完成
-            </button>
-          ) : null}
+          <div className="work-panel-foot-start">
+            {confirmDelete ? (
+              <>
+                <span className="text-[11px] text-mute">删除后不可恢复</span>
+                <button
+                  type="button"
+                  className="pressable btn btn-ghost"
+                  disabled={deleteBusy}
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="pressable btn btn-danger"
+                  disabled={deleteBusy}
+                  onClick={() => {
+                    if (deleteBusy) return;
+                    setDeleteBusy(true);
+                    void Promise.resolve(onDelete()).finally(() => setDeleteBusy(false));
+                  }}
+                >
+                  <Trash2 size={13} />
+                  {deleteBusy ? "删除中…" : "确认删除"}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="pressable btn btn-ghost text-danger"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={13} />
+                删除
+              </button>
+            )}
+          </div>
+          <div className="work-panel-foot-end">
+            {item.state === "completed" ? (
+              <button type="button" className="pressable btn btn-secondary" onClick={onReopen}>
+                <RotateCcw size={13} />
+                重新打开
+              </button>
+            ) : !activeRun && runs.at(0)?.status === "succeeded" ? (
+              <button type="button" className="pressable btn btn-primary" onClick={onAccept}>
+                <Check size={13} />
+                接受并完成
+              </button>
+            ) : null}
+          </div>
         </footer>
       </aside>
     </div>

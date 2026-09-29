@@ -237,6 +237,17 @@ export class WorkItemController {
     return { item: next };
   }
 
+  async deleteWorkItem(id: string): Promise<{ ok: true }> {
+    const item = this.host.workItems.get(id);
+    if (!item) throw new Error("找不到这个目标");
+    if (item.taskId && this.host.workItems.activeRunForTask(item.taskId)) {
+      await this.stopWorkItem(id);
+    }
+    await this.host.workItems.delete(id);
+    this.emitWorkItems();
+    return { ok: true };
+  }
+
   async reorderWorkItem(id: string, beforeId?: string | null): Promise<{ item: WorkItem }> {
     const item = await this.host.workItems.reorder(id, beforeId);
     this.emitWorkItems();

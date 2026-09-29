@@ -58,6 +58,33 @@ describe("WorkItemStore", () => {
     expect(store.get(item.id)?.completedAt).toBeTruthy();
   });
 
+  it("deletes an objective along with its runs and feedback", async () => {
+    const root = await tempRoot();
+    const store = new WorkItemStore(root);
+    await store.load();
+    const keep = await store.create({ title: "keep me", cwd: root });
+    const gone = await store.create({ title: "remove me", cwd: root });
+    await store.addFeedback(gone.id, "note");
+    await store.createRun({
+      objectiveId: gone.id,
+      taskId: "33333333-3333-4333-8333-333333333333",
+      kind: "initial",
+      instruction: "do it",
+    });
+
+    await store.delete(gone.id);
+    expect(store.get(gone.id)).toBeUndefined();
+    expect(store.getDetails(gone.id)).toBeUndefined();
+    expect(store.list().map((item) => item.id)).toEqual([keep.id]);
+    expect(JSON.parse(await readFile(path.join(root, "work-items.json"), "utf8")).runs).toEqual([]);
+    expect(JSON.parse(await readFile(path.join(root, "work-items.json"), "utf8")).feedback).toEqual([]);
+
+    const reloaded = new WorkItemStore(root);
+    await reloaded.load();
+    expect(reloaded.get(gone.id)).toBeUndefined();
+    expect(reloaded.list().map((item) => item.id)).toEqual([keep.id]);
+  });
+
   it("migrates the v2 board into objectives and runs while preserving a backup", async () => {
     const root = await tempRoot();
     const legacy = {

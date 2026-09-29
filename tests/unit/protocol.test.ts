@@ -289,6 +289,13 @@ describe("protocol", () => {
     });
     expect(
       clientCommandSchema.parse({
+        id: "10d",
+        type: "workItem.delete",
+        payload: { id: "11111111-1111-4111-8111-111111111111" },
+      }).payload,
+    ).toEqual({ id: "11111111-1111-4111-8111-111111111111" });
+    expect(
+      clientCommandSchema.parse({
         id: "11",
         type: "workItem.feedback",
         payload: { id: "11111111-1111-4111-8111-111111111111", text: "also handle 403" },

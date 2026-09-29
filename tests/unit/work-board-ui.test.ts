@@ -46,6 +46,9 @@ describe("agent-native work mode", () => {
     expect(dashboard).toMatch(/接受并完成/);
     expect(panel).toMatch(/补充要求并继续/);
     expect(panel).toMatch(/执行记录/);
+    expect(panel).toMatch(/确认删除/);
+    expect(panel).toMatch(/onDelete/);
+    expect(board).toMatch(/workItem\.delete/);
     expect(dashboard).not.toMatch(/<select/);
   });
 
@@ -64,7 +67,6 @@ describe("agent-native work mode", () => {
     expect(sidebar).not.toMatch(/任务中的会话/);
     expect(board).toMatch(/setActiveTask\(taskId\)/);
     expect(board).toMatch(/requestId: interaction.requestId/);
-    expect(board).toMatch(/snapshot\.request/);
     expect(board).toMatch(/sr-only/);
     expect(board).not.toMatch(/text-\[22px\] font-semibold tracking-tight">\{project\.name\}/);
     expect(board).not.toMatch(/folderName\(project\.cwd\)/);

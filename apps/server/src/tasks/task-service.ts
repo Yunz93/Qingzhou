@@ -280,6 +280,8 @@ export class TaskService {
         return this.setWorkItemState(command.payload.id, "open");
       case "workItem.archive":
         return this.setWorkItemState(command.payload.id, "archived");
+      case "workItem.delete":
+        return this.deleteWorkItem(command.payload.id);
       case "workItem.reorder":
         return this.reorderWorkItem(command.payload.id, command.payload.beforeId);
       case "workItem.details":
@@ -1765,6 +1767,10 @@ export class TaskService {
 
   private async setWorkItemState(id: string, state: "open" | "completed" | "archived"): Promise<{ item: WorkItem }> {
     return this.work.setWorkItemState(id, state);
+  }
+
+  private async deleteWorkItem(id: string): Promise<{ ok: true }> {
+    return this.work.deleteWorkItem(id);
   }
 
   private async reorderWorkItem(id: string, beforeId?: string | null): Promise<{ item: WorkItem }> {

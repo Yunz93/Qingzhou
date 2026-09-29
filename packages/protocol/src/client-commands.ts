@@ -511,6 +511,11 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ...commandBase,
+    type: z.literal("workItem.delete"),
+    payload: z.object({ id: z.string().uuid() }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal("workItem.reorder"),
     payload: z.object({
       id: z.string().uuid(),

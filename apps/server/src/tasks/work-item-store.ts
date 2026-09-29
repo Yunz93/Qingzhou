@@ -280,6 +280,17 @@ export class WorkItemStore {
     return this.get(id)!;
   }
 
+  /** Permanently remove an objective and its runs / feedback. */
+  async delete(id: string): Promise<void> {
+    const index = this.requireItemIndex(id);
+    const current = this.state.items[index]!;
+    this.state.items.splice(index, 1);
+    this.state.runs = this.state.runs.filter((run) => run.objectiveId !== id);
+    this.state.feedback = this.state.feedback.filter((entry) => entry.objectiveId !== id);
+    this.touchProject(current.projectId, new Date().toISOString());
+    await this.flush();
+  }
+
   async addFeedback(id: string, text: string): Promise<WorkItemFeedback> {
     const item = this.get(id);
     if (!item) throw new Error("找不到这个目标");

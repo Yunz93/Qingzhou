@@ -139,6 +139,19 @@ export function BoardPage() {
     void socketClient.send("workItem.archive", { id }).catch((error: unknown) => showError(error, "归档失败"));
   }
 
+  function deleteItem(id: string) {
+    setNotice(null);
+    return socketClient
+      .send("workItem.delete", { id })
+      .then(() => {
+        closeDetails();
+      })
+      .catch((error: unknown) => {
+        showError(error, "删除失败");
+        throw error;
+      });
+  }
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
       <a className="skip-link" href="#main-content">
@@ -270,6 +283,7 @@ export function BoardPage() {
           }}
           onAccept={() => acceptItem(focusItemId)}
           onReopen={() => reopenItem(focusItemId)}
+          onDelete={() => deleteItem(focusItemId)}
           onOpenConversation={() => {
             if (selectedSummary) openConversation(selectedSummary);
           }}
