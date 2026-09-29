@@ -8,7 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { readProxyUrl } from "./http-proxy.js";
+import { proxiedFetch } from "./http-proxy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -765,20 +765,7 @@ async function resolveLatestReleaseTag(
 export async function githubFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has("user-agent")) headers.set("user-agent", "qingzhou-update-check");
-  const next: RequestInit = { ...init, headers };
-  const proxy = readProxyUrl();
-  if (proxy) {
-    try {
-      const undici = await import("undici");
-      if (typeof undici.EnvHttpProxyAgent === "function" && typeof undici.fetch === "function") {
-        const dispatcher = new undici.EnvHttpProxyAgent();
-        return (await undici.fetch(url, { ...next, dispatcher } as never)) as unknown as Response;
-      }
-    } catch {
-      // fall through to global fetch
-    }
-  }
-  return fetch(url, next);
+  return proxiedFetch(url, { ...init, headers });
 }
 
 async function fetchJsonDocument(url: string): Promise<unknown> {

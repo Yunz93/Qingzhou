@@ -29,10 +29,21 @@ describe("desktop setup menu and export open", () => {
     expect(src).toMatch(/payload\?\.relaunch !== false/);
   });
 
-  it("adopts the system proxy for GitHub as well as OpenAI", () => {
+  it("adopts the system proxy for GitHub, OpenAI, pi.dev, and npm", () => {
     const src = readFileSync(path.resolve("apps/desktop/src/main/system-proxy.ts"), "utf8");
     expect(src).toContain("https://api.github.com");
     expect(src).toContain("https://api.openai.com");
+    expect(src).toContain("https://pi.dev");
+    expect(src).toContain("https://registry.npmjs.org");
+  });
+
+  it("checks skill updates without waiting on Pi reload_skills", () => {
+    const src = readFileSync(path.resolve("apps/server/src/tasks/task-service.ts"), "utf8");
+    const start = src.indexOf("private async checkResourceSkillUpdates");
+    const end = src.indexOf("private async updateResourceSkills", start);
+    const block = src.slice(start, end);
+    expect(block).toMatch(/emitResources/);
+    expect(block).not.toMatch(/reloadResources/);
   });
 
   it("records the packaged app path for in-app replace", () => {

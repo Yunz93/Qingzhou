@@ -1,8 +1,4 @@
-type UndiciMod = {
-  EnvHttpProxyAgent?: new (options?: { httpProxy?: string; httpsProxy?: string; noProxy?: string }) => unknown;
-  ProxyAgent?: new (url: string) => unknown;
-  setGlobalDispatcher?: (dispatcher: unknown) => void;
-};
+import * as undici from "undici";
 
 const LOCAL_NO_PROXY = "127.0.0.1,localhost,::1";
 
@@ -51,7 +47,6 @@ export async function applyEnvHttpProxy(env: NodeJS.ProcessEnv = process.env): P
   const proxy = normalizeProxyEnv(env);
   if (!proxy) return null;
   try {
-    const undici = (await import("undici")) as unknown as UndiciMod;
     if (typeof undici.EnvHttpProxyAgent === "function" && typeof undici.setGlobalDispatcher === "function") {
       undici.setGlobalDispatcher(new undici.EnvHttpProxyAgent());
     } else if (typeof undici.ProxyAgent === "function" && typeof undici.setGlobalDispatcher === "function") {
@@ -61,4 +56,18 @@ export async function applyEnvHttpProxy(env: NodeJS.ProcessEnv = process.env): P
     // Env is still set so child processes and https.request can pick it up.
   }
   return proxy;
+}
+
+/**
+ * Outbound fetch that honors HTTP(S)_PROXY via undici's EnvHttpProxyAgent.
+ * Electron/Node global `fetch` may ignore the npm-undici dispatcher, so callers that
+ * must reach the public internet (plugin catalog, GitHub) should use this helper.
+ */
+export async function proxiedFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const proxy = readProxyUrl();
+  if (proxy) {
+    const dispatcher = new undici.EnvHttpProxyAgent();
+    return (await undici.fetch(input as never, { ...init, dispatcher } as never)) as unknown as Response;
+  }
+  return fetch(input, init);
 }
