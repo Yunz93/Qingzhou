@@ -13,7 +13,8 @@ describe("agent-native work mode", () => {
 
     expect(router).toMatch(/path="\/board"/);
     expect(layout).toMatch(/ModeSwitcher/);
-    expect(layout).toMatch(/任务 · /);
+    expect(layout).toMatch(/titlebar-work-link/);
+    expect(layout).toMatch(/titlebar-work-link[\s\S]*?任务/);
     expect(mode).toMatch(/对话/);
     expect(mode).toMatch(/工作/);
     expect(board).toMatch(/启动项目/);

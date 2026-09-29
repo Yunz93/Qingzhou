@@ -174,20 +174,6 @@ export function WorkbenchLayout() {
     () => (task ? workItems.find((item) => item.taskId === task.id) : undefined),
     [task, workItems],
   );
-  const resourceSummary = useMemo(() => {
-    if (!resources) return "";
-    return [
-      resources.agentsFiles.some((item) => item.kind === "agents")
-        ? "已加载 AGENTS.md"
-        : resources.agentsFiles.length > 0
-          ? "已加载上下文文件"
-          : null,
-      resources.skills.length ? `${resources.skills.length} 个技能` : null,
-      resources.extensions?.length ? `${resources.extensions.length} 个插件` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }, [resources]);
   const workTaskIds = useMemo(
     () => new Set(workItems.map((item) => item.taskId).filter((id): id is string => Boolean(id))),
     [workItems],
@@ -738,9 +724,9 @@ export function WorkbenchLayout() {
             <Plus size={15} />
           </button>
           <ModeSwitcher />
-          <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2 pl-0.5">
+          <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2">
             <PiStatusRing status={status} size={16} />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 leading-tight">
               {editingTitle && task ? (
                 <input
                   autoFocus
@@ -795,32 +781,21 @@ export function WorkbenchLayout() {
                       <Pencil size={12} />
                     </button>
                   ) : null}
-                </div>
-              )}
-              <p className="titlebar-meta">
-                <span className="truncate">{headerSubtitle(task?.cwd, Boolean(task), status)}</span>
-                {resourceSummary ? (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span className="truncate">{resourceSummary}</span>
-                  </>
-                ) : null}
-                {linkedWorkItem ? (
-                  <>
-                    <span aria-hidden="true">·</span>
+                  {linkedWorkItem ? (
                     <Link
                       to={`/board?item=${linkedWorkItem.id}`}
-                      className="pressable shrink-0 text-accent hover:underline"
+                      className="pressable titlebar-work-link"
                       title={linkedWorkItem.title}
                     >
-                      任务 · {linkedWorkItem.title}
+                      任务
                     </Link>
-                  </>
-                ) : null}
-              </p>
+                  ) : null}
+                </div>
+              )}
+              <p className="titlebar-meta truncate">{headerSubtitle(task?.cwd, Boolean(task), status)}</p>
             </div>
           </div>
-          <div className="app-no-drag ml-auto flex shrink-0 items-center gap-0.5">
+          <div className="app-no-drag flex shrink-0 items-center gap-0.5">
             {task ? (
               <div className="hidden sm:block">
                 <ContextMeter

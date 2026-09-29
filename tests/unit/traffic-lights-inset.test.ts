@@ -43,8 +43,10 @@ describe("macOS traffic-light inset", () => {
     expect(layout).toMatch(/dockLeft \? "" : "traffic-inline"/);
     expect(layout).toMatch(/MessageSquare[\s\S]*会话/);
     expect(layout).toMatch(/titlebar-meta/);
-    expect(layout).toMatch(/ml-auto flex shrink-0/);
+    expect(layout).toMatch(/titlebar-work-link/);
+    expect(layout).toMatch(/flex shrink-0 items-center gap-0\.5/);
     expect(layout).not.toMatch(/className="chip app-no-drag/);
+    expect(layout).not.toMatch(/已加载 AGENTS\.md/);
   });
 
   it("tags Electron shells before React mounts and falls back without preload", () => {

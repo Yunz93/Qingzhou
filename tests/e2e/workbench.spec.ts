@@ -227,12 +227,13 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await page.getByLabel("标题").fill("MVP task");
   await page.getByRole("button", { name: "创建对话" }).click();
   await expect(page.getByRole("banner").getByText("MVP task")).toBeVisible();
-  await expect(page.getByText("已加载 AGENTS.md")).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "详情" }).click();
   await page.getByRole("button", { name: "资源" }).click();
   await page.getByRole("button", { name: "约定" }).click();
-  await expect(page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "AGENTS.md" }).first()).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "AGENTS.md" }).first()).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByRole("button", { name: "技能" }).click();
   await expect(page.getByRole("complementary", { name: "详情" }).getByText("demo")).toBeVisible();
   await expect(page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "检查更新" })).toBeVisible();

@@ -209,19 +209,32 @@ html.dark {
 
   .titlebar-meta {
     display: none;
-    min-width: 0;
-    align-items: center;
-    gap: 4px;
+    max-width: 100%;
     overflow: hidden;
     color: var(--color-mute);
     font-size: 11px;
-    line-height: 1.3;
+    line-height: 1.25;
+    text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .titlebar-work-link {
+    display: inline-flex;
+    height: 18px;
+    min-height: 18px;
+    align-items: center;
+    border-radius: 5px;
+    background: var(--color-fill);
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 510;
+    color: var(--color-accent);
+    line-height: 1;
   }
 
   @media (min-width: 640px) {
     .titlebar-meta {
-      display: flex;
+      display: block;
     }
   }
 
