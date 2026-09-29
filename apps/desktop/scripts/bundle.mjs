@@ -32,8 +32,9 @@ await esbuild.build({
   entryPoints: ["src/preload/index.ts"],
   bundle: true,
   platform: "node",
-  format: "esm",
-  outfile: "out/preload/index.js",
+  // CJS preload is more reliable with sandbox:true across Electron versions.
+  format: "cjs",
+  outfile: "out/preload/index.cjs",
   external: ["electron"],
   sourcemap: true,
 });

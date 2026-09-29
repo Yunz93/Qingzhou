@@ -140,6 +140,15 @@ async function createMainWindow(port: number): Promise<void> {
     mainWindow = null;
   });
 
+  // Guarantee traffic-light inset even if the renderer misses html.desktop attrs
+  // (preload lag / Vite HMR). Only needed on macOS hiddenInset chrome.
+  if (process.platform === "darwin") {
+    void mainWindow.webContents.insertCSS(`
+      html { --traffic-lights-inset: 80px; }
+      .traffic-inline { padding-left: 80px !important; }
+    `);
+  }
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };

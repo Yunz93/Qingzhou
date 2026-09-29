@@ -33,7 +33,7 @@ describe("macOS traffic-light inset", () => {
     const { layered, rest } = stripLayer(css, "components");
     expect(layered).not.toMatch(/\.traffic-inline/);
     expect(rest).toMatch(
-      /html\.desktop\[data-platform="darwin"\]\s+\.traffic-inline\s*\{[^}]*padding-left:\s*var\(--traffic-lights-inset\)/,
+      /html\.desktop\[data-platform="darwin"\]\s+\.traffic-inline\s*\{[^}]*padding-left:\s*var\(--traffic-lights-inset\)\s*!important/,
     );
     expect(rest).toMatch(/--traffic-lights-inset:\s*80px/);
   });
@@ -42,5 +42,24 @@ describe("macOS traffic-light inset", () => {
     const layout = readFileSync(path.resolve("apps/web/src/layouts/WorkbenchLayout.tsx"), "utf8");
     expect(layout).toMatch(/dockLeft \? "" : "traffic-inline"/);
     expect(layout).toMatch(/MessageSquare[\s\S]*会话/);
+  });
+
+  it("tags Electron shells before React mounts and falls back without preload", () => {
+    const html = readFileSync(path.resolve("apps/web/index.html"), "utf8");
+    expect(html).toMatch(/Electron/i);
+    expect(html).toMatch(/dataset\.platform/);
+    expect(html).toMatch(/classList\.toggle\("desktop"/);
+
+    const bridge = readFileSync(path.resolve("apps/web/src/desktop-bridge.ts"), "utf8");
+    expect(bridge).toMatch(/platformFromUserAgent/);
+    expect(bridge).toMatch(/applyDesktopDocumentAttrs/);
+
+    const desktopMain = readFileSync(path.resolve("apps/desktop/src/main/index.ts"), "utf8");
+    expect(desktopMain).toMatch(/insertCSS/);
+    expect(desktopMain).toMatch(/traffic-inline/);
+
+    const bundle = readFileSync(path.resolve("apps/desktop/scripts/bundle.mjs"), "utf8");
+    expect(bundle).toMatch(/format:\s*"cjs"/);
+    expect(bundle).toMatch(/index\.cjs/);
   });
 });

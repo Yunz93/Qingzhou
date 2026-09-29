@@ -1551,15 +1551,15 @@ html.dark {
   }
 }
 
-/* Unlayered so this beats Tailwind utilities like px-3 / pl-*. The previous
-   rule lived in @layer components and lost to those classes, so 「会话」 sat
-   under the macOS traffic lights (hiddenInset at x:16). */
+/* Unlayered + !important so this beats Tailwind utilities like px-3 / pl-*.
+   Without this, 「会话」 / ModeSwitcher sit under macOS traffic lights
+   (hiddenInset at x:16), especially in local `pnpm desktop:dev`. */
 html.desktop[data-platform="darwin"] {
   --traffic-lights-inset: 80px;
 }
 
 html.desktop[data-platform="darwin"] .traffic-inline {
-  padding-left: var(--traffic-lights-inset);
+  padding-left: var(--traffic-lights-inset) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
