@@ -117,11 +117,26 @@ export function workItemPrompt(item: {
   if (description) sections.push(`目标说明：\n${description}`);
   if (acceptanceCriteria) sections.push(`验收标准：\n${acceptanceCriteria}`);
   if (feedback.length > 0) sections.push(`补充要求：\n${feedback.join("\n\n")}`);
-  return `请完成下面这个工作目标。完成本轮后总结结果、验证情况和仍需用户决定的问题。\n\n${sections.join("\n\n")}`;
+  return [
+    "请完成下面这个工作目标。",
+    "这是工作台已启动的执行轮次：用户已确认要做，不要再等确认，也不要只输出计划就结束。",
+    "可先用一两句话说明本轮范围，然后立即改代码、跑相关验证并推进验收标准。",
+    "若项目里的 AGENTS.md / 约定要求「先确认再改」，对本轮以本说明为准。",
+    "完成本轮后总结结果、验证情况和仍需用户决定的问题。",
+    "",
+    sections.join("\n\n"),
+  ].join("\n");
 }
 
 export function workItemFeedbackPrompt(item: { title: string }, text: string): string {
-  return `请继续工作目标「${item.title}」。先检查当前工作状态，不要重复已经完成的操作。下面是新的补充要求：\n\n${text.trim()}`;
+  return [
+    `请继续工作目标「${item.title}」。`,
+    "这是工作台补充要求后的新一轮：用户已确认继续，不要再等确认，也不要只输出计划就结束。",
+    "先检查当前工作状态，不要重复已经完成的操作，然后立即实施下面的补充要求。",
+    "若项目里的 AGENTS.md / 约定要求「先确认再改」，对本轮以本说明为准。",
+    "",
+    text.trim(),
+  ].join("\n");
 }
 
 /** Compatibility alias for old callers while workItem.append remains accepted. */

@@ -49,6 +49,9 @@ describe("agent-native work item contracts", () => {
     expect(prompt).toContain("目标说明：\nhandle 401");
     expect(prompt).toContain("验收标准：\ntests pass");
     expect(prompt).toContain("补充要求：\nalso handle 403");
+    expect(prompt).toContain("不要再等确认");
+    expect(prompt).toContain("不要只输出计划就结束");
+    expect(prompt).toContain("立即改代码");
   });
 
   it("builds a continuation prompt that preserves existing progress", () => {
@@ -56,6 +59,8 @@ describe("agent-native work item contracts", () => {
     expect(prompt).toContain("fix login");
     expect(prompt).toContain("不要重复已经完成的操作");
     expect(prompt).toContain("also handle 403");
+    expect(prompt).toContain("不要再等确认");
+    expect(prompt).toContain("立即实施");
   });
 
   it("keeps completion separate from execution status", () => {
