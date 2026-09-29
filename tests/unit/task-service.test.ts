@@ -343,6 +343,75 @@ describe("task service process reservations", () => {
     expect(service.supervisor.setPendingClientMessageId).toHaveBeenCalledWith(created.task.id, clientMessageId);
     service.dispose();
   });
+
+  it("archives without waiting on drainQueue boot and ignores late boot updates", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "mypi-archive-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const activeId = "77777777-7777-4777-8777-777777777777";
+    const queuedId = "88888888-8888-4888-8888-888888888888";
+    await store.upsert({ ...task(activeId, root), status: "idle" });
+    await store.upsert({ ...task(queuedId, root), status: "queued" });
+    const config: AppConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      piBin: "pi",
+      piCommand: "pi",
+      piPrefixArgs: [],
+      piExtraEnv: {},
+      dataDir: root,
+      allowedRoots: [root],
+      maxProcesses: 1,
+      mutations: "approval",
+      nodeEnv: "test",
+      approvalTimeoutMs: 1000,
+      allowedOrigins: [],
+      webDistDir: root,
+      approvalExtensionPath: path.join(root, "approval.ts"),
+      homeDir: root,
+      piBundled: false,
+      piAgentDir: path.join(root, ".pi", "agent"),
+      trustProject: false,
+    };
+    const service = new TaskService(config, store, "test", null);
+    (service as unknown as { queue: string[] }).queue.push(queuedId);
+    vi.spyOn(service.supervisor, "has").mockReturnValue(true);
+    const stop = vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
+    let releaseBoot!: () => void;
+    const bootGate = new Promise<void>((resolve) => {
+      releaseBoot = resolve;
+    });
+    const boot = vi.spyOn(service.supervisor, "boot").mockImplementation(async () => {
+      await bootGate;
+      return { sessionPath: null, model: null, thinkingLevel: "off" };
+    });
+    const events: Array<{ type: string }> = [];
+    service.addSocket({
+      closed: false,
+      send: (raw) => {
+        const parsed = JSON.parse(String(raw)) as { type?: string };
+        if (parsed.type) events.push({ type: parsed.type });
+      },
+    });
+
+    const archived = await service.handleCommand({
+      id: "arch-1",
+      type: "task.archive",
+      taskId: activeId,
+      payload: {},
+    });
+    expect(archived).toEqual({ ok: true });
+    expect(store.get(activeId)?.archivedAt).toBeTruthy();
+    expect(stop).toHaveBeenCalledWith(activeId);
+    expect(events.some((event) => event.type === "task.archived")).toBe(true);
+    // drainQueue may start the queued boot in the background — archive itself must not wait on it.
+    expect(boot).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(boot).toHaveBeenCalledTimes(1));
+    releaseBoot();
+    await vi.waitFor(() => expect(store.get(queuedId)?.status).toBe("idle"));
+    expect(store.get(activeId)?.archivedAt).toBeTruthy();
+    service.dispose();
+  });
 });
 
 describe("task service default model", () => {

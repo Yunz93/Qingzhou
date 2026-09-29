@@ -306,6 +306,8 @@ type AgentState = {
   appendOptimisticUserMessage: (taskId: string, message: TimelineMessage) => void;
   markMessageFailed: (taskId: string, messageId: string) => void;
   removeMessage: (taskId: string, messageId: string) => void;
+  /** Optimistic sidebar remove while task.archive is in flight. */
+  removeTaskOptimistic: (taskId: string) => void;
   setSetupState: (payload: {
     needsSetup: boolean;
     authConfigured: boolean;
@@ -336,11 +338,49 @@ function taskWasBusy(status: TaskStatus): boolean {
 }
 
 function upsertTask(tasks: TaskRecord[], task: TaskRecord): TaskRecord[] {
+  if (task.archivedAt) return tasks.filter((item) => item.id !== task.id);
   const index = tasks.findIndex((item) => item.id === task.id);
   if (index === -1) return [task, ...tasks];
   const next = tasks.slice();
   next[index] = task;
   return next;
+}
+
+function removeTaskState(current: AgentState, taskId: string): Partial<AgentState> {
+  const termByTask = { ...current.termByTask };
+  delete termByTask[taskId];
+  const messagesByTask = { ...current.messagesByTask };
+  const toolsByTask = { ...current.toolsByTask };
+  const runtimeByTask = { ...current.runtimeByTask };
+  const fileEntriesByTask = { ...current.fileEntriesByTask };
+  const commandsByTask = { ...current.commandsByTask };
+  delete messagesByTask[taskId];
+  delete toolsByTask[taskId];
+  delete runtimeByTask[taskId];
+  delete fileEntriesByTask[taskId];
+  delete commandsByTask[taskId];
+  const remaining = current.tasks.filter((task) => task.id !== taskId);
+  const nextActive =
+    current.activeTaskId === taskId ? (remaining[0]?.id ?? null) : current.activeTaskId;
+  const next = {
+    ...current,
+    messagesByTask,
+    toolsByTask,
+    runtimeByTask,
+    fileEntriesByTask,
+    commandsByTask,
+  };
+  return {
+    tasks: remaining,
+    activeTaskId: nextActive,
+    ...visibleSessionFields(next, nextActive),
+    messagesByTask,
+    toolsByTask,
+    runtimeByTask,
+    fileEntriesByTask,
+    commandsByTask,
+    termByTask,
+  };
 }
 
 /** Keep other cwd groups in their slots; replace this cwd's members in order. */
@@ -468,6 +508,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
     const current = get();
     const messages = transcriptFor(current, taskId).filter((item) => item.id !== messageId);
     set({ ...withTranscript(current, taskId, messages) });
+  },
+  removeTaskOptimistic: (taskId) => {
+    const current = get();
+    if (!current.tasks.some((task) => task.id === taskId)) return;
+    set(removeTaskState(current, taskId));
   },
   setSetupState: (payload) =>
     set({
@@ -762,42 +807,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         set({ lastSeen, tasks: applyCwdReorder(current.tasks, event.payload.cwd, event.payload.taskIds) });
         break;
       case "task.archived": {
-        const termByTask = { ...current.termByTask };
-        delete termByTask[event.payload.taskId];
-        const messagesByTask = { ...current.messagesByTask };
-        const toolsByTask = { ...current.toolsByTask };
-        const runtimeByTask = { ...current.runtimeByTask };
-        const fileEntriesByTask = { ...current.fileEntriesByTask };
-        const commandsByTask = { ...current.commandsByTask };
-        delete messagesByTask[event.payload.taskId];
-        delete toolsByTask[event.payload.taskId];
-        delete runtimeByTask[event.payload.taskId];
-        delete fileEntriesByTask[event.payload.taskId];
-        delete commandsByTask[event.payload.taskId];
-        const remaining = current.tasks.filter((task) => task.id !== event.payload.taskId);
-        const nextActive =
-          current.activeTaskId === event.payload.taskId
-            ? (remaining[0]?.id ?? null)
-            : current.activeTaskId;
-        const next = {
-          ...current,
-          messagesByTask,
-          toolsByTask,
-          runtimeByTask,
-          fileEntriesByTask,
-          commandsByTask,
-        };
         set({
           lastSeen,
-          tasks: remaining,
-          activeTaskId: nextActive,
-          ...visibleSessionFields(next, nextActive),
-          messagesByTask,
-          toolsByTask,
-          runtimeByTask,
-          fileEntriesByTask,
-          commandsByTask,
-          termByTask,
+          ...removeTaskState(current, event.payload.taskId),
         });
         break;
       }

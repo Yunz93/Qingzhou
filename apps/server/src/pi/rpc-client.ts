@@ -129,6 +129,10 @@ export class RpcClient {
       });
     });
     this.process = null;
+    for (const [, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Pi process stopped"));
+    }
     this.pending.clear();
   }
 

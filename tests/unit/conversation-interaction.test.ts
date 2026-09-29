@@ -285,6 +285,51 @@ describe("agent store transcripts", () => {
     expect(useAgentStore.getState().activeTaskId).toBe(extra.id);
     expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([extra.id, keep.id]);
   });
+
+  it("drops archived task.updated payloads and supports optimistic remove", () => {
+    const now = new Date().toISOString();
+    const keep = {
+      schemaVersion: 1 as const,
+      id: "keep-arch",
+      title: "keep",
+      cwd: "/tmp/a",
+      sessionPath: null,
+      status: "stopped" as const,
+      model: null,
+      thinkingLevel: "off" as const,
+      createdAt: now,
+      updatedAt: now,
+      lastOpenedAt: now,
+      archivedAt: null,
+      unreadCount: 0,
+      mode: "agent" as const,
+      approvalPolicy: "ask" as const,
+    };
+    const gone = { ...keep, id: "gone-arch", title: "gone" };
+    useAgentStore.setState({
+      tasks: [gone, keep],
+      activeTaskId: gone.id,
+      messagesByTask: {},
+      toolsByTask: {},
+      runtimeByTask: {},
+      fileEntriesByTask: {},
+      commandsByTask: {},
+      termByTask: {},
+    });
+    const store = useAgentStore.getState();
+    store.removeTaskOptimistic(gone.id);
+    expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
+    expect(useAgentStore.getState().activeTaskId).toBe(keep.id);
+    store.applyEvent(
+      event({
+        taskId: gone.id,
+        sequence: 2,
+        type: "task.updated",
+        payload: { task: { ...gone, status: "idle", archivedAt: now } },
+      }),
+    );
+    expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
+  });
 });
 
 describe("approval tool matching", () => {

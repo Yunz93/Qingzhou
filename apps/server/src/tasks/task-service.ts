@@ -557,22 +557,26 @@ export class TaskService {
 
   private async archive(taskId: string): Promise<{ ok: true }> {
     const task = this.requireTask(taskId);
-    if (this.supervisor.has(taskId)) {
-      await this.supervisor.stop(taskId);
-    }
-    this.removeQueued(taskId);
-    this.shells.dispose(taskId);
+    // Persist archive first so an in-flight boot cannot resurrect the session.
     const next = await this.store.upsert({
       ...task,
       status: "stopped",
       archivedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    this.removeQueued(taskId);
+    this.shells.dispose(taskId);
     if (this.activeTaskId === taskId) {
       this.activeTaskId = this.listTasks()[0]?.id ?? null;
     }
     this.emit(taskId, "task.archived", { taskId: next.id });
-    await this.drainQueue();
+
+    if (this.supervisor.has(taskId)) {
+      await this.supervisor.stop(taskId);
+    }
+    // Don't await drain — starting the next queued boot must not block this WS reply
+    // (or the client's subsequent commands on the serialized socket chain).
+    void this.drainQueue().catch(() => undefined);
     return { ok: true };
   }
 
@@ -668,12 +672,23 @@ export class TaskService {
   }
 
   private async boot(taskId: string): Promise<void> {
-    await this.apply(taskId, this.store.get(taskId)?.status === "error" ? "restart" : "activate");
+    const existing = this.store.get(taskId);
+    if (!existing || existing.archivedAt) return;
+    await this.apply(taskId, existing.status === "error" ? "restart" : "activate");
     try {
-      const task = this.requireTask(taskId);
+      const task = this.store.get(taskId);
+      if (!task || task.archivedAt) {
+        if (this.supervisor.has(taskId)) await this.supervisor.stop(taskId);
+        return;
+      }
       const result = await this.supervisor.boot(task);
+      const current = this.store.get(taskId);
+      if (!current || current.archivedAt) {
+        if (this.supervisor.has(taskId)) await this.supervisor.stop(taskId);
+        return;
+      }
       const next = await this.store.upsert({
-        ...this.requireTask(taskId),
+        ...current,
         sessionPath: result.sessionPath,
         model: result.model,
         thinkingLevel: result.thinkingLevel,
@@ -697,6 +712,11 @@ export class TaskService {
       void this.refreshStats(taskId);
       await this.tryStartWorkItemsForTask(taskId);
     } catch (error) {
+      const current = this.store.get(taskId);
+      if (!current || current.archivedAt) {
+        if (this.supervisor.has(taskId)) await this.supervisor.stop(taskId).catch(() => undefined);
+        return;
+      }
       const message = humanizeUserFacingError(error);
       await this.apply(taskId, "spawn_failed", message);
       throw new Error(message);

@@ -579,7 +579,13 @@ export function WorkbenchLayout() {
         query={query}
         onQuery={setQuery}
         onSelect={(id) => void selectTask(id)}
-        onArchive={(id) => void socketClient.send("task.archive", {}, id)}
+        onArchive={(id) => {
+          useAgentStore.getState().removeTaskOptimistic(id);
+          void socketClient.send("task.archive", {}, id).catch((error: unknown) => {
+            setNotice(error instanceof Error ? error.message : "归档失败");
+            void socketClient.send("snapshot.request", {}).catch(() => undefined);
+          });
+        }}
         onRename={(id, title) => void renameTask(id, title)}
         pinned={leftPinned}
         onPinToggle={toggleLeftPinned}
