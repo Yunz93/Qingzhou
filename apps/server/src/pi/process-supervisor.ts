@@ -68,15 +68,22 @@ export function matchApprovalTool(tools: ToolExecution[], toolCallId: string): T
   return tools.find((item) => item.toolCallId === toolCallId);
 }
 
-function attachPendingImages(
-  runtime: { pendingImages?: TimelineImage[] },
+function attachPendingUserFields(
+  runtime: { pendingImages?: TimelineImage[]; pendingClientMessageId?: string },
   message: TimelineMessage,
+  consumeClientMessageId: boolean,
 ): TimelineMessage {
   if (message.role !== "user") return message;
-  const pending = runtime.pendingImages;
+  const pendingImages = runtime.pendingImages;
   runtime.pendingImages = undefined;
-  if (message.images?.length || !pending?.length) return message;
-  return { ...message, images: pending };
+  const clientMessageId = runtime.pendingClientMessageId;
+  if (consumeClientMessageId) runtime.pendingClientMessageId = undefined;
+  let next = message;
+  if (clientMessageId) next = { ...next, id: clientMessageId };
+  if (!next.images?.length && pendingImages?.length) {
+    next = { ...next, images: pendingImages };
+  }
+  return next;
 }
 
 function parseApprovalMessage(
@@ -143,6 +150,7 @@ export class ProcessSupervisor {
       liveAssistantIndex: number | null;
       lastUsedAt: number;
       pendingImages?: TimelineImage[];
+      pendingClientMessageId?: string;
       approval: ApprovalRequest | null;
       models: ModelRef[];
       thinkingLevels: ThinkingLevel[];
@@ -218,6 +226,12 @@ export class ProcessSupervisor {
     const runtime = this.runtimes.get(taskId);
     if (!runtime) return;
     runtime.pendingImages = images?.length ? images : undefined;
+  }
+
+  setPendingClientMessageId(taskId: string, clientMessageId: string | undefined): void {
+    const runtime = this.runtimes.get(taskId);
+    if (!runtime) return;
+    runtime.pendingClientMessageId = clientMessageId || undefined;
   }
 
   replaceMessages(taskId: string, messages: TimelineMessage[]): void {
@@ -371,6 +385,40 @@ export class ProcessSupervisor {
     this.runtimes.set(task.id, runtime);
 
     await client.start();
+
+    // New sessions only need get_state to confirm Pi is ready; metadata loads in the background.
+    // Resume still waits for the full parallel load to avoid racing history into the transcript.
+    if (!task.sessionPath) {
+      const state = await this.rpcData(task.id, { type: "get_state" });
+      const stateData = (state ?? {}) as Record<string, unknown>;
+      runtime.messages = [];
+      runtime.models = [];
+      runtime.thinkingLevels = ["off"];
+      runtime.runtime = {
+        ...emptyRuntime(),
+        compacting: Boolean(stateData.isCompacting),
+        autoCompaction: stateData.autoCompactionEnabled !== false,
+        autoRetry: typeof stateData.autoRetryEnabled === "boolean" ? stateData.autoRetryEnabled : true,
+        ...(typeof stateData.fastModeEnabled === "boolean" ? { fastModeEnabled: stateData.fastModeEnabled } : {}),
+        ...(typeof stateData.fastModeActive === "boolean" ? { fastModeActive: stateData.fastModeActive } : {}),
+      };
+      const modelObj = stateData.model as Record<string, unknown> | null | undefined;
+      const model =
+        modelObj && typeof modelObj === "object"
+          ? {
+              provider: String(modelObj.provider ?? "unknown"),
+              id: String(modelObj.id ?? "unknown"),
+              name: typeof modelObj.name === "string" ? modelObj.name : undefined,
+            }
+          : null;
+      void this.loadBootMetadata(task.id, generation);
+      return {
+        sessionPath: typeof stateData.sessionFile === "string" ? stateData.sessionFile : null,
+        model,
+        thinkingLevel: (stateData.thinkingLevel as ThinkingLevel) ?? "off",
+      };
+    }
+
     const [state, messages, models, levels, commandsResult] = await Promise.all([
       this.rpcData(task.id, { type: "get_state" }),
       this.rpcData(task.id, { type: "get_messages" }),
@@ -420,6 +468,47 @@ export class ProcessSupervisor {
       model,
       thinkingLevel: (stateData.thinkingLevel as ThinkingLevel) ?? "off",
     };
+  }
+
+  /** Background fill-in after a fast new-session boot. */
+  private async loadBootMetadata(taskId: string, generation: number): Promise<void> {
+    const runtime = this.runtimes.get(taskId);
+    if (!runtime || runtime.generation !== generation) return;
+    try {
+      const [models, levels, commandsResult] = await Promise.all([
+        this.rpcData(taskId, { type: "get_available_models" }),
+        this.rpcData(taskId, { type: "get_available_thinking_levels" }),
+        this.rpcData(taskId, { type: "get_commands" }).catch(() => null),
+      ]);
+      const current = this.runtimes.get(taskId);
+      if (!current || current.generation !== generation) return;
+      current.models = parseAvailableModels(models);
+      current.thinkingLevels = parseThinkingLevels(levels);
+      if (current.thinkingLevels.length === 0) current.thinkingLevels = ["off"];
+      current.commands = Array.isArray((commandsResult as { commands?: unknown[] } | null)?.commands)
+        ? ((commandsResult as { commands: Array<Record<string, unknown>> }).commands).map((command) => ({
+            name: String(command.name ?? ""),
+            description: typeof command.description === "string" ? command.description : undefined,
+            source: typeof command.source === "string" ? command.source : undefined,
+          }))
+        : [];
+      await this.refreshSessionTree(taskId);
+      const still = this.runtimes.get(taskId);
+      if (!still || still.generation !== generation) return;
+      this.syncModelChangeNotices(taskId);
+      this.emit(taskId, "models.updated", {
+        models: still.models,
+        thinkingLevels: still.thinkingLevels,
+      });
+      this.emit(taskId, "commands.updated", { commands: still.commands });
+      this.emit(taskId, "session.tree", {
+        nodes: still.sessionTree,
+        leafId: still.sessionLeafId,
+      });
+      this.emit(taskId, "runtime.status", still.runtime);
+    } catch (error) {
+      console.warn(`[pi ${taskId}] background boot metadata failed:`, error instanceof Error ? error.message : error);
+    }
   }
 
   async stop(taskId: string, signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
@@ -559,7 +648,7 @@ export class ProcessSupervisor {
         }
         break;
       case "message.started": {
-        const message = attachPendingImages(runtime, normalized.message);
+        const message = attachPendingUserFields(runtime, normalized.message, false);
         runtime.messages.push(message);
         if (message.role === "assistant" && message.streaming) {
           runtime.liveAssistantId = message.id;
@@ -591,22 +680,23 @@ export class ProcessSupervisor {
         break;
       }
       case "message.completed": {
+        const remapped = attachPendingUserFields(runtime, normalized.message, true);
         const id =
-          normalized.message.role === "assistant" && runtime.liveAssistantId
+          remapped.role === "assistant" && runtime.liveAssistantId
             ? runtime.liveAssistantId
-            : normalized.message.id;
+            : remapped.id;
         const index =
           runtime.liveAssistantIndex != null && runtime.messages[runtime.liveAssistantIndex]?.id === id
             ? runtime.liveAssistantIndex
             : runtime.messages.findIndex((item) => item.id === id);
         const existing = index >= 0 ? runtime.messages[index] : undefined;
-        const message = mergeCompletedTimelineMessage(existing, { ...normalized.message, id });
+        const message = mergeCompletedTimelineMessage(existing, { ...remapped, id });
         if (index >= 0) {
           runtime.messages[index] = message;
         } else {
           runtime.messages.push(message);
         }
-        if (normalized.message.role === "assistant") {
+        if (remapped.role === "assistant") {
           runtime.liveAssistantId = null;
           runtime.liveAssistantIndex = null;
         }

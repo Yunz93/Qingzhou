@@ -8,6 +8,7 @@ type Props = {
   hasChanges: boolean;
   runtime?: RuntimeState | null;
   errorMessage?: string | null;
+  sending?: boolean;
 };
 
 const ICONS = {
@@ -18,14 +19,15 @@ const ICONS = {
   done: CheckCircle2,
 } as const;
 
-export function RunStatusBar({ status, tools, hasChanges, runtime, errorMessage }: Props) {
-  const current = runStatusStage(status, tools, hasChanges, runtime, errorMessage);
+export function RunStatusBar({ status, tools, hasChanges, runtime, errorMessage, sending }: Props) {
+  const current = runStatusStage(status, tools, hasChanges, runtime, errorMessage, sending);
   if (!current) return null;
   const Icon = ICONS[current.kind];
   const active =
     status === "running" ||
     status === "booting" ||
     status === "aborting" ||
+    Boolean(sending) ||
     Boolean(runtime?.compacting || runtime?.retrying);
 
   return (

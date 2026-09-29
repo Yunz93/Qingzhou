@@ -8,6 +8,7 @@ export function runStatusStage(
   hasChanges: boolean,
   runtime?: RuntimeState | null,
   errorMessage?: string | null,
+  sending?: boolean,
 ): { label: string; detail: string; kind: RunStatusKind } | null {
   const current = [...tools].reverse().find((tool) => tool.status === "running" || tool.status === "waiting_approval");
   if (runtime?.compacting) {
@@ -29,6 +30,9 @@ export function runStatusStage(
   if (status === "queued") return { label: "排队中", detail: "正在等待空闲的 AI 进程", kind: "queue" };
   if (status === "booting") return { label: "正在启动", detail: "正在准备 AI 引擎", kind: "spin" };
   if (status === "aborting") return { label: "正在停止", detail: "正在结束当前操作", kind: "spin" };
+  if (sending && (status === "idle" || status === "stopped" || status === "error")) {
+    return { label: "正在发送", detail: "", kind: "spin" };
+  }
   if (status === "error") {
     return { label: "需要处理", detail: errorMessage || "这次运行没有完成", kind: "error" };
   }

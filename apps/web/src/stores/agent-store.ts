@@ -303,6 +303,9 @@ type AgentState = {
   clearTerm: (taskId: string) => void;
   clearRequestError: () => void;
   dismissErrors: () => void;
+  appendOptimisticUserMessage: (taskId: string, message: TimelineMessage) => void;
+  markMessageFailed: (taskId: string, messageId: string) => void;
+  removeMessage: (taskId: string, messageId: string) => void;
   setSetupState: (payload: {
     needsSetup: boolean;
     authConfigured: boolean;
@@ -448,6 +451,24 @@ export const useAgentStore = create<AgentState>((set, get) => {
     })),
   clearRequestError: () => set({ requestError: null }),
   dismissErrors: () => set({ requestError: null, serverError: null }),
+  appendOptimisticUserMessage: (taskId, message) => {
+    const current = get();
+    const prev = transcriptFor(current, taskId);
+    if (prev.some((item) => item.id === message.id)) return;
+    set({ ...withTranscript(current, taskId, [...prev, message]) });
+  },
+  markMessageFailed: (taskId, messageId) => {
+    const current = get();
+    const messages = transcriptFor(current, taskId).map((item) =>
+      item.id === messageId ? { ...item, isError: true, streaming: false } : item,
+    );
+    set({ ...withTranscript(current, taskId, messages) });
+  },
+  removeMessage: (taskId, messageId) => {
+    const current = get();
+    const messages = transcriptFor(current, taskId).filter((item) => item.id !== messageId);
+    set({ ...withTranscript(current, taskId, messages) });
+  },
   setSetupState: (payload) =>
     set({
       needsSetup: payload.needsSetup,
@@ -792,15 +813,25 @@ export const useAgentStore = create<AgentState>((set, get) => {
         break;
       case "message.started": {
         const prev = transcriptFor(current, event.taskId);
-        const messages = prev.some((item) => item.id === event.payload.message.id)
-          ? prev
-          : [...prev, event.payload.message];
+        const incoming = event.payload.message;
+        const messages = prev.some((item) => item.id === incoming.id)
+          ? prev.map((item) =>
+              item.id === incoming.id
+                ? {
+                    ...incoming,
+                    // Keep local preview images if the server echo has none yet.
+                    images: incoming.images?.length ? incoming.images : item.images,
+                    isError: false,
+                  }
+                : item,
+            )
+          : [...prev, incoming];
         set({
           lastSeen,
           // Pi often starts an empty assistant bubble before the provider
           // returns 401/403. Keep that error visible until the user sends again.
           serverError:
-            event.taskId === current.activeTaskId && event.payload.message.role === "user"
+            event.taskId === current.activeTaskId && incoming.role === "user"
               ? null
               : current.serverError,
           ...withTranscript(current, event.taskId, messages),

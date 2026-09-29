@@ -12,6 +12,8 @@ const promptPayloadSchema = z
   .object({
     message: z.string().max(PROMPT_MESSAGE_MAX),
     imageIds: z.array(z.string()).optional(),
+    /** Client-generated id for optimistic user bubbles; server remaps Pi's user message to this id. */
+    clientMessageId: z.string().uuid().optional(),
   })
   .superRefine((value, ctx) => {
     if (!value.message.trim() && (!value.imageIds || value.imageIds.length === 0)) {

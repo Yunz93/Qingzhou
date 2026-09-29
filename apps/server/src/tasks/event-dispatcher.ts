@@ -11,7 +11,7 @@ export class EventDispatcher {
 
   constructor(
     private readonly nextMeta: (taskId: string) => EventMeta,
-    private readonly deltaFlushMs = 50,
+    private readonly deltaFlushMs = 16,
   ) {}
 
   get connectionCount(): number {

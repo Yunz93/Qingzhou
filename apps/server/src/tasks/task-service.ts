@@ -299,11 +299,17 @@ export class TaskService {
       case "task.reorder":
         return this.reorderTasks(command.payload.cwd, command.payload.taskIds);
       case "prompt.send":
-        return this.prompt(command.taskId, command.payload.message, command.payload.imageIds, "prompt");
+        return this.prompt(command.taskId, command.payload.message, command.payload.imageIds, "prompt", {
+          clientMessageId: command.payload.clientMessageId,
+        });
       case "prompt.steer":
-        return this.prompt(command.taskId, command.payload.message, command.payload.imageIds, "steer");
+        return this.prompt(command.taskId, command.payload.message, command.payload.imageIds, "steer", {
+          clientMessageId: command.payload.clientMessageId,
+        });
       case "prompt.followUp":
-        return this.prompt(command.taskId, command.payload.message, command.payload.imageIds, "follow_up");
+        return this.prompt(command.taskId, command.payload.message, command.payload.imageIds, "follow_up", {
+          clientMessageId: command.payload.clientMessageId,
+        });
       case "prompt.queue.edit":
         return this.editQueuedPrompt(command.taskId, command.payload);
       case "agent.abort":
@@ -531,11 +537,10 @@ export class TaskService {
     await this.store.upsert(task);
     this.activeTaskId = task.id;
     this.emit(task.id, "task.created", { task });
-    try {
-      await this.activate(task.id);
-    } catch {
-      // Keep the task even if Pi is unavailable. The UI shows the boot error.
-    }
+    // Return the task immediately; Pi boots in the background. prompt() awaits the same boot Promise.
+    void this.activate(task.id).catch(() => {
+      // Boot errors already land on task status / server.error via apply(spawn_failed).
+    });
     return { task: this.store.get(task.id) ?? task };
   }
 
@@ -703,7 +708,7 @@ export class TaskService {
     message: string,
     imageIds: string[] | undefined,
     mode: "prompt" | "steer" | "follow_up",
-    options?: { recordedRun?: boolean },
+    options?: { recordedRun?: boolean; clientMessageId?: string },
   ): Promise<{ ok: true }> {
     const task = this.requireTask(taskId);
     this.assertWorkLinkedPrompt(taskId, mode, options);
@@ -712,6 +717,15 @@ export class TaskService {
     }
     if (task.status === "stopped" || task.status === "error") {
       await this.activate(taskId);
+    }
+    // Wait for an in-flight background boot (e.g. casual chat create) before failing.
+    if (!this.supervisor.has(taskId)) {
+      const pendingBoot = this.booting.get(taskId);
+      if (pendingBoot) {
+        await pendingBoot;
+      } else if (task.status === "booting") {
+        await this.activate(taskId);
+      }
     }
     const latest = this.requireTask(taskId);
     // Pi queues `follow_up` until a later `prompt`. After settle that queue never
@@ -746,6 +760,7 @@ export class TaskService {
       };
     });
     if (pendingImages.length > 0) this.supervisor.setPendingImages(taskId, pendingImages);
+    if (options?.clientMessageId) this.supervisor.setPendingClientMessageId(taskId, options.clientMessageId);
 
     const expanded = await this.attachMentionedFiles(latest, message);
     const payload: Record<string, unknown> & { type: string } = {
@@ -759,6 +774,7 @@ export class TaskService {
       this.uploads.consume(imageIds ?? []);
     } catch (error) {
       this.supervisor.setPendingImages(taskId, undefined);
+      this.supervisor.setPendingClientMessageId(taskId, undefined);
       const raw = error instanceof Error ? error.message : String(error);
       const text = humanizeUserFacingError(error);
       const authHint = isMissingCredentialError(raw);
@@ -1639,7 +1655,7 @@ export class TaskService {
   private assertWorkLinkedPrompt(
     taskId: string,
     mode: "prompt" | "steer" | "follow_up",
-    options?: { recordedRun?: boolean },
+    options?: { recordedRun?: boolean; clientMessageId?: string },
   ): void {
     this.work.assertWorkLinkedPrompt(taskId, mode, options);
   }
