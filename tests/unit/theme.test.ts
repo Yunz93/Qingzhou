@@ -27,8 +27,12 @@ describe("theme", () => {
     expect(styles).toMatch(/\.term-shell\s*\{[^}]*background:\s*transparent/);
     expect(styles).toMatch(/\.term-head\s*\{[^}]*background:\s*transparent/);
     expect(styles).toMatch(/\.term-xterm \.xterm-viewport\s*\{[^}]*background:\s*transparent/);
-    expect(styles).toMatch(/\.term-xterm\s*\{[^}]*padding:\s*0 10px 10px/);
+    expect(styles).toMatch(/\.term-xterm-frame\s*\{[^}]*padding:\s*0 10px 10px/);
+    expect(styles).toMatch(/\.term-xterm\s*\{[^}]*padding:\s*0;/);
     expect(styles).not.toMatch(/always-dark terminal/);
+    expect(term).toContain("overviewRuler");
+    expect(term).toContain("term-xterm-frame");
+    expect(term).toMatch(/term\.start[\s\S]*cols:\s*term\.cols/);
   });
 });
 
