@@ -76,7 +76,13 @@ describe("agent-native work mode", () => {
     expect(sidebar).toMatch(/workTaskIds\.has\(task\.id\)/);
     expect(sidebar).toMatch(/>任务</);
     expect(sidebar).toMatch(/打开工作台/);
+    expect(sidebar).toMatch(/source-item group flex items-center/);
+    expect(sidebar).toMatch(/MoreHorizontal[\s\S]*className="block"/);
+    expect(sidebar).not.toMatch(/items-start gap-1 px-1/);
     expect(sidebar).not.toMatch(/任务中的会话/);
+    const styles = readFileSync(path.resolve("apps/web/src/styles/app.css"), "utf8");
+    expect(styles).toMatch(/\.sidebar-row-actions\s*\{[^}]*align-items:\s*center/);
+    expect(styles).not.toMatch(/\.sidebar-row-actions\s*\{[^}]*margin-top:\s*2px/);
     expect(board).toMatch(/setActiveTask\(taskId\)/);
     expect(board).toMatch(/requestId: interaction.requestId/);
     expect(board).toMatch(/sr-only/);
