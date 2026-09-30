@@ -9,6 +9,7 @@ import {
   humanizeSearchToolDownloadError,
   PINNED_FD_VERSION,
   searchToolDownloadUrl,
+  searchToolBinaryName,
   shouldFetchPinnedSearchTools,
 } from "../../apps/server/src/setup/pi-search-tools.ts";
 
@@ -73,17 +74,17 @@ describe("Pi search tools (fd / ripgrep)", () => {
     const home = await mkdtemp(path.join(os.tmpdir(), "qingzhou-tools-fdfind-"));
     const pathDir = await mkdtemp(path.join(os.tmpdir(), "qingzhou-tools-path-"));
     dirs.push(home, pathDir);
-    await writeFile(path.join(pathDir, "fdfind"), "#!/bin/sh\necho fdfind\n", { mode: 0o755 });
+    await writeFile(path.join(pathDir, process.platform === "win32" ? "fdfind.exe" : "fdfind"), "#!/bin/sh\necho fdfind\n", { mode: 0o755 });
     const agentDir = path.join(home, ".pi", "agent");
     const installed = await ensurePiSearchTools({
       agentDir,
       env: { PATH: pathDir },
       homeDir: home,
       fetchMissing: false,
-      platform: "linux",
+      platform: process.platform === "win32" ? "win32" : "linux",
     });
-    expect(installed.fd).toBe(path.join(agentDir, "bin", "fd"));
-    expect(await readFile(path.join(agentDir, "bin", "fd"), "utf8")).toContain("fdfind");
+    expect(installed.fd).toBe(path.join(agentDir, "bin", searchToolBinaryName("fd")));
+    expect(await readFile(path.join(agentDir, "bin", searchToolBinaryName("fd")), "utf8")).toContain("fdfind");
   });
 
   it("humanizes Pi's GitHub API 403 download warning", () => {

@@ -188,7 +188,7 @@ export async function downloadPinnedSearchTool(
     const binaryName = searchToolBinaryName(tool, platform);
     const extracted = findExtractedBinary(extractDir, binaryName);
     if (!extracted) throw new Error(`Binary ${binaryName} missing from ${path.basename(url)}`);
-    return installSearchToolFrom(extracted, destDir, binaryName);
+    return await installSearchToolFrom(extracted, destDir, binaryName);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

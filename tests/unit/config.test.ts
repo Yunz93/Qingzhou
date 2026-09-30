@@ -39,7 +39,7 @@ describe("portable config", () => {
   it("does not add home when ALLOWED_ROOTS is set", () => {
     const home = path.resolve(os.tmpdir(), "qingzhou-home-jail");
     const config = loadConfig({ QINGZHOU_ALLOWED_ROOTS: "/only-this" }, { homeDir: home, workspaceRoot: "/work" });
-    expect(config.allowedRoots).toEqual(["/only-this"]);
+    expect(config.allowedRoots).toEqual([path.resolve("/only-this")]);
   });
 
   it("keeps using a legacy ~/.mowen data dir when it already exists", async () => {
@@ -106,7 +106,7 @@ describe("portable config", () => {
       { homeDir: home },
     );
     expect(config.dataDir).toBe(path.join(home, "old-mowen-data"));
-    expect(config.allowedRoots).toEqual(["/old-mowen-root"]);
+    expect(config.allowedRoots).toEqual([path.resolve("/old-mowen-root")]);
     expect(config.maxProcesses).toBe(5);
   });
 
@@ -121,7 +121,7 @@ describe("portable config", () => {
       { homeDir: home },
     );
     expect(config.dataDir).toBe(path.join(home, "old-data"));
-    expect(config.allowedRoots).toEqual(["/old-root"]);
+    expect(config.allowedRoots).toEqual([path.resolve("/old-root")]);
     expect(config.maxProcesses).toBe(7);
   });
 
@@ -147,6 +147,25 @@ describe("portable config", () => {
     expect(runtime.command).toBe(process.execPath);
     expect(runtime.prefixArgs).toEqual([script]);
     expect(runtime.extraEnv.ELECTRON_RUN_AS_NODE).toBe("1");
+  });
+
+  it("launches the CLI behind an npm Pi shim without spawning a batch file", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-npm-shim-"));
+    try {
+      const shim = path.join(root, "pi.cmd");
+      const entry = path.join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
+      await mkdir(path.dirname(entry), { recursive: true });
+      await writeFile(entry, "console.log('0.0.0-test');");
+      await writeFile(shim, "@echo off\r\n");
+      const runtime = resolvePiRuntime({ PI_BIN: shim });
+      expect(runtime.command).toBe(resolveElectronNodeBin(process.execPath));
+      expect(runtime.prefixArgs).toEqual([entry]);
+      const custom = path.join(root, "custom-agent.cmd");
+      await writeFile(custom, "@echo off\r\n");
+      expect(resolvePiRuntime({ PI_BIN: custom })).toEqual({ command: custom, prefixArgs: [], extraEnv: {} });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("marks the current executable as a Node interpreter", () => {

@@ -27,6 +27,8 @@ export class InstallPiError extends Error {
   }
 }
 
+class InstallerTerminationError extends InstallPiError {}
+
 export function piInstallScriptUrl(env: NodeJS.ProcessEnv = process.env): string {
   return qingzhouEnv(env, "PI_INSTALL_SCRIPT_URL")?.trim() || DEFAULT_PI_INSTALL_SCRIPT_URL;
 }
@@ -193,6 +195,7 @@ export async function readNpmGlobalPrefix(env: NodeJS.ProcessEnv = process.env):
     const { stdout } = await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", ["prefix", "-g"], {
       timeout: 8000,
       env,
+      shell: process.platform === "win32",
     });
     const prefix = stdout.trim();
     return prefix || null;
@@ -262,9 +265,15 @@ export async function runOfficialPiInstall(options: {
   runCommand?: (command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number) => Promise<RunResult>;
 }): Promise<InstallPiResult> {
   if (inflight) return inflight;
-  inflight = runOfficialPiInstallUnserialized(options).finally(() => {
-    inflight = null;
-  });
+  let keepLock = false;
+  inflight = runOfficialPiInstallUnserialized(options)
+    .catch((error) => {
+      keepLock = error instanceof InstallerTerminationError;
+      throw error;
+    })
+    .finally(() => {
+      if (!keepLock) inflight = null;
+    });
   return inflight;
 }
 
@@ -315,6 +324,7 @@ async function runOfficialPiInstallUnserialized(options: {
   const bin = await discoverPiExecutable({
     homeDir: options.homeDir,
     env: unixInstallChildEnv(env, options.homeDir, platform),
+    platform,
   });
   return { ok: true, log, bin };
 }
@@ -377,12 +387,33 @@ function spawnLogged(
       env,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      // npm.cmd and its arguments are fixed above; batch files require cmd.exe.
+      shell: process.platform === "win32" && command === "npm.cmd",
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new InstallPiError("安装 Pi 超时。请检查网络后重试。"));
+      timedOut = true;
+      const finish = () => reject(new InstallPiError("安装 Pi 超时。请检查网络后重试。"));
+      if (process.platform === "win32" && child.pid) {
+        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          stdio: "ignore", windowsHide: true,
+        });
+        const failed = (detail: string) => reject(new InstallerTerminationError(
+          `安装 Pi 超时，无法终止安装进程 ${child.pid}：${detail}。请先在任务管理器结束安装进程，再重启轻舟。`,
+        ));
+        killer.once("close", (code) => {
+          if (code === 0) finish();
+          else failed(`taskkill exit ${code}`);
+        });
+        killer.once("error", (error) => {
+          failed(error.message);
+        });
+      } else {
+        child.kill("SIGTERM");
+        finish();
+      }
     }, timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -396,6 +427,7 @@ function spawnLogged(
     });
     child.once("close", (code) => {
       clearTimeout(timer);
+      if (timedOut) return;
       resolve({ code, stdout, stderr });
     });
   });

@@ -16,7 +16,7 @@ import {
 describe("path policy", () => {
   it("rejects cwd outside allowed roots", async () => {
     const allowed = await mkdtemp(path.join(os.tmpdir(), "qingzhou-allowed-"));
-    await expect(assertAllowedCwd("/tmp", [allowed])).rejects.toMatchObject({
+    await expect(assertAllowedCwd(os.tmpdir(), [allowed])).rejects.toMatchObject({
       name: "PathPolicyError",
       message: "工作文件夹不在允许的范围内",
     });
@@ -30,8 +30,8 @@ describe("path policy", () => {
   });
 
   it("includes home with workspace roots for user-picked folders", () => {
-    expect(userCwdRoots("/home/me", ["/work/app"])).toEqual(["/work/app", "/home/me"]);
-    expect(userCwdRoots("/work/app", ["/work/app"])).toEqual(["/work/app"]);
+    expect(userCwdRoots("/home/me", ["/work/app"])).toEqual([path.resolve("/work/app"), path.resolve("/home/me")]);
+    expect(userCwdRoots("/work/app", ["/work/app"])).toEqual([path.resolve("/work/app")]);
   });
 
   it("blocks .env writes", () => {

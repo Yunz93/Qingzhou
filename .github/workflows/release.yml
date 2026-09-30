@@ -12,6 +12,10 @@ on:
         description: Publish as a prerelease
         type: boolean
         default: true
+      verify_only:
+        description: Run platform checks without packaging or publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,6 +62,7 @@ jobs:
           cache: pnpm
 
       - name: Install and verify
+        shell: bash
         run: |
           pnpm install --frozen-lockfile
           pnpm lint
@@ -66,9 +71,11 @@ jobs:
           pnpm test:integration
 
       - name: Pack desktop app
+        if: ${{ !inputs.verify_only }}
         run: pnpm ${{ matrix.pack }}
 
       - name: Upload artifacts
+        if: ${{ !inputs.verify_only }}
         uses: actions/upload-artifact@v5
         with:
           name: qingzhou-${{ matrix.artifact }}
@@ -81,6 +88,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
+    if: ${{ !inputs.verify_only }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15

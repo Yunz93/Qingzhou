@@ -1,11 +1,12 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../apps/server/src/index.ts";
+import { pathEnvKey, runOfficialPiInstall } from "../../apps/server/src/setup/install-pi.ts";
 
 const FAKE_INSTALL_SH = `#!/bin/sh
 mkdir -p "$HOME/.pi/agent/bin"
@@ -22,6 +23,46 @@ echo "No terminal detected; continuing without confirmation."
 echo "Pi was installed successfully."
 `;
 
+async function windowsInstallerEnv(env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
+  const home = env.QINGZHOU_HOME_DIR!;
+  const bin = path.join(home, "fake npm tools");
+  await mkdir(bin, { recursive: true });
+  const script = path.join(bin, "npm.cjs");
+  await writeFile(script, `
+const fs = require('node:fs');
+const path = require('node:path');
+const home = process.env.HOME;
+const prefix = path.join(home, '.pi', 'agent', 'bin');
+if (process.argv[2] === 'prefix') {
+  console.log(prefix);
+} else if (process.argv[2] === 'install' && process.env.QINGZHOU_TEST_NPM_HANG === '1') {
+  fs.writeFileSync(path.join(home, 'npm-pid.txt'), String(process.pid));
+  setInterval(() => {}, 1000);
+} else if (process.argv[2] === 'install') {
+  const pkg = path.join(prefix, 'node_modules', '@earendil-works', 'pi-coding-agent');
+  fs.mkdirSync(path.join(pkg, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'dist', 'cli.js'), "console.log('0.0.0-test');");
+  fs.writeFileSync(path.join(prefix, 'pi.cmd'), '@echo off\\r\\n');
+  fs.appendFileSync(path.join(home, 'npm-installs.txt'), 'installed\\n');
+  console.log('Pi was installed successfully.');
+} else {
+  process.exitCode = 1;
+}
+`);
+  await writeFile(path.join(bin, "npm.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0npm.cjs" %*\r\n`);
+  const key = pathEnvKey(process.env);
+  return { ...process.env, ...env, [key]: `${bin};${process.env[key] ?? ""}` };
+}
+
+async function windowsInstallCount(home: string): Promise<number> {
+  try {
+    return (await readFile(path.join(home, "npm-installs.txt"), "utf8")).trim().split("\n").length;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw error;
+  }
+}
+
 async function listen(
   env: NodeJS.ProcessEnv,
 ): Promise<{
@@ -30,6 +71,8 @@ async function listen(
   base: string;
   close: () => Promise<void>;
 }> {
+  env = { ...env, QINGZHOU_SKIP_PI_TOOLS_FETCH: "1" };
+  if (process.platform === "win32") env = await windowsInstallerEnv(env);
   const { app, config, service } = await createApp(env);
   await app.listen({ host: config.host, port: 0 });
   const address = app.server.address();
@@ -72,6 +115,21 @@ describe("POST /api/setup/install-pi", () => {
   afterAll(async () => {
     scriptServer?.close();
     await rm(root.current, { recursive: true, force: true });
+  });
+
+  it.runIf(process.platform === "win32")("terminates npm's child process before retrying a timed-out Windows install", async () => {
+    const home = path.join(root.current, "home-timeout");
+    await mkdir(home);
+    const env = await windowsInstallerEnv({ QINGZHOU_HOME_DIR: home, QINGZHOU_TEST_NPM_HANG: "1" });
+    const pending = runOfficialPiInstall({ homeDir: home, env, timeoutMs: 5000 })
+      .then(() => "unexpected success", (error: Error) => error.message);
+    const pid = await vi.waitFor(async () => Number(await readFile(path.join(home, "npm-pid.txt"), "utf8")), { timeout: 4000 });
+    expect(pid).toBeGreaterThan(0);
+    expect(await pending).toMatch(/安装 Pi 超时/);
+    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+    const retried = await runOfficialPiInstall({ homeDir: home, env: { ...env, QINGZHOU_TEST_NPM_HANG: "0" } });
+    expect(retried.ok).toBe(true);
+    expect(await windowsInstallCount(home)).toBe(1);
   });
 
   it("runs the official install script and then finds Pi", async () => {
@@ -177,6 +235,7 @@ describe("POST /api/setup/install-pi", () => {
       expect(installed.ok).toBe(true);
       expect(json.piAvailable).toBe(true);
       expect(hits).toBe(0);
+      if (process.platform === "win32") expect(await windowsInstallCount(home)).toBe(0);
     } finally {
       await ctx.close();
       counting.close();
@@ -257,7 +316,8 @@ describe("POST /api/setup/install-pi", () => {
       const json = (await installed.json()) as { piAvailable: boolean; error?: string; log?: string };
       expect(installed.ok, json.error ?? json.log).toBe(true);
       expect(json.piAvailable).toBe(true);
-      expect(hits).toBe(1);
+      if (process.platform === "win32") expect(await windowsInstallCount(home)).toBe(1);
+      else expect(hits).toBe(1);
     } finally {
       await ctx.close();
       counting.close();

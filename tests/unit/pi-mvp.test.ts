@@ -180,7 +180,7 @@ describe("pi mvp helpers", () => {
     const settings = JSON.parse(await readFile(path.join(agentDir, "settings.json"), "utf8")) as {
       extensions: string[];
     };
-    expect(settings.extensions).toContain("-extensions/pack");
+    expect(settings.extensions).toContain(`-${path.join("extensions", "pack")}`);
     expect(settings.extensions.some((item) => item.includes("demo"))).toBe(false);
   });
 

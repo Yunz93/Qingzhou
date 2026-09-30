@@ -146,10 +146,10 @@ describe("Pi agent dir and auth errors", () => {
     const authPath = path.join(agentDir, "auth.json");
     await mkdir(agentDir, { recursive: true });
     await writeFile(authPath, "{}\n", { mode: 0o600 });
-    await chmod(authPath, 0);
+    if (process.platform !== "win32") await chmod(authPath, 0);
     await saveApiKey("anthropic", "sk-ant-repaired-key-123456", home, agentDir);
     const info = await stat(authPath);
-    expect(info.mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(info.mode & 0o777).toBe(0o600);
     const raw = await (await import("node:fs/promises")).readFile(authPath, "utf8");
     expect(raw).toContain("sk-ant-repaired-key-123456");
   });

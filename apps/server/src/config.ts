@@ -184,6 +184,13 @@ export function resolvePiRuntime(env: NodeJS.ProcessEnv = process.env): PiRuntim
     return { command, prefixArgs: [path.resolve(entry)], extraEnv: asNodeEnv(command) };
   }
   const bin = resolvePiBin(env.PI_BIN ?? "pi");
+  if (path.isAbsolute(bin) && path.basename(bin).toLowerCase() === "pi.cmd") {
+    const npmEntry = path.join(path.dirname(bin), "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
+    if (existsSync(npmEntry)) {
+      const command = resolveElectronNodeBin(process.execPath);
+      return { command, prefixArgs: [npmEntry], extraEnv: asNodeEnv(command) };
+    }
+  }
   if (isJavaScriptFile(bin)) {
     const command = resolveElectronNodeBin(process.execPath);
     return { command, prefixArgs: [bin], extraEnv: asNodeEnv(command) };

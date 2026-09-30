@@ -97,8 +97,8 @@ describe("official Pi installer helpers", () => {
   });
 
   it("discovers Pi under ~/.pi/agent/bin before the npm prefix", () => {
-    expect(candidatePiPaths("/home/me", "/usr/local", "linux")[0]).toBe("/home/me/.pi/agent/bin/pi");
-    expect(candidatePiPaths("/home/me", "/usr/local", "linux")).toContain("/usr/local/bin/pi");
+    expect(candidatePiPaths("/home/me", "/usr/local", "linux")[0]).toBe(path.join("/home/me", ".pi", "agent", "bin", "pi"));
+    expect(candidatePiPaths("/home/me", "/usr/local", "linux")).toContain(path.join("/usr/local", "bin", "pi"));
     expect(candidatePiPaths("C:\\Users\\me", "C:\\npm", "win32")[0]).toBe(
       path.join("C:\\Users\\me", ".pi", "agent", "bin", "pi.cmd"),
     );

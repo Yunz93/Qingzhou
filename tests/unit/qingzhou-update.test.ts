@@ -337,7 +337,12 @@ describe("atomic replace and helpers", () => {
     expect(await readFile(path.join(target, "marker.txt"), "utf8")).toBe("old");
   });
 
-  it("extracts Qingzhou.app from a zip and rejects non-zip archives", async () => {
+  it("rejects non-zip update archives before invoking extraction tools", async () => {
+    await expect(extractAppBundle("Qingzhou.dmg", "unused")).rejects.toThrow(/zip/);
+  });
+
+  // The macOS updater uses zip/unzip; Windows installs the verified setup.exe.
+  it.skipIf(process.platform === "win32")("extracts the macOS Qingzhou.app from a zip", async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), "qingzhou-extract-"));
     dirs.push(temp);
     const appDir = path.join(temp, "Qingzhou.app");
@@ -349,7 +354,6 @@ describe("atomic replace and helpers", () => {
     const extracted = await extractAppBundle(zipPath, path.join(temp, "out"));
     expect(extracted.endsWith("Qingzhou.app")).toBe(true);
     expect(await readFile(path.join(extracted, "marker.txt"), "utf8")).toBe("bundle");
-    await expect(extractAppBundle(path.join(temp, "Qingzhou.dmg"), path.join(temp, "out2"))).rejects.toThrow(/zip/);
   });
 
   it("reads the macOS bundle path from the Electron executable", () => {
