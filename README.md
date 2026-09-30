@@ -47,7 +47,7 @@ git push origin v0.1.20
 
 这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt` 和 `latest.json`。日常 `main` 推送会更新 `nightly` 预发布。安装脚本会校验清单（旧版本没有清单时只警告）。
 
-合入前可手动运行 Release 工作流并勾选 `verify_only`，只执行三个平台的安装、lint、类型检查、单测和集成测试，不打包或发布。
+合入前可手动运行 Release 工作流并勾选 `verify_only`，只执行三个平台的安装、lint、类型检查、单测和集成测试，不打包或发布。macOS 正式打包后还会检查内置 fd / rg 的目标架构，避免交叉编译时混入宿主架构的工具。
 
 ## 开发者
 

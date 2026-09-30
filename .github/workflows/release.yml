@@ -74,6 +74,19 @@ jobs:
         if: ${{ !inputs.verify_only }}
         run: pnpm ${{ matrix.pack }}
 
+      - name: Verify macOS search tool architecture
+        if: ${{ !inputs.verify_only && runner.os == 'macOS' }}
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.artifact == 'mac-arm64' && 'arm64' || 'x86_64' }}
+          APP_DIR: ${{ matrix.artifact == 'mac-arm64' && 'mac-arm64' || 'mac' }}
+        run: |
+          for tool in fd rg; do
+            binary="apps/desktop/release/$APP_DIR/Qingzhou.app/Contents/Resources/tools/$tool"
+            lipo -info "$binary"
+            lipo "$binary" -verify_arch "$TARGET_ARCH"
+          done
+
       - name: Upload artifacts
         if: ${{ !inputs.verify_only }}
         uses: actions/upload-artifact@v5
