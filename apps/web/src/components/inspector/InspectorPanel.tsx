@@ -4,6 +4,7 @@ import { Pin, PinOff, X, PanelRight, PanelRightClose } from "lucide-react";
 import {
   parseGitPatch,
   patchLineCounts,
+  type FilePreviewPayload,
   type PiPackageCatalogItem,
   type PiResources,
   type SkillUpdateApplyResult,
@@ -36,7 +37,7 @@ type Props = {
   taskId?: string | null;
   cwd?: string | null;
   files: FileEntry[];
-  preview: { path: string; content: string; truncated: boolean; language?: string } | null;
+  preview: FilePreviewPayload | null;
   git: GitSnapshot | null;
   resources?: PiResources | null;
   gitDiff?: string | null;
