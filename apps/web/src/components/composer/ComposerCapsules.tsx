@@ -285,6 +285,19 @@ export function ComposerCapsules({
             <p className="model-picker-empty">暂无模型</p>
           ) : intensityLevels.length > 1 ? (
             <div className="model-picker-slider-wrap">
+              <div
+                className="model-picker-track"
+                style={{ "--slider-pct": `${sliderPercent(thinkingIndex, intensityLevels.length)}%` } as CSSProperties}
+                aria-hidden
+              >
+                {intensityLevels.length <= 8 ? (
+                  <div className="model-picker-dots">
+                    {intensityLevels.map((level) => (
+                      <span key={level} className="model-picker-dot" />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <input
                 type="range"
                 className="model-picker-slider"
@@ -294,19 +307,8 @@ export function ComposerCapsules({
                 value={thinkingIndex}
                 aria-label="滑动选择思考强度"
                 aria-valuetext={THINKING_LABEL[activeThinking] ?? activeThinking}
-                style={{ "--slider-pct": `${sliderPercent(thinkingIndex, intensityLevels.length)}%` } as CSSProperties}
                 onChange={(event) => pickThinkingAt(Number(event.target.value))}
               />
-              {intensityLevels.length <= 8 ? (
-                <div className="model-picker-dots" aria-hidden>
-                  {intensityLevels.map((level, index) => (
-                    <span
-                      key={level}
-                      className={`model-picker-dot ${index <= thinkingIndex ? "model-picker-dot-on" : ""}`}
-                    />
-                  ))}
-                </div>
-              ) : null}
             </div>
           ) : (
             <p className="model-picker-empty">该模型不支持思考强度</p>

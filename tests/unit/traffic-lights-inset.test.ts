@@ -44,6 +44,7 @@ describe("macOS traffic-light inset", () => {
     expect(layout).toMatch(/MessageSquare[\s\S]*会话/);
     expect(layout).toMatch(/titlebar-meta/);
     expect(layout).toMatch(/titlebar-work-link/);
+    expect(layout).toMatch(/group\/title flex min-w-0 flex-1 items-center/);
     expect(layout).toMatch(/flex shrink-0 items-center gap-0\.5/);
     expect(layout).not.toMatch(/className="chip app-no-drag/);
     expect(layout).not.toMatch(/已加载 AGENTS\.md/);

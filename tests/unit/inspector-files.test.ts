@@ -105,6 +105,7 @@ describe("InspectorPanel tabs", () => {
     expect(skills).not.toMatch(/>系统技能</);
     expect(plugins).toMatch(/插件中心/);
     expect(plugins).toMatch(/已安装/);
+    expect(plugins).toMatch(/installedCount/);
     expect(plugins).not.toMatch(/推荐安装/);
     expect(plugins).not.toMatch(/安装推荐/);
     expect(plugins).not.toMatch(/PRESET_PI_PACKAGES/);
@@ -112,6 +113,9 @@ describe("InspectorPanel tabs", () => {
     const center = readFileSync(path.resolve("apps/web/src/components/inspector/InspectorPackageCenter.tsx"), "utf8");
     expect(center).toMatch(/热门/);
     expect(center).toMatch(/hotPackageItems/);
+    expect(center).not.toMatch(/扩展/);
+    expect(center).not.toMatch(/typeLabel/);
+    expect(center).not.toMatch(/item\.types\.map/);
     expect(layout).toMatch(/resources\.package\.catalog/);
     expect(layout).toMatch(/resources\.package\.install/);
     expect(skills).toMatch(/检查更新/);

@@ -22,14 +22,6 @@ type Props = {
   onRetry: () => void;
 };
 
-function typeLabel(type: string): string {
-  if (type === "extension") return "扩展";
-  if (type === "skill") return "技能";
-  if (type === "prompt") return "模板";
-  if (type === "theme") return "主题";
-  return type;
-}
-
 function PackageRows({
   items,
   extensions,
@@ -52,9 +44,6 @@ function PackageRows({
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12.5px] font-medium leading-snug text-ink">{item.name}</p>
               {item.summary ? <p className="text-[11px] text-mute">{item.summary}</p> : null}
-              {item.types.length > 0 ? (
-                <p className="mt-0.5 text-[11px] text-mute">{item.types.map(typeLabel).join(" · ")}</p>
-              ) : null}
             </div>
             {installed ? (
               <span className="mt-0.5 shrink-0 text-[11px] text-mute">已安装</span>

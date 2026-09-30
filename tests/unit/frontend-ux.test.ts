@@ -82,10 +82,13 @@ describe("conversation interaction chrome", () => {
     expect(capsules).toContain("推荐模型集");
     expect(capsules).toContain("设为默认");
     expect(capsules).toContain("model-picker-list");
+    expect(capsules).toContain("model-picker-track");
+    expect(capsules).toContain("model-picker-dots");
     expect(capsules).toContain("pickerThinkingLevels");
     expect(capsules).not.toContain("滑动选择模型");
     expect(capsules).not.toContain("选择强度");
     expect(capsules).not.toContain("model-picker-levels");
+    expect(capsules).not.toContain("model-picker-dot-on");
     const layout = readFileSync(path.resolve("apps/web/src/layouts/WorkbenchLayout.tsx"), "utf8");
     expect(layout).toContain('onFastMode={(enabled) => void socketClient.send("runtime.set"');
     expect(layout).not.toContain('typeof runtime.fastModeEnabled === "boolean"');

@@ -27,16 +27,17 @@ export function InspectorExtensions({
   onOpenCatalog,
 }: Props) {
   const extraPackages = packages.filter((item) => !matchingExtension(item.source, extensions));
+  const installedCount = extensions.length + extraPackages.length;
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        <p className={`panel-count min-w-0 flex-1 ${extensions.length === 0 && packages.length === 0 ? "panel-count-empty" : ""}`}>
-          {extensions.length === 0 && packages.length === 0
+        <p className={`panel-count min-w-0 flex-1 ${installedCount === 0 ? "panel-count-empty" : ""}`}>
+          {installedCount === 0
             ? trustProject
               ? "还没有本地插件。打开插件中心安装。"
               : "未信任项目，只显示用户插件。"
-            : `${extensions.length} 个已安装`}
+            : `${installedCount} 个已安装`}
         </p>
         {onOpenCatalog ? (
           <button
