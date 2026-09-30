@@ -75,7 +75,7 @@ export function folderName(cwd: string): string {
 }
 
 export function nextHint(status: string, hasTask: boolean): string {
-  if (!hasTask) return "点 + 开始聊天";
+  if (!hasTask) return "";
   if (status === "waiting_approval") return "等待确认";
   if (status === "running") return taskStatusLabel("running");
   if (status === "error") return "出错了";
@@ -87,7 +87,7 @@ export function nextHint(status: string, hasTask: boolean): string {
 
 /** Header subtitle: folder only. Keyboard hints live in the composer; live progress is the status bar. */
 export function headerSubtitle(cwd: string | undefined, hasTask: boolean, status: string): string {
-  if (!hasTask || !cwd) return nextHint(status, false);
+  if (!hasTask || !cwd) return "";
   return folderName(cwd);
 }
 

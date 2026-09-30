@@ -48,7 +48,9 @@ describe("running status copy", () => {
   it("keeps keyboard hints in the composer, not the header subtitle", () => {
     expect(headerSubtitle("/tmp/MyPi", true, "running")).toBe("MyPi");
     expect(headerSubtitle("/tmp/MyPi", true, "idle")).toBe("MyPi");
-    expect(headerSubtitle(undefined, false, "idle")).toBe("点 + 开始聊天");
+    expect(headerSubtitle(undefined, false, "idle")).toBe("");
+    expect(headerSubtitle("/tmp/MyPi", false, "idle")).toBe("");
+    expect(nextHint("idle", false)).toBe("");
     expect(nextHint("running", true)).not.toMatch(/回车补充/);
   });
 
