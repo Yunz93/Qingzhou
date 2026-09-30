@@ -5,7 +5,7 @@ import { useAgentStore } from "../stores/agent-store";
 import { SetupWizard, type SetupStatus, setupStorePayload } from "../components/setup/SetupWizard";
 import { useTheme } from "../hooks/useTheme";
 import { socketClient } from "../transport/socket-client";
-import { authEntryStatusLabel, findAuthEntry, isRemovableAuthEntry, logoutNotice, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthMode } from "../lib/settings-auth";
+import { authEntryStatusLabel, connectedAuthEntries, envAuthEntries, findAuthEntry, isRemovableAuthEntry, logoutNotice, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthMode } from "../lib/settings-auth";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { AppUpdateSection } from "../components/settings/AppUpdateSection";
 
@@ -281,9 +281,12 @@ export function SettingsPage() {
   const modeProviders = providersForMode(catalog, authMode);
   const activeProviderId = pickDefaultProvider(catalog, authMode, selectedProvider);
   const activeItem = modeProviders.find((item) => item.id === activeProviderId) ?? modeProviders[0] ?? null;
-  const activeEntry = activeItem ? findAuthEntry(authEntries, activeItem.id, authMode) : undefined;
+  const activeEntry =
+    activeItem && authMode !== "env" ? findAuthEntry(authEntries, activeItem.id, authMode) : undefined;
   const activeDraft = activeItem ? (keyDrafts[activeItem.id] ?? "") : "";
   const activeFlash = activeItem && flash?.id === activeItem.id ? flash : flash?.id === "sync" ? flash : null;
+  const envEntries = envAuthEntries(authEntries);
+  const connectedEntries = connectedAuthEntries(authEntries, authMode);
   const engineDetail = piVersion ? `已就绪（Pi ${piVersion}）` : (piError ?? "还没准备好");
   let updateDetail: string | null = null;
   if (piLatest?.error) updateDetail = piLatest.error;
@@ -344,10 +347,11 @@ export function SettingsPage() {
               <div className="settings-row flex-col items-stretch gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[13px] text-ink">方式</p>
-                  <div className="seg w-[200px]">
+                  <div className="seg w-[300px]">
                     {([
                       { id: "oauth" as const, label: "订阅登录" },
                       { id: "api_key" as const, label: "API Key" },
+                      { id: "env" as const, label: "环境变量" },
                     ]).map((item) => (
                       <button
                         key={item.id}
@@ -367,154 +371,196 @@ export function SettingsPage() {
                 </div>
               </div>
 
-              <div className="settings-row flex-col items-stretch gap-3">
-                <label className="block text-[13px] text-ink" htmlFor="settings-auth-provider">
-                  服务商
-                </label>
-                <select
-                  id="settings-auth-provider"
-                  className="field w-full text-[13px] text-ink"
-                  value={activeProviderId}
-                  disabled={modeProviders.length === 0}
-                  onChange={(event) => {
-                    setSelectedProvider(event.target.value);
-                    setFlash(null);
-                  }}
-                >
-                  {modeProviders.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {activeItem ? (
+              {authMode === "env" ? (
                 <div className="settings-row flex-col items-stretch gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[13px] text-ink">{activeItem.label}</p>
+                      <p className="text-[13px] text-ink">环境变量</p>
                       <p className="mt-0.5 text-[12px] text-mute">
-                        {authEntryStatusLabel(activeEntry, {
-                          oauth: authMode === "oauth",
-                          apiKey: authMode === "api_key",
-                        })}
+                        仅检测进程环境中的密钥，不在此编辑；请在系统或 .env 中修改。
                       </p>
                     </div>
-                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                      {authMode === "oauth" ? (
-                        <>
-                          {activeEntry?.kind !== "oauth" ? (
-                            <button
-                              type="button"
-                              className="pressable btn btn-ghost"
-                              disabled={authBusy === activeItem.id}
-                              onClick={() => void loginProvider(activeItem.id)}
-                            >
-                              {authBusy === activeItem.id ? "正在登录…" : oauthButtonLabel(activeEntry?.kind)}
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="pressable btn btn-ghost"
-                            disabled={refreshBusy}
-                            onClick={() => void refreshAuth()}
-                          >
-                            {refreshBusy ? "正在刷新…" : "刷新状态"}
-                          </button>
-                        </>
-                      ) : null}
-                      {activeEntry && isRemovableAuthEntry(activeEntry) ? (
-                        <button
-                          type="button"
-                          className="pressable btn btn-ghost"
-                          disabled={authBusy === activeItem.id}
-                          onClick={() => void logoutProvider(activeEntry?.id ?? activeItem.id)}
-                        >
-                          {authBusy === activeItem.id
-                            ? "正在退出…"
-                            : activeEntry.kind === "api_key"
-                              ? "移除密钥"
-                              : "退出"}
-                        </button>
-                      ) : null}
-                    </div>
+                    <button
+                      type="button"
+                      className="pressable btn btn-ghost shrink-0"
+                      disabled={refreshBusy}
+                      onClick={() => void refreshAuth()}
+                    >
+                      {refreshBusy ? "正在刷新…" : "刷新状态"}
+                    </button>
                   </div>
-
-                  {authMode === "api_key" ? (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <label className="sr-only" htmlFor={`settings-api-key-${activeItem.id}`}>
-                        {activeItem.label} API Key
-                      </label>
-                      <input
-                        id={`settings-api-key-${activeItem.id}`}
-                        type="password"
-                        autoComplete="off"
-                        className="field min-w-0 flex-1 font-mono text-[13px] text-ink"
-                        value={activeDraft}
-                        placeholder={
-                          activeEntry?.kind === "api_key" ? "粘贴新的密钥以替换" : (activeItem.hint ?? "API Key")
-                        }
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setKeyDrafts((current) => ({ ...current, [activeItem.id]: value }));
-                          setFlash(null);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="pressable btn btn-primary shrink-0"
-                        disabled={keyBusy === activeItem.id || activeDraft.trim().length < 8}
-                        onClick={() => void saveApiKey(activeItem.id)}
-                      >
-                        {keyBusy === activeItem.id
-                          ? "正在保存…"
-                          : activeEntry?.kind === "api_key"
-                            ? "更新密钥"
-                            : "保存密钥"}
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {activeFlash ? (
-                    <p className={`text-[12px] ${activeFlash.tone === "err" ? "text-danger" : "text-success"}`}>
-                      {activeFlash.text}
+                  {envEntries.length > 0 ? (
+                    <ul className="m-0 list-none space-y-1 p-0" aria-label="检测到的环境变量密钥">
+                      {envEntries.map((entry) => (
+                        <li key={entry.id} className="flex items-center justify-between gap-2 text-[13px] text-ink">
+                          <span className="min-w-0 truncate">
+                            {entry.label}
+                            <span className="ml-2 text-[12px] text-mute">{authEntryStatusLabel(entry)}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[13px] text-mute">未检测到环境变量中的密钥。</p>
+                  )}
+                  {flash?.id === "sync" ? (
+                    <p className={`text-[12px] ${flash.tone === "err" ? "text-danger" : "text-success"}`}>
+                      {flash.text}
                     </p>
                   ) : null}
                 </div>
               ) : (
-                <div className="settings-row">
-                  <p className="text-[13px] text-mute">
-                    {authMode === "oauth" ? "当前没有可订阅登录的服务商。" : "当前没有支持 API Key 的服务商。"}
-                  </p>
-                </div>
-              )}
+                <>
+                  <div className="settings-row flex-col items-stretch gap-3">
+                    <label className="block text-[13px] text-ink" htmlFor="settings-auth-provider">
+                      服务商
+                    </label>
+                    <select
+                      id="settings-auth-provider"
+                      className="field w-full text-[13px] text-ink"
+                      value={activeProviderId}
+                      disabled={modeProviders.length === 0}
+                      onChange={(event) => {
+                        setSelectedProvider(event.target.value);
+                        setFlash(null);
+                      }}
+                    >
+                      {modeProviders.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              {authEntries.length > 0 ? (
-                <div className="settings-row flex-col items-stretch gap-2">
-                  <p className="text-[12px] text-mute">已连接</p>
-                  <ul className="m-0 list-none space-y-1 p-0">
-                    {authEntries.map((entry) => (
-                      <li key={entry.id} className="flex items-center justify-between gap-2 text-[13px] text-ink">
-                        <span className="min-w-0 truncate">
-                          {entry.label}
-                          <span className="ml-2 text-[12px] text-mute">{authEntryStatusLabel(entry)}</span>
-                        </span>
-                        {isRemovableAuthEntry(entry) ? (
+                  {activeItem ? (
+                    <div className="settings-row flex-col items-stretch gap-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[13px] text-ink">{activeItem.label}</p>
+                          <p className="mt-0.5 text-[12px] text-mute">
+                            {authEntryStatusLabel(activeEntry, {
+                              oauth: authMode === "oauth",
+                              apiKey: authMode === "api_key",
+                            })}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                          {authMode === "oauth" ? (
+                            <>
+                              {activeEntry?.kind !== "oauth" ? (
+                                <button
+                                  type="button"
+                                  className="pressable btn btn-ghost"
+                                  disabled={authBusy === activeItem.id}
+                                  onClick={() => void loginProvider(activeItem.id)}
+                                >
+                                  {authBusy === activeItem.id ? "正在登录…" : oauthButtonLabel(activeEntry?.kind)}
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="pressable btn btn-ghost"
+                                disabled={refreshBusy}
+                                onClick={() => void refreshAuth()}
+                              >
+                                {refreshBusy ? "正在刷新…" : "刷新状态"}
+                              </button>
+                            </>
+                          ) : null}
+                          {activeEntry && isRemovableAuthEntry(activeEntry) ? (
+                            <button
+                              type="button"
+                              className="pressable btn btn-ghost"
+                              disabled={authBusy === activeItem.id}
+                              onClick={() => void logoutProvider(activeEntry?.id ?? activeItem.id)}
+                            >
+                              {authBusy === activeItem.id
+                                ? "正在退出…"
+                                : activeEntry.kind === "api_key"
+                                  ? "移除密钥"
+                                  : "退出"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {authMode === "api_key" ? (
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <label className="sr-only" htmlFor={`settings-api-key-${activeItem.id}`}>
+                            {activeItem.label} API Key
+                          </label>
+                          <input
+                            id={`settings-api-key-${activeItem.id}`}
+                            type="password"
+                            autoComplete="off"
+                            className="field min-w-0 flex-1 font-mono text-[13px] text-ink"
+                            value={activeDraft}
+                            placeholder={
+                              activeEntry?.kind === "api_key" ? "粘贴新的密钥以替换" : (activeItem.hint ?? "API Key")
+                            }
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setKeyDrafts((current) => ({ ...current, [activeItem.id]: value }));
+                              setFlash(null);
+                            }}
+                          />
                           <button
                             type="button"
-                            className="pressable btn btn-ghost shrink-0"
-                            disabled={authBusy === entry.id}
-                            onClick={() => void logoutProvider(entry.id)}
+                            className="pressable btn btn-primary shrink-0"
+                            disabled={keyBusy === activeItem.id || activeDraft.trim().length < 8}
+                            onClick={() => void saveApiKey(activeItem.id)}
                           >
-                            {entry.kind === "api_key" ? "移除" : "退出"}
+                            {keyBusy === activeItem.id
+                              ? "正在保存…"
+                              : activeEntry?.kind === "api_key"
+                                ? "更新密钥"
+                                : "保存密钥"}
                           </button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+                        </div>
+                      ) : null}
+
+                      {activeFlash ? (
+                        <p className={`text-[12px] ${activeFlash.tone === "err" ? "text-danger" : "text-success"}`}>
+                          {activeFlash.text}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="settings-row">
+                      <p className="text-[13px] text-mute">
+                        {authMode === "oauth" ? "当前没有可订阅登录的服务商。" : "当前没有支持 API Key 的服务商。"}
+                      </p>
+                    </div>
+                  )}
+
+                  {connectedEntries.length > 0 ? (
+                    <div className="settings-row flex-col items-stretch gap-2">
+                      <p className="text-[12px] text-mute">已连接</p>
+                      <ul className="m-0 list-none space-y-1 p-0">
+                        {connectedEntries.map((entry) => (
+                          <li key={entry.id} className="flex items-center justify-between gap-2 text-[13px] text-ink">
+                            <span className="min-w-0 truncate">
+                              {entry.label}
+                              <span className="ml-2 text-[12px] text-mute">{authEntryStatusLabel(entry)}</span>
+                            </span>
+                            {isRemovableAuthEntry(entry) ? (
+                              <button
+                                type="button"
+                                className="pressable btn btn-ghost shrink-0"
+                                disabled={authBusy === entry.id}
+                                onClick={() => void logoutProvider(entry.id)}
+                              >
+                                {entry.kind === "api_key" ? "移除" : "退出"}
+                              </button>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           </section>
 

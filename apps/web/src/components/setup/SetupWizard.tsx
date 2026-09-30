@@ -4,6 +4,8 @@ import { FolderPicker } from "./FolderPicker";
 import { isDesktopApp } from "../../desktop-bridge";
 import { authStatusLabel, findAuthEntry, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthMode } from "../../lib/settings-auth";
 
+type WizardAuthMode = Exclude<AuthMode, "env">;
+
 export type SetupStatus = {
   ready: boolean;
   piAvailable: boolean;
@@ -68,7 +70,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installLog, setInstallLog] = useState("");
-  const [authMode, setAuthMode] = useState<AuthMode>("oauth");
+  const [authMode, setAuthMode] = useState<WizardAuthMode>("oauth");
   const existingLogins = status?.authEntries ?? [];
   const hasExistingLogin = existingLogins.length > 0 || Boolean(status?.authConfigured);
   const catalog = mergeAuthCatalog(
