@@ -34,7 +34,7 @@ export function runStatusStage(
     return { label: "正在发送", detail: "", kind: "spin" };
   }
   if (status === "error") {
-    return { label: "需要处理", detail: errorMessage || "这次运行没有完成", kind: "error" };
+    return { label: "对话异常停止", detail: errorMessage || "这次运行没有完成", kind: "error" };
   }
   if (status === "running") {
     const toolName = current?.toolName ?? "agent";
@@ -49,4 +49,12 @@ export function runStatusStage(
   }
   if (hasChanges) return { label: "查看改动", detail: "这次对话改了项目里的文件", kind: "done" };
   return null;
+}
+
+/** Prominent copy for an abnormal task stop shown inside the conversation pane. */
+export function abnormalStopNotice(errorMessage?: string | null): string {
+  const detail = errorMessage?.trim();
+  if (!detail) return "对话异常停止，请重试发送或检查设置。";
+  if (/对话异常停止|这次运行没有完成/.test(detail)) return detail;
+  return `对话异常停止：${detail}`;
 }

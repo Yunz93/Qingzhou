@@ -370,6 +370,9 @@ describe("conversation UI contracts", () => {
     expect(composer).toContain("nextComposerDomValue");
     expect(composer).not.toMatch(/<textarea[\s\S]*\n\s*value=\{value\}/);
     expect(layout).toContain("function WorkbenchConversation");
+    expect(layout).toContain("abnormalStopNotice");
+    expect(layout).toContain('status === "error"');
+    expect(timeline).toContain("对话异常停止");
     expect(layout).toContain("const hasTurns = useAgentStore");
     expect(layout).toContain("isEditableTarget(event.target)");
     expect(layout).toContain("reportRequestError");

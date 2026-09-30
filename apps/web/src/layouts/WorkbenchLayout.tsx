@@ -20,6 +20,7 @@ import { NewTaskDialog } from "../components/tasks/NewTaskDialog";
 import type { ApprovalPolicy, InteractionMode, PiPackageCatalogResult, ThinkingLevel } from "@qingzhou/protocol";
 import { stripModePrefix, workItemIsClosed } from "@qingzhou/protocol";
 import { headerSubtitle, STARTER_PROMPTS } from "../copy";
+import { abnormalStopNotice } from "../lib/run-status";
 import { tasksInSidebarOrder } from "../lib/task-list";
 import { OPEN_CONVERSATION_SEARCH_EVENT } from "../lib/conversation-search";
 import { showOsNotification } from "../lib/notify";
@@ -908,7 +909,11 @@ export function WorkbenchLayout() {
           {task ? (
             <WorkbenchConversation
               canRewrite={!linkedWorkItem && (status === "idle" || status === "stopped" || status === "error")}
-              error={null}
+              error={
+                status === "error"
+                  ? abnormalStopNotice(task?.errorMessage || serverError || requestError)
+                  : null
+              }
               onRetry={(messageId, text) =>
                 void socketClient
                   .send("session.fork", { messageId, message: text }, task.id)

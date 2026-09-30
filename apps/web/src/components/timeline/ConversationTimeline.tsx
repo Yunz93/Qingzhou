@@ -502,9 +502,10 @@ export function ConversationTimeline({
       {error ? (
         <div
           role="alert"
-          className="whitespace-pre-wrap rounded-[14px] border border-[color-mix(in_oklch,var(--color-danger)_22%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_8%,transparent)] px-4 py-3 text-[13px] leading-6 text-danger"
+          className="whitespace-pre-wrap rounded-[14px] border border-[color-mix(in_oklch,var(--color-danger)_28%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,var(--color-surface))] px-4 py-3 text-[13px] leading-6 text-danger"
         >
-          {error}
+          <p className="font-medium">对话异常停止</p>
+          <p className="mt-1 opacity-95">{error.replace(/^对话异常停止：?/, "") || "这次运行没有完成，请重试。"}</p>
         </div>
       ) : null}
     </div>

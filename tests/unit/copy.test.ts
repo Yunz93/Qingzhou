@@ -8,7 +8,7 @@ import {
   toolNameLabel,
   visibleBranchNodes,
 } from "../../apps/web/src/copy.ts";
-import { runStatusStage } from "../../apps/web/src/lib/run-status.ts";
+import { abnormalStopNotice, runStatusStage } from "../../apps/web/src/lib/run-status.ts";
 
 describe("branch tree presentation", () => {
   it("uses short Chinese labels instead of raw Pi role names", () => {
@@ -79,6 +79,14 @@ describe("running status copy", () => {
 
   it("shows sending while waiting for prompt ack", () => {
     expect(runStatusStage("idle", [], false, null, null, true)?.label).toBe("正在发送");
+  });
+
+  it("labels abnormal stops clearly", () => {
+    expect(runStatusStage("error", [], false, null, "Pi 进程退出")?.label).toBe("对话异常停止");
+    expect(runStatusStage("error", [], false, null, "Pi 进程退出")?.detail).toBe("Pi 进程退出");
+    expect(runStatusStage("error", [], false, null, "Pi 进程退出")?.kind).toBe("error");
+    expect(abnormalStopNotice("Pi 进程退出")).toBe("对话异常停止：Pi 进程退出");
+    expect(abnormalStopNotice(null)).toMatch(/对话异常停止/);
   });
 
   it("uses the tool name without a second 正在 prefix", () => {
