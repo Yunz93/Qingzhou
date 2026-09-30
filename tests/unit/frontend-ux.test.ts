@@ -53,6 +53,16 @@ describe("ui prefs and tones", () => {
   it("formats shortcut labels", () => {
     expect(shortcutLabel("Mod+N")).toMatch(/N/);
   });
+
+  it("ports the context usage panel out of the frosted titlebar", () => {
+    const meter = readFileSync(path.resolve("apps/web/src/components/status/ContextMeter.tsx"), "utf8");
+    const css = readFileSync(path.resolve("apps/web/src/styles/app.css"), "utf8");
+    expect(meter).toContain("createPortal");
+    expect(meter).toContain("context-usage-panel");
+    expect(meter).toContain("document.body");
+    expect(css).toMatch(/\.context-usage-panel\s*\{[^}]*background:\s*var\(--color-elevated\)/);
+    expect(css).not.toMatch(/\.context-usage-panel\s*\{[^}]*backdrop-filter/);
+  });
 });
 
 describe("conversation interaction chrome", () => {
