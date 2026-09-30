@@ -88,7 +88,16 @@ describe("conversation interaction chrome", () => {
     expect(composer).toContain("const showStop = running && !canSubmit");
     expect(capsules).toContain("Fast 模式");
     expect(capsules).toContain("model-picker");
+    expect(capsules).toContain("policy-picker");
+    expect(capsules).toContain("GearSlider");
+    expect(capsules).toContain("policy-picker-rail");
+    expect(capsules).toContain("滑动选择交互模式");
+    expect(capsules).toContain("滑动选择审批策略");
     expect(capsules).toContain("滑动选择思考强度");
+    expect(capsules).not.toContain("composer-popover-item");
+    const appCss = readFileSync(path.resolve("apps/web/src/styles/app.css"), "utf8");
+    expect(appCss).toContain(".policy-picker");
+    expect(appCss).toContain(".policy-picker-rail-disabled");
     expect(capsules).toContain("推荐模型集");
     expect(capsules).toContain("设为默认");
     expect(capsules).toContain("model-picker-list");
