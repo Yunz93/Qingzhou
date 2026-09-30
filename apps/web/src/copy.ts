@@ -86,7 +86,7 @@ export function nextHint(status: string, hasTask: boolean): string {
 }
 
 /** Header subtitle: folder only. Keyboard hints live in the composer; live progress is the status bar. */
-export function headerSubtitle(cwd: string | undefined, hasTask: boolean, status: string): string {
+export function headerSubtitle(cwd: string | undefined, hasTask: boolean): string {
   if (!hasTask || !cwd) return "";
   return folderName(cwd);
 }

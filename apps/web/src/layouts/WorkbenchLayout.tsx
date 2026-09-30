@@ -807,7 +807,7 @@ export function WorkbenchLayout() {
                 </button>
                 <div className="titlebar-context">
                   <span className="titlebar-meta" title={task.cwd}>
-                    {headerSubtitle(task.cwd, true, status)}
+                    {headerSubtitle(task.cwd, true)}
                   </span>
                   {linkedWorkItem ? (
                     <Link
