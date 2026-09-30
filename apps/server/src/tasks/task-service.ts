@@ -138,6 +138,8 @@ export class TaskService {
       removeQueued: (taskId) => this.removeQueued(taskId),
       cwdRoots: () => this.cwdRoots(),
       adoptAllowedRoot: (cwd) => this.adoptAllowedRoot(cwd),
+      archiveTask: (taskId) => this.archiveLinkedTask(taskId),
+      restoreTask: (taskId) => this.restoreLinkedTask(taskId),
     });
 
 
@@ -576,6 +578,7 @@ export class TaskService {
       this.activeTaskId = this.listTasks()[0]?.id ?? null;
     }
     this.emit(taskId, "task.archived", { taskId: next.id });
+    await this.archiveLinkedWorkItems(taskId);
 
     // Stop Pi + drain in the background so archive RPC returns immediately.
     void (async () => {
@@ -587,6 +590,25 @@ export class TaskService {
       await this.drainQueue().catch(() => undefined);
     })();
     return { ok: true };
+  }
+
+  /** Used by work-item archive cascade; skips missing/already-archived sessions. */
+  private async archiveLinkedTask(taskId: string): Promise<{ ok: true }> {
+    const task = this.store.get(taskId);
+    if (!task || task.archivedAt) return { ok: true };
+    return this.archive(taskId);
+  }
+
+  private async archiveLinkedWorkItems(taskId: string): Promise<void> {
+    const linked = this.workItems.findByTaskId(taskId).filter((item) => item.state !== "archived");
+    if (linked.length === 0) return;
+    for (const item of linked) {
+      if (this.workItems.activeRunForTask(taskId)) {
+        await this.work.stopWorkItem(item.id);
+      }
+      await this.workItems.setState(item.id, "archived");
+    }
+    this.emitWorkItems();
   }
 
   private async restore(taskId: string): Promise<{ task: TaskRecord }> {
@@ -601,7 +623,26 @@ export class TaskService {
     if (current.archivedAt !== task.archivedAt) throw new Error("会话归档状态已变化，请重试");
     const next = await this.store.upsert({ ...current, archivedAt: null, status: "stopped", updatedAt: new Date().toISOString() });
     this.emit(taskId, "task.updated", { task: next });
+    await this.restoreLinkedWorkItems(taskId);
     return { task: next };
+  }
+
+  /** Used by work-item reopen cascade; skips missing/already-visible sessions. */
+  private async restoreLinkedTask(taskId: string): Promise<{ task: TaskRecord } | { ok: true }> {
+    const task = this.store.get(taskId);
+    if (!task) return { ok: true };
+    if (!task.archivedAt) return { task };
+    return this.restore(taskId);
+  }
+
+  private async restoreLinkedWorkItems(taskId: string): Promise<void> {
+    const linked = this.workItems.findByTaskId(taskId).filter((item) => item.state === "archived");
+    if (linked.length === 0) return;
+    for (const item of linked) {
+      // Prefer prior completed state when the item had been accepted before archive.
+      await this.workItems.setState(item.id, item.completedAt ? "completed" : "open");
+    }
+    this.emitWorkItems();
   }
 
   private async reorderTasks(cwd: string, taskIds: string[]): Promise<{ ok: true }> {

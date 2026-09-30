@@ -429,6 +429,148 @@ describe("task service process reservations", () => {
   });
 });
 
+describe("task / work-item archive linkage", () => {
+  function baseConfig(root: string): AppConfig {
+    return {
+      host: "127.0.0.1",
+      port: 0,
+      piBin: "pi",
+      piCommand: "pi",
+      piPrefixArgs: [],
+      piExtraEnv: {},
+      dataDir: root,
+      allowedRoots: [root],
+      maxProcesses: 1,
+      mutations: "approval",
+      nodeEnv: "test",
+      approvalTimeoutMs: 1000,
+      allowedOrigins: [],
+      webDistDir: root,
+      approvalExtensionPath: path.join(root, "approval.ts"),
+      homeDir: root,
+      piBundled: false,
+      piAgentDir: path.join(root, ".pi", "agent"),
+      trustProject: false,
+    };
+  }
+
+  it("archives the linked work item when the work session is archived", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-archive-link-task-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const workItems = new WorkItemStore(root);
+    await workItems.load();
+    const taskId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    await store.upsert({ ...task(taskId, root), status: "idle", title: "fix login" });
+    const item = await workItems.create({ title: "fix login", cwd: root });
+    await workItems.createRun({
+      objectiveId: item.id,
+      taskId,
+      kind: "initial",
+      instruction: "do it",
+    });
+    expect(workItems.get(item.id)?.taskId).toBe(taskId);
+
+    const service = new TaskService(baseConfig(root), store, "test", null, workItems);
+    vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
+    vi.spyOn(service.supervisor, "has").mockReturnValue(false);
+
+    await service.handleCommand({ id: "arch", type: "task.archive", taskId, payload: {} });
+    expect(store.get(taskId)?.archivedAt).toBeTruthy();
+    expect(workItems.get(item.id)?.state).toBe("archived");
+    expect(workItems.get(item.id)?.archivedAt).toBeTruthy();
+    service.dispose();
+  });
+
+  it("archives the linked work session when the work item is archived", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-archive-link-item-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const workItems = new WorkItemStore(root);
+    await workItems.load();
+    const taskId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    await store.upsert({ ...task(taskId, root), status: "idle", title: "ship docs" });
+    const item = await workItems.create({ title: "ship docs", cwd: root });
+    await workItems.createRun({
+      objectiveId: item.id,
+      taskId,
+      kind: "initial",
+      instruction: "write docs",
+    });
+    await workItems.setState(item.id, "completed");
+
+    const service = new TaskService(baseConfig(root), store, "test", null, workItems);
+    vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
+    vi.spyOn(service.supervisor, "has").mockReturnValue(false);
+
+    await service.handleCommand({ id: "arch-item", type: "workItem.archive", payload: { id: item.id } });
+    expect(workItems.get(item.id)?.state).toBe("archived");
+    expect(store.get(taskId)?.archivedAt).toBeTruthy();
+    expect(service.listTasks().some((entry) => entry.id === taskId)).toBe(false);
+    service.dispose();
+  });
+
+  it("restores the linked work item when the work session is restored", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-archive-link-restore-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const workItems = new WorkItemStore(root);
+    await workItems.load();
+    const taskId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    await store.upsert({ ...task(taskId, root), status: "idle" });
+    const item = await workItems.create({ title: "paired restore", cwd: root });
+    await workItems.createRun({
+      objectiveId: item.id,
+      taskId,
+      kind: "initial",
+      instruction: "go",
+    });
+    await workItems.setState(item.id, "completed");
+
+    const service = new TaskService(baseConfig(root), store, "test", null, workItems);
+    vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
+    vi.spyOn(service.supervisor, "has").mockReturnValue(false);
+
+    await service.handleCommand({ id: "arch", type: "task.archive", taskId, payload: {} });
+    expect(workItems.get(item.id)?.state).toBe("archived");
+
+    await service.handleCommand({ id: "restore", type: "task.restore", taskId, payload: {} });
+    expect(store.get(taskId)?.archivedAt).toBeNull();
+    expect(workItems.get(item.id)?.state).toBe("completed");
+    expect(workItems.get(item.id)?.archivedAt).toBeNull();
+    service.dispose();
+  });
+
+  it("restores the linked work session when the work item is reopened", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-archive-link-reopen-"));
+    const store = new TaskStore(root);
+    await store.load();
+    const workItems = new WorkItemStore(root);
+    await workItems.load();
+    const taskId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    await store.upsert({ ...task(taskId, root), status: "idle" });
+    const item = await workItems.create({ title: "reopen restores session", cwd: root });
+    await workItems.createRun({
+      objectiveId: item.id,
+      taskId,
+      kind: "initial",
+      instruction: "go",
+    });
+
+    const service = new TaskService(baseConfig(root), store, "test", null, workItems);
+    vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
+    vi.spyOn(service.supervisor, "has").mockReturnValue(false);
+
+    await service.handleCommand({ id: "arch-item", type: "workItem.archive", payload: { id: item.id } });
+    expect(store.get(taskId)?.archivedAt).toBeTruthy();
+
+    await service.handleCommand({ id: "reopen", type: "workItem.reopen", payload: { id: item.id } });
+    expect(workItems.get(item.id)?.state).toBe("open");
+    expect(store.get(taskId)?.archivedAt).toBeNull();
+    service.dispose();
+  });
+});
+
 describe("task service default model", () => {
   it("writes Pi settings and includes defaultModel on the snapshot", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-default-model-svc-"));
