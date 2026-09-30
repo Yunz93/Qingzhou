@@ -298,6 +298,10 @@ export class TaskService {
         return this.rename(command.taskId, command.payload.title);
       case "task.archive":
         return this.archive(command.taskId);
+      case "task.listArchived":
+        return { tasks: this.store.getSnapshot().filter((task) => task.archivedAt).sort((a, b) => b.archivedAt!.localeCompare(a.archivedAt!)) };
+      case "task.restore":
+        return this.restore(command.taskId);
       case "task.reorder":
         return this.reorderTasks(command.payload.cwd, command.payload.taskIds);
       case "prompt.send":
@@ -585,6 +589,21 @@ export class TaskService {
     return { ok: true };
   }
 
+  private async restore(taskId: string): Promise<{ task: TaskRecord }> {
+    const task = this.store.get(taskId);
+    if (!task) throw new Error("找不到这个会话");
+    if (!task.archivedAt) return { task };
+    // Restoring only makes the saved conversation visible; activation owns Pi startup.
+    await this.supervisor.stop(taskId);
+    const current = this.store.get(taskId);
+    if (!current) throw new Error("找不到这个会话");
+    if (!current.archivedAt) return { task: current };
+    if (current.archivedAt !== task.archivedAt) throw new Error("会话归档状态已变化，请重试");
+    const next = await this.store.upsert({ ...current, archivedAt: null, status: "stopped", updatedAt: new Date().toISOString() });
+    this.emit(taskId, "task.updated", { task: next });
+    return { task: next };
+  }
+
   private async reorderTasks(cwd: string, taskIds: string[]): Promise<{ ok: true }> {
     const members = this.store
       .listVisible()
@@ -693,7 +712,7 @@ export class TaskService {
         if (this.supervisor.has(taskId)) await this.supervisor.stop(taskId);
         return;
       }
-      const next = await this.store.upsert({
+      await this.store.upsert({
         ...current,
         sessionPath: result.sessionPath,
         model: result.model,
@@ -702,7 +721,6 @@ export class TaskService {
         updatedAt: new Date().toISOString(),
       });
       await this.apply(taskId, "pi_ready");
-      this.emit(taskId, "task.updated", { task: next });
       const runtime = this.supervisor.snapshot(taskId);
       if (runtime) {
         this.emit(taskId, "models.updated", this.modelsUpdatedPayload(runtime.models, runtime.thinkingLevels));
@@ -714,7 +732,11 @@ export class TaskService {
         });
       }
       // Don't block pi_ready on resource scans / stats / work-item start.
-      void this.emitResources(taskId);
+      void this.emitResources(taskId).catch((error: unknown) => {
+        if (!this.store.get(taskId)?.archivedAt) {
+          console.warn(`[pi ${taskId}] resource scan failed:`, error instanceof Error ? error.message : error);
+        }
+      });
       void this.refreshStats(taskId);
       void this.tryStartWorkItemsForTask(taskId).catch((error) => {
         console.warn(
@@ -1815,4 +1837,3 @@ export class TaskService {
 }
 
 export { isActiveProcessStatus };
-

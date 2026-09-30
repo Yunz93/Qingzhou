@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "@qingzhou/server";
 import { applyDesktopEnv, preloadPath, resolvePiEntry } from "./paths.js";
 import { adoptSystemProxy } from "./system-proxy.js";
+import { createBackendRecovery, isBackendListening } from "./backend-recovery.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const unpackagedIcon = path.resolve(here, "../../build/icon.png");
@@ -12,6 +13,7 @@ const unpackagedIcon = path.resolve(here, "../../build/icon.png");
 let mainWindow: BrowserWindow | null = null;
 let stopServer: (() => Promise<void>) | null = null;
 let serverPort: number | null = null;
+let configuredServerPort = Number(process.env.PORT ?? "4310");
 let ipcReady = false;
 let booting: Promise<void> | null = null;
 
@@ -88,6 +90,7 @@ async function startBackend(): Promise<number> {
   }
 
   const { app: server, config, service } = await createApp(process.env);
+  configuredServerPort = config.port;
   try {
     await server.listen({ host: "127.0.0.1", port: config.port });
     stopServer = async () => {
@@ -108,6 +111,20 @@ async function startBackend(): Promise<number> {
     return port;
   }
 }
+
+function rendererUsesServer(): boolean {
+  return app.isPackaged || ["QINGZHOU_DESKTOP_USE_SERVER", "MOWEN_DESKTOP_USE_SERVER", "OHMYPI_DESKTOP_USE_SERVER"]
+    .some((key) => process.env[key] === "1");
+}
+
+const ensureBackend = createBackendRecovery(
+  () => isBackendListening(rendererUsesServer() ? serverPort ?? configuredServerPort : configuredServerPort),
+  async () => {
+    if (stopServer) await stopServer();
+    serverPort = await startBackend();
+    if (rendererUsesServer() && mainWindow) await loadWithRetry(mainWindow, `http://127.0.0.1:${serverPort}`);
+  },
+);
 
 async function createMainWindow(port: number): Promise<void> {
   mainWindow = new BrowserWindow({
@@ -200,12 +217,8 @@ async function createMainWindow(port: number): Promise<void> {
     }
   });
 
-  const packaged = app.isPackaged;
   const url =
-    packaged ||
-    process.env.QINGZHOU_DESKTOP_USE_SERVER === "1" ||
-    process.env.MOWEN_DESKTOP_USE_SERVER === "1" ||
-    process.env.OHMYPI_DESKTOP_USE_SERVER === "1"
+    rendererUsesServer()
     ? `http://127.0.0.1:${port}`
     : process.env.QINGZHOU_RENDERER_URL ??
       process.env.MOWEN_RENDERER_URL ??
@@ -222,6 +235,7 @@ function registerHandle(channel: string, handler: Parameters<typeof ipcMain.hand
 function registerIpc(): void {
   if (ipcReady) return;
   ipcReady = true;
+  registerHandle("qingzhou:ensure-backend", () => ensureBackend());
   registerHandle("qingzhou:pick-folder", async (_event, defaultPath?: string) => {
     const options: Electron.OpenDialogOptions = {
       title: "选择文件夹",
@@ -264,7 +278,16 @@ async function boot(): Promise<void> {
   booting = (async () => {
     registerIpc();
     installMenu();
-    if (serverPort == null) serverPort = await startBackend();
+    if (serverPort == null) {
+      if (rendererUsesServer()) {
+        serverPort = await startBackend();
+      } else {
+        // The Vite renderer proxies to the configured port. Reuse that
+        // backend rather than opening an unused second store on a random port.
+        await ensureBackend();
+        serverPort ??= configuredServerPort;
+      }
+    }
     await createMainWindow(serverPort);
   })();
   try {

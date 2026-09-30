@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useRef, useState } from "react";
 import type { ApprovalRequest } from "@qingzhou/protocol";
 import { AlertTriangle, Shield, ShieldAlert } from "lucide-react";
@@ -19,6 +20,7 @@ function heading(toolName: string): string {
 export function ApprovalSheet({ approval, onRespond }: Props) {
   const [remember, setRemember] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(panelRef, () => onRespond(false, false));
   const expiresAt = Date.parse(approval.expiresAt);
   const totalMs = useRef(Math.max(1, expiresAt - Date.now()));
   const [now, setNow] = useState(() => Date.now());

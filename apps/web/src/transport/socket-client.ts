@@ -10,6 +10,7 @@ type Pending = {
 
 /** Default ceiling so a stuck server command cannot freeze the composer forever. */
 export const SOCKET_RPC_TIMEOUT_MS = 60_000;
+export const SOCKET_CONNECT_TIMEOUT_MS = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
@@ -36,6 +37,9 @@ export class SocketClient {
   private retries = 0;
   private closedByUser = false;
   private connecting = false;
+  private connectGeneration = 0;
+  private bootstrap: AbortController | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private deltaQueue: ServerEvent[] = [];
   private deltaRaf: number | null = null;
@@ -46,20 +50,33 @@ export class SocketClient {
       return;
     }
     this.connecting = true;
+    const generation = ++this.connectGeneration;
+    const controller = new AbortController();
+    this.bootstrap = controller;
+    const timer = setTimeout(() => controller.abort(), SOCKET_CONNECT_TIMEOUT_MS);
     useAgentStore.getState().setConnection("connecting");
     try {
-      const response = await fetch("/api/session", { credentials: "same-origin" });
+      const response = await fetch("/api/session", { credentials: "same-origin", signal: controller.signal });
       if (!response.ok) throw new Error(`Session bootstrap failed (${response.status})`);
-      if (!this.closedByUser) this.open();
+      if (!this.closedByUser && generation === this.connectGeneration) this.open();
     } catch {
-      if (!this.closedByUser) this.scheduleReconnect();
+      if (!this.closedByUser && generation === this.connectGeneration) this.scheduleReconnect();
     } finally {
-      this.connecting = false;
+      clearTimeout(timer);
+      if (generation === this.connectGeneration) {
+        this.connecting = false;
+        this.bootstrap = null;
+      }
     }
   }
 
   disconnect(): void {
     this.closedByUser = true;
+    this.connectGeneration += 1;
+    this.bootstrap?.abort();
+    this.bootstrap = null;
+    this.connecting = false;
+    this.clearHandshakeTimer();
     this.flushDeltaQueue();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -67,6 +84,33 @@ export class SocketClient {
     }
     this.socket?.close();
     this.socket = null;
+    failPendingRequests(this.pending, new Error("连接已断开，请稍后再发。"));
+    useAgentStore.getState().setConnection("closed");
+  }
+
+  async reconnect(): Promise<void> {
+    this.disconnect();
+    this.retries = 0;
+    // Subscribe before opening so even an immediate open cannot be missed.
+    const ready = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("暂时无法连接本地服务，仍会自动重试。"));
+      }, SOCKET_CONNECT_TIMEOUT_MS * 2);
+      const unsubscribe = useAgentStore.subscribe((state) => {
+        if (state.connection !== "open") return;
+        clearTimeout(timer);
+        unsubscribe();
+        resolve();
+      });
+    });
+    void this.connect();
+    await ready;
+  }
+
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   send<T = unknown>(
@@ -155,9 +199,13 @@ export class SocketClient {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
     const socket = new WebSocket(`${protocol}://${location.host}/ws`);
     this.socket = socket;
+    this.handshakeTimer = setTimeout(() => {
+      if (socket === this.socket && socket.readyState === WebSocket.CONNECTING) socket.close();
+    }, SOCKET_CONNECT_TIMEOUT_MS);
 
     socket.addEventListener("open", () => {
       if (socket !== this.socket) return;
+      this.clearHandshakeTimer();
       this.retries = 0;
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
@@ -214,6 +262,7 @@ export class SocketClient {
 
     socket.addEventListener("close", () => {
       if (socket !== this.socket) return;
+      this.clearHandshakeTimer();
       this.socket = null;
       this.flushDeltaQueue();
       useAgentStore.getState().setConnection("closed");

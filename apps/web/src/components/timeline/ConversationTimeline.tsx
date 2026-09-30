@@ -1,3 +1,5 @@
+import { groupThinkingMessages } from "../../lib/thinking-groups";
+import { hasDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type ReactNode } from "react";
 import { Box, Info } from "lucide-react";
 import { stripModePrefix, type TimelineMessage, type ToolExecution } from "@qingzhou/protocol";
@@ -49,7 +51,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function ThinkingBlock({ message }: { message: TimelineMessage }) {
+function ThinkingBlock({ message, highlighted = false }: { message: TimelineMessage; highlighted?: boolean }) {
   const [open, setOpen] = useState(false);
   if (!message.thinking) return null;
   const duration =
@@ -65,11 +67,19 @@ function ThinkingBlock({ message }: { message: TimelineMessage }) {
       >
         思考了 {duration ?? "片刻"} {open ? "▾" : "▸"}
       </button>
-      {open ? (
+      {open || highlighted ? (
         <pre className="thinking-body fade-in mt-1 whitespace-pre-wrap text-xs leading-6">{message.thinking}</pre>
       ) : null}
     </div>
   );
+}
+
+function ThinkingGroup({ messages, activeMessageId }: { messages: TimelineMessage[]; activeMessageId: string | null }) {
+  const [open, setOpen] = useState(false);
+  const expanded = open || messages.some((message) => message.id === activeMessageId);
+  return <div className="thinking-group"><button type="button" className="pressable text-[12px] text-mute" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>{messages.length} 段思考记录 {expanded ? "▾" : "▸"}</button>
+    {expanded ? <div className="thinking-group-body">{messages.map((message) => <article key={message.id} id={conversationMessageDomId(message.id)} className={message.id === activeMessageId ? "conversation-search-hit" : ""}><pre className="thinking-body whitespace-pre-wrap text-xs leading-6">{message.thinking}</pre></article>)}</div> : null}
+  </div>;
 }
 
 function MessageImages({ images }: { images: NonNullable<TimelineMessage["images"]> }) {
@@ -219,7 +229,7 @@ const AssistantMessage = memo(function AssistantMessage({
       id={conversationMessageDomId(message.id)}
       className={`mr-auto w-full max-w-[90%] shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
     >
-      <ThinkingBlock message={message} />
+      <ThinkingBlock message={message} highlighted={highlighted} />
       <AssistantMarkdown text={message.text} streaming={message.streaming} />
       {message.streaming ? <span className="sr-only" aria-live="polite">正在回复</span> : null}
       {message.text ? (
@@ -346,6 +356,7 @@ export function ConversationTimeline({
       });
     };
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || hasDialogLayer()) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
         event.stopPropagation();
@@ -397,7 +408,13 @@ export function ConversationTimeline({
       pendingTools = [];
     };
 
-    for (const message of messages) {
+    for (const row of groupThinkingMessages(messages)) {
+      if (Array.isArray(row)) {
+        flushTools();
+        rows.push(<ThinkingGroup key={row[0]!.id} messages={row} activeMessageId={searchOpen ? activeMessageId ?? null : null} />);
+        continue;
+      }
+      const message = row;
       const highlighted = searchOpen && Boolean(searchQuery.trim()) && message.id === activeMessageId;
       if (message.role === "user") {
         flushTools();

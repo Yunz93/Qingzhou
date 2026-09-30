@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useRef, useState } from "react";
 import type { InteractionRequest } from "@qingzhou/protocol";
 
@@ -8,6 +9,7 @@ type Props = {
 
 export function InteractionSheet({ interaction, onRespond }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(panelRef, () => onRespond({ cancelled: true }));
   const [value, setValue] = useState("");
 
   useEffect(() => {

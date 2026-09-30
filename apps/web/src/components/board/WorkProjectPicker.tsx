@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { WorkProject } from "@qingzhou/protocol";
@@ -13,19 +14,16 @@ export function WorkProjectPicker({ projects, project, onSelect, onCreate }: Pro
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  useDialogLayer(rootRef, () => setOpen(false), open, false);
+
   useEffect(() => {
     if (!open) return;
     function onPointer(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
     document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 

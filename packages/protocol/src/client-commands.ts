@@ -50,6 +50,17 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ...commandBase,
+    type: z.literal("task.listArchived"),
+    payload: z.object({}).optional(),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal("task.restore"),
+    taskId: z.string().min(1),
+    payload: z.object({}).optional(),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal("task.reorder"),
     payload: z.object({
       cwd: z.string().min(1),

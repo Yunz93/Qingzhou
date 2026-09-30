@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RuntimeState, SessionStats } from "@qingzhou/protocol";
@@ -32,6 +33,8 @@ export function ContextMeter({
   const [open, setOpen] = useState(false);
   const [instructions, setInstructions] = useState("");
   const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(panelRef, () => setOpen(false), open, false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const usage = stats?.contextUsage;
   const percent = usage?.percent == null ? null : Math.max(0, Math.min(100, usage.percent));
@@ -63,9 +66,6 @@ export function ContextMeter({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
     const onPointer = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
@@ -74,10 +74,8 @@ export function ContextMeter({
       if (panel?.contains(target)) return;
       setOpen(false);
     };
-    window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onPointer);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onPointer);
     };
   }, [open]);
@@ -86,6 +84,7 @@ export function ContextMeter({
     open && panelPos
       ? createPortal(
           <div
+            ref={panelRef}
             id="context-usage-panel"
             role="dialog"
             aria-label="上下文用量"

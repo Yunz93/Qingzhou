@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useRef, useState } from "react";
 import type { PiSessionRef } from "@qingzhou/protocol";
 import { X } from "lucide-react";
 import { FolderPicker } from "../setup/FolderPicker";
@@ -44,10 +45,14 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
     }
   }
 
+  const panelRef = useRef<HTMLFormElement>(null);
+  useDialogLayer(panelRef, () => { if (!busy) onCancel(); });
+
   return (
     <div className="dialog-scrim z-40">
-      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onCancel} />
+      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }} />
       <form
+        ref={panelRef}
         className="dialog-panel"
         role="dialog"
         aria-modal="true"
@@ -62,9 +67,9 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
             <h2 id="new-task-title" className="dialog-title">
               新对话
             </h2>
-            <p className="dialog-copy">可以不选文件夹，直接随便聊聊。</p>
+            <p className="dialog-copy">默认使用当前工作文件夹，也可以选择其他文件夹。</p>
           </div>
-          <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={onCancel}>
+          <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }}>
             <X size={16} />
           </button>
         </div>
@@ -150,7 +155,7 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
         </div>
 
         <div className="dialog-actions">
-          <button type="button" className="pressable btn btn-ghost" onClick={onCancel} disabled={busy}>
+          <button type="button" className="pressable btn btn-ghost" onClick={() => { if (!busy) onCancel(); }} disabled={busy}>
             取消
           </button>
           <button type="submit" className="pressable btn btn-primary" disabled={busy}>

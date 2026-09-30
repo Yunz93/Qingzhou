@@ -1,6 +1,8 @@
+import { ArchivedTasksDialog } from "../components/tasks/ArchivedTasksDialog";
+import { hasDialogLayer } from "../hooks/useDialogLayer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { MessageSquare, PanelRight, Pencil, Plus, Settings } from "lucide-react";
+import { ArrowUpRight, MessageSquare, PanelRight, Pencil, Plus, Settings } from "lucide-react";
 import { TaskSidebar } from "../components/tasks/TaskSidebar";
 import { ConversationTimeline } from "../components/timeline/ConversationTimeline";
 import { PromptComposer, type ComposerImage } from "../components/composer/PromptComposer";
@@ -132,6 +134,8 @@ export function WorkbenchLayout() {
   const overlayLeft = taskOpen && !dockLeft;
   const overlayRight = inspectorOpen && !dockRight;
   const [notice, setNotice] = useState("");
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [archivedTask, setArchivedTask] = useState<{ id: string; title: string } | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const skipTitleCommitRef = useRef(false);
@@ -140,6 +144,8 @@ export function WorkbenchLayout() {
   const [retryPrompt, setRetryPrompt] = useState<string | null>(null);
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
   const [promptSending, setPromptSending] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnectingRef = useRef(false);
   const sendingRef = useRef(false);
   const navigate = useNavigate();
 
@@ -180,6 +186,25 @@ export function WorkbenchLayout() {
     [workItems],
   );
   const status = task?.status ?? "stopped";
+  const reconnect = async () => {
+    if (reconnectingRef.current) return;
+    reconnectingRef.current = true;
+    setReconnecting(true);
+    try {
+      await getDesktop()?.ensureBackend?.();
+      if (useAgentStore.getState().connection !== "open") {
+        // The connection effect activates the selected task after reconnect.
+        await socketClient.reconnect();
+      } else if (task) {
+        await socketClient.send("task.activate", {}, task.id);
+      }
+    } catch (error) {
+      reportRequestError(error, "重新连接失败，请重试。");
+    } finally {
+      reconnectingRef.current = false;
+      setReconnecting(false);
+    }
+  };
   const otherApproval = pendingApprovals.find((item) => item.taskId !== activeTaskId);
   const interaction = pendingInteractions.find((item) => item.taskId === activeTaskId) ?? null;
   const sidebarTasks = useMemo(() => tasksInSidebarOrder(tasks), [tasks]);
@@ -271,6 +296,7 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || hasDialogLayer()) return;
       if (event.key === "Escape") {
         if (creating) {
           event.preventDefault();
@@ -330,7 +356,7 @@ export function WorkbenchLayout() {
       }
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault();
-        navigate("/settings");
+        navigate("/settings", { state: { from: "/" } });
       }
       if ((event.metaKey || event.ctrlKey) && event.key === ".") {
         event.preventDefault();
@@ -569,19 +595,23 @@ export function WorkbenchLayout() {
         onQuery={setQuery}
         onSelect={(id) => void selectTask(id)}
         onArchive={(id) => {
+          const archived = tasks.find((entry) => entry.id === id);
           useAgentStore.getState().removeTaskOptimistic(id);
-          void socketClient.send("task.archive", {}, id).catch((error: unknown) => {
+          void socketClient.send("task.archive", {}, id).then(() => {
+            if (archived) setArchivedTask({ id, title: archived.title });
+          }).catch((error: unknown) => {
             useAgentStore.getState().clearArchivingTask(id);
             setNotice(error instanceof Error ? error.message : "归档失败");
             void socketClient.send("snapshot.request", {}).catch(() => undefined);
           });
         }}
+        onShowArchived={() => setArchivedOpen(true)}
         onRename={(id, title) => void renameTask(id, title)}
         pinned={leftPinned}
         onPinToggle={toggleLeftPinned}
         workTaskIds={workTaskIds}
         onOpenBoard={() => navigate("/board")}
-        onReorder={(cwd, taskIds) => void socketClient.send("task.reorder", { cwd, taskIds })}
+        onReorder={(cwd, taskIds) => void socketClient.send("task.reorder", { cwd, taskIds }).catch((error: unknown) => setNotice(error instanceof Error ? error.message : "调整顺序失败"))}
         onNew={() => {
           setTaskOpen(false);
           setCreating(true);
@@ -781,18 +811,21 @@ export function WorkbenchLayout() {
                     <Pencil size={12} />
                   </button>
                 ) : null}
-                <span className="titlebar-meta truncate">
-                  {headerSubtitle(task?.cwd, Boolean(task), status)}
-                </span>
-                {linkedWorkItem ? (
-                  <Link
-                    to={`/board?item=${linkedWorkItem.id}`}
-                    className="pressable titlebar-work-link"
-                    title={linkedWorkItem.title}
-                  >
-                    任务
-                  </Link>
-                ) : null}
+                <div className="titlebar-context">
+                  <span className="titlebar-meta" title={task?.cwd}>
+                    {headerSubtitle(task?.cwd, Boolean(task), status)}
+                  </span>
+                  {linkedWorkItem ? (
+                    <Link
+                      to={`/board?item=${linkedWorkItem.id}`}
+                      className="pressable titlebar-work-link"
+                      title={linkedWorkItem.title}
+                    >
+                      <span>查看任务</span>
+                      <ArrowUpRight size={12} aria-hidden="true" />
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             )}
           </div>
@@ -824,7 +857,7 @@ export function WorkbenchLayout() {
             >
               <PanelRight size={15} />
             </button>
-            <Link to="/settings" aria-label="设置" className="pressable icon-btn">
+            <Link to="/settings" state={{ from: "/" }} aria-label="设置" className="pressable icon-btn">
               <Settings size={15} />
             </Link>
           </div>
@@ -848,9 +881,20 @@ export function WorkbenchLayout() {
             <code className="text-ink">pnpm dev:stable</code>。
           </div>
         ) : null}
-        {connection !== "open" ? (
+        {connection !== "open" || (task && (status === "stopped" || status === "error")) ? (
           <div className="banner-note text-mute" role="status">
-            {connection === "connecting" ? "正在重新连接…" : "已断开，正在尝试重连"}
+            <span className="min-w-0 flex-1">
+              {reconnecting ? "正在连接并启动 AI 引擎…" : connection !== "open"
+                ? "连接已断开，正在自动重试。" : "AI 引擎未运行，可以重新连接。"}
+            </span>
+            <button
+              type="button"
+              className="pressable app-no-drag shrink-0 text-accent"
+              disabled={reconnecting}
+              onClick={() => void reconnect()}
+            >
+              {reconnecting ? "正在重连…" : "重新连接"}
+            </button>
           </div>
         ) : null}
         {serverError || requestError || task?.errorMessage ? (
@@ -873,6 +917,10 @@ export function WorkbenchLayout() {
             <span className="min-w-0 truncate">{notice}</span>
           </div>
         ) : null}
+        {archivedTask ? <div className="banner-note flex items-center justify-between gap-3" role="status"><span className="min-w-0 truncate">已归档「{archivedTask.title}」</span><div className="flex shrink-0 gap-3"><button type="button" className="pressable text-accent" onClick={() => {
+          const id = archivedTask.id;
+          void socketClient.send("task.restore", {}, id).then(() => setArchivedTask(null)).catch((error: unknown) => setNotice(error instanceof Error ? error.message : "恢复会话失败"));
+        }}>撤销归档</button><button type="button" className="pressable text-mute" onClick={() => setArchivedTask(null)}>关闭</button></div></div> : null}
         {otherApproval ? (
           <div className="banner-note text-ink" role="status">
             另一个会话在等待确认。
@@ -1139,6 +1187,10 @@ export function WorkbenchLayout() {
           }}
         />
       ) : null}
+      {archivedOpen ? <ArchivedTasksDialog onClose={() => setArchivedOpen(false)} onRestore={async (id) => {
+        await socketClient.send("task.restore", {}, id);
+        setArchivedTask((current) => current?.id === id ? null : current);
+      }} /> : null}
       {creating ? (
         <NewTaskDialog
           defaultCwd={cwd || workspaceRoot || allowedRoots[0] || ""}

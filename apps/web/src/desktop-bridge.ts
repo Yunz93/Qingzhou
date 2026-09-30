@@ -1,6 +1,7 @@
 export type QingzhouDesktopApi = {
   isDesktop: true;
   platform: "darwin" | "win32" | "linux" | string;
+  ensureBackend?: () => Promise<void>;
   pickFolder: (defaultPath?: string) => Promise<string | null>;
   openPath?: (filePath: string) => Promise<string>;
   notify?: (payload: { title: string; body: string }) => Promise<void>;

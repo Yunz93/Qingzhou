@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useEditorDraft } from "../../hooks/useEditorDraft";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, RotateCcw, Send, Trash2, X } from "lucide-react";
 import type { WorkItemDetails, WorkRun } from "@qingzhou/protocol";
 
 type Props = {
   details: WorkItemDetails;
   onClose: () => void;
-  onSave: (input: { title: string; description: string; acceptanceCriteria: string }) => void;
+  onSave: (input: { title: string; description: string; acceptanceCriteria: string }) => void | Promise<void>;
   onFeedback: (text: string) => void | Promise<void>;
   onAccept: () => void;
   onReopen: () => void;
@@ -41,18 +43,21 @@ export function WorkObjectivePanel({
   onOpenConversation,
 }: Props) {
   const { item, runs, feedback } = details;
-  const [title, setTitle] = useState(item.title);
-  const [description, setDescription] = useState(item.description);
-  const [acceptanceCriteria, setAcceptanceCriteria] = useState(item.acceptanceCriteria);
-  const [feedbackText, setFeedbackText] = useState("");
+  const editor = useEditorDraft(`qingzhou:objective:${item.id}`, { title: item.title, description: item.description, acceptanceCriteria: item.acceptanceCriteria });
+  const { title, description, acceptanceCriteria } = editor.draft;
+  const feedbackEditor = useEditorDraft(`qingzhou:feedback:${item.id}`, { text: "" });
+  const feedbackText = feedbackEditor.draft.text;
+  const setFeedbackText = (text: string) => feedbackEditor.update({ text });
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const panelRef = useRef<HTMLElement>(null);
+  useDialogLayer(panelRef, onClose);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
-    setTitle(item.title);
-    setDescription(item.description);
-    setAcceptanceCriteria(item.acceptanceCriteria);
     setConfirmDelete(false);
     setDeleteBusy(false);
   }, [item.id, item.title, item.description, item.acceptanceCriteria]);
@@ -68,7 +73,7 @@ export function WorkObjectivePanel({
   return (
     <div className="work-panel-layer" role="presentation">
       <button type="button" className="work-panel-scrim" aria-label="关闭目标详情" onClick={onClose} />
-      <aside className="work-panel" role="dialog" aria-modal="true" aria-labelledby="work-panel-title">
+      <aside ref={panelRef} tabIndex={-1} className="work-panel" role="dialog" aria-modal="true" aria-labelledby="work-panel-title">
         <header className="work-panel-head">
           <div>
             <p className="work-panel-kicker">任务</p>
@@ -87,19 +92,26 @@ export function WorkObjectivePanel({
                 <button
                   type="button"
                   className="pressable btn btn-secondary"
-                  disabled={!title.trim()}
-                  onClick={() =>
-                    onSave({
-                      title: title.trim(),
-                      description: description.trim(),
-                      acceptanceCriteria: acceptanceCriteria.trim(),
-                    })
-                  }
+                  disabled={!title.trim() || saveBusy}
+                  onClick={async () => {
+                    setSaveBusy(true);
+                    setSaveError("");
+                    setSaveMessage("");
+                    try {
+                      await onSave({ title: title.trim(), description: description.trim(), acceptanceCriteria: acceptanceCriteria.trim() });
+                      editor.clear(editor.draft);
+                      setSaveMessage("已保存");
+                    } catch (error: unknown) {
+                      setSaveError(error instanceof Error ? error.message : "保存失败，请重试");
+                    } finally { setSaveBusy(false); }
+                  }}
                 >
-                  保存修改
+                  {saveBusy ? "正在保存…" : "保存修改"}
                 </button>
               ) : null}
             </div>
+            {dirty ? <div className="draft-notice"><span>草稿已暂存，关闭后可继续编辑</span><button type="button" className="pressable text-accent" disabled={saveBusy} onClick={() => editor.discard()}>放弃修改</button></div> : null}
+            {saveError ? <p role="alert" className="text-sm text-danger">{saveError}</p> : saveMessage ? <p role="status" className="text-sm text-success">{saveMessage}</p> : null}
             <label className="work-field-label" htmlFor="objective-title">
               标题
             </label>
@@ -107,7 +119,7 @@ export function WorkObjectivePanel({
               id="objective-title"
               className="field w-full"
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => editor.update({ ...editor.draft, title: event.target.value })}
             />
             <label className="work-field-label" htmlFor="objective-description">
               目标说明
@@ -118,7 +130,7 @@ export function WorkObjectivePanel({
               rows={5}
               value={description}
               placeholder="要完成什么，有哪些背景与边界。"
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => editor.update({ ...editor.draft, description: event.target.value })}
             />
             <label className="work-field-label" htmlFor="objective-acceptance">
               验收标准
@@ -129,7 +141,7 @@ export function WorkObjectivePanel({
               rows={4}
               value={acceptanceCriteria}
               placeholder="怎样才算完成，例如测试通过、页面可用、没有改动无关文件。"
-              onChange={(event) => setAcceptanceCriteria(event.target.value)}
+              onChange={(event) => editor.update({ ...editor.draft, acceptanceCriteria: event.target.value })}
             />
           </section>
 
@@ -158,7 +170,8 @@ export function WorkObjectivePanel({
                     if (!text || feedbackBusy) return;
                     setFeedbackBusy(true);
                     void Promise.resolve(onFeedback(text))
-                      .then(() => setFeedbackText(""))
+                      .then(() => feedbackEditor.clear({ text: feedbackText }))
+                      .catch((error: unknown) => setSaveError(error instanceof Error ? error.message : "继续执行失败"))
                       .finally(() => setFeedbackBusy(false));
                   }}
                 >
@@ -224,7 +237,7 @@ export function WorkObjectivePanel({
                   onClick={() => {
                     if (deleteBusy) return;
                     setDeleteBusy(true);
-                    void Promise.resolve(onDelete()).finally(() => setDeleteBusy(false));
+                    void Promise.resolve(onDelete()).catch((error: unknown) => setSaveError(error instanceof Error ? error.message : "删除失败")).finally(() => setDeleteBusy(false));
                   }}
                 >
                   <Trash2 size={13} />

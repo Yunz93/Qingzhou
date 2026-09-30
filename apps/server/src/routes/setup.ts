@@ -7,6 +7,7 @@ import {
   BEGINNER_PROVIDERS,
   hasAnyAuth,
   inspectModelsFile,
+  piModelsPath,
   listAuthEntries,
   OAUTH_PROVIDERS,
   removeAuth,
@@ -51,6 +52,7 @@ export type SetupStatus = {
   piBundled: boolean;
   authEntries: AuthEntry[];
   hasModelsFile: boolean;
+  modelsFilePath: string;
   modelCount: number;
   trustProject: boolean;
   canInstallPi: boolean;
@@ -101,6 +103,7 @@ export async function buildSetupStatus(
     piBundled: config.piBundled,
     authEntries,
     hasModelsFile: models.present,
+    modelsFilePath: piModelsPath(config.homeDir, agentDir),
     modelCount: models.count,
     trustProject: userSettings.trustProject,
     canInstallPi: !config.piBundled,

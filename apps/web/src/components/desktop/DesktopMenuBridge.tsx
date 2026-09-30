@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getDesktop } from "../../desktop-bridge";
 import { useUpdateStore } from "../../stores/update-store";
 
 export function DesktopMenuBridge() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let cancelled = false;
@@ -35,7 +36,7 @@ export function DesktopMenuBridge() {
     const desktop = getDesktop();
     if (!desktop) return;
     const stopSetup = desktop.onOpenSetup?.(() => {
-      navigate("/settings");
+      navigate("/settings", { state: { from: location.pathname + location.search } });
     });
     const stopUpdate = desktop.onCheckUpdate?.(() => {
       void useUpdateStore.getState().check(true);
@@ -44,7 +45,7 @@ export function DesktopMenuBridge() {
       stopSetup?.();
       stopUpdate?.();
     };
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   return null;
 }

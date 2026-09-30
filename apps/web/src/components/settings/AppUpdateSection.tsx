@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useUpdateStore, RELEASES_PAGE_URL } from "../../stores/update-store";
 import { getDesktop } from "../../desktop-bridge";
 import { UpdateProgressPanel } from "./UpdateProgressPanel";
@@ -11,6 +11,7 @@ function formatTimestamp(value: string | null): string | null {
 }
 
 export function AppUpdateSection() {
+  const [expanded, setExpanded] = useState(false);
   const current = useUpdateStore((state) => state.current);
   const latest = useUpdateStore((state) => state.latest);
   const body = useUpdateStore((state) => state.body);
@@ -73,21 +74,15 @@ export function AppUpdateSection() {
           : "下载安装更新";
 
   return (
-    <section>
-      <h2 className="settings-label">轻舟</h2>
+    <section id="settings-about">
+      <h2 className="settings-label">关于与更新</h2>
       <div className="settings-card">
-        <div className="settings-row">
-          <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-mute">当前版本</p>
-              <p className="mt-1 font-mono text-[13px] text-ink">{current || "—"}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-mute">上次检查</p>
-              <p className="mt-1 text-[13px] text-ink">{lastCheckedLabel || "尚未检查更新"}</p>
-            </div>
-          </div>
+        <div className="settings-row items-center">
+          <div className="min-w-0"><p className="text-[13px] text-ink">轻舟 <span className="ml-2 font-mono text-mute">{current || "—"}</span></p><p className={`mt-1 text-[12px] ${statusTone === "danger" ? "text-danger" : "text-mute"}`}>{busy ? "正在检查…" : status}</p></div>
+          <button type="button" className="pressable btn btn-ghost shrink-0" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "收起详情" : "更新详情"}</button>
         </div>
+        <div hidden={!expanded && !updateAvailable && !installing}>
+        <p className="px-4 pt-3 text-[12px] text-mute">上次检查：{lastCheckedLabel || "尚未检查更新"}</p>
 
         <div className="settings-row items-center">
           <div className="min-w-0 pr-3">
@@ -198,6 +193,7 @@ export function AppUpdateSection() {
               打开 GitHub Releases
             </a>
           </p>
+        </div>
         </div>
       </div>
     </section>

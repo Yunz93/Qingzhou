@@ -183,7 +183,7 @@ export function WorkDashboard({
       </div>
 
       <div className="work-sections">
-        {sections.length === 0 ? <p className="work-section-empty">—</p> : null}
+        {query.trim() && sections.every((section) => section.items.length === 0) ? <div className="work-search-empty"><p>没有匹配的任务</p><button type="button" className="pressable btn btn-ghost text-accent" onClick={() => onQuery("")}>清空搜索</button></div> : sections.length === 0 ? <p className="work-section-empty">当前筛选下没有任务。</p> : null}
         {sections.map((section) => (
           <section key={section.id} aria-labelledby={`work-section-${section.id}`} className="work-section">
             <header className="work-section-head">
@@ -208,7 +208,7 @@ export function WorkDashboard({
                 ))}
               </ul>
             ) : (
-              <p className="work-section-empty">—</p>
+              <p className="work-section-empty">这里暂时没有任务。</p>
             )}
           </section>
         ))}

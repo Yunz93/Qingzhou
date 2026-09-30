@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
-import { Archive, Pin, PinOff, Plus, Search, X } from "lucide-react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useEffect, useRef, useState } from "react";
+import { Archive, ChevronRight, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, X } from "lucide-react";
 import type { TaskRecord } from "@qingzhou/protocol";
 import { PiStatusRing } from "../status/PiStatusRing";
 import { folderName, taskStatusLabel } from "../../copy";
@@ -14,6 +15,7 @@ type Props = {
   onArchive: (taskId: string) => void;
   onRename?: (taskId: string, title: string) => void;
   onNew?: () => void;
+  onShowArchived?: () => void;
   onClose?: () => void;
   pinned?: boolean;
   onPinToggle?: () => void;
@@ -33,6 +35,7 @@ export function TaskSidebar({
   onArchive,
   onRename,
   onNew,
+  onShowArchived,
   onClose,
   pinned = true,
   onPinToggle,
@@ -43,6 +46,25 @@ export function TaskSidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem("qingzhou:collapsed-projects") ?? "[]") as string[]); } catch { return new Set(); }
+  });
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(menuRef, () => setMenuId(null), menuId !== null, false);
+  useEffect(() => {
+    if (!menuId) return;
+    const closeOutside = (event: MouseEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenuId(null); };
+    document.addEventListener("mousedown", closeOutside);
+    return () => document.removeEventListener("mousedown", closeOutside);
+  }, [menuId]);
+  const searching = Boolean(query.trim());
+  function toggleProject(cwd: string) {
+    const next = new Set(collapsed);
+    if (next.has(cwd)) next.delete(cwd); else next.add(cwd);
+    setCollapsed(next);
+    try { sessionStorage.setItem("qingzhou:collapsed-projects", JSON.stringify([...next])); } catch { /* Optional preference. */ }
+  }
   const skipCommitRef = useRef(false);
 
   function startRename(task: TaskRecord) {
@@ -75,6 +97,7 @@ export function TaskSidebar({
     <aside className="material-sidebar flex h-full w-[min(228px,90vw)] shrink-0 flex-col border-r border-line" aria-label="会话">
       <div className="traffic-inline app-drag flex h-[52px] items-center gap-1 px-3">
           <p className="flex-1 text-[12px] font-semibold tracking-tight text-ink">会话</p>
+        {onShowArchived ? <button type="button" className="pressable app-no-drag icon-btn" aria-label="已归档会话" title="已归档会话" onClick={onShowArchived}><Archive size={14} /></button> : null}
         {onNew ? (
           <button
             type="button"
@@ -120,31 +143,31 @@ export function TaskSidebar({
           />
         </label>
       </div>
+      {searching ? <p className="px-4 pb-2 text-[10px] text-mute">搜索时不能调整顺序</p> : null}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {groups.length === 0 ? (
-          <p className="px-2 py-4 text-[12px] leading-5 text-mute">点击 + 号开始对话</p>
+          <div className="px-2 py-4 text-[12px] leading-5 text-mute"><p>{searching ? "没有匹配的会话" : "点击 + 号开始对话"}</p>{searching ? <button type="button" className="pressable mt-2 text-accent" onClick={() => onQuery("")}>清空搜索</button> : null}</div>
         ) : (
           groups.map(([cwd, items]) => (
             <section key={cwd} className="mb-2">
-              <h2 className="truncate px-2 pb-0.5 text-[11px] font-medium tracking-wide text-mute" title={cwd}>
-                {folderName(cwd)}
-              </h2>
-              <ul>
+              <h2><button type="button" className="pressable sidebar-project" title={cwd} aria-expanded={searching || !collapsed.has(cwd)} onClick={() => toggleProject(cwd)}><ChevronRight size={11} className={searching || !collapsed.has(cwd) ? "rotate-90" : ""} /><span className="min-w-0 flex-1 truncate">{folderName(cwd)}</span><span className="tabular">{items.length}</span></button></h2>
+              <ul hidden={!searching && collapsed.has(cwd)}>
                 {items.map((task) => {
                   const active = task.id === activeTaskId;
                   return (
                     <li
                       key={task.id}
-                      draggable={Boolean(onReorder) && items.length > 1 && editingId !== task.id}
+                      className="relative"
+                      draggable={!searching && Boolean(onReorder) && items.length > 1 && editingId !== task.id}
                       onDragStart={() => setDragId(task.id)}
                       onDragEnd={() => setDragId(null)}
                       onDragOver={(event) => {
-                        if (!onReorder || !dragId || dragId === task.id) return;
+                        if (searching || !onReorder || !dragId || dragId === task.id) return;
                         event.preventDefault();
                       }}
                       onDrop={(event) => {
                         event.preventDefault();
-                        if (!onReorder || !dragId) return;
+                        if (searching || !onReorder || !dragId) return;
                         const next = moveTaskInGroup(
                           items.map((item) => item.id),
                           dragId,
@@ -186,6 +209,7 @@ export function TaskSidebar({
                         ) : (
                           <button
                             type="button"
+                            title={task.title}
                             onClick={() => onSelect(task.id)}
                             onDoubleClick={() => startRename(task)}
                             className="pressable flex min-h-7 min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
@@ -209,14 +233,13 @@ export function TaskSidebar({
                             ) : null}
                           </button>
                         )}
-                        <button
-                          type="button"
-                          className="pressable source-item-accessory mt-0.5 flex h-7 w-7 items-center justify-center rounded-md text-mute hover:text-ink"
-                          aria-label={`归档 ${task.title}`}
-                          onClick={() => onArchive(task.id)}
-                        >
-                          <Archive size={13} />
-                        </button>
+                        <div ref={menuId === task.id ? menuRef : undefined} className="sidebar-row-actions">
+                          <button type="button" className="pressable source-item-accessory icon-btn" aria-label={`会话操作 ${task.title}`} aria-expanded={menuId === task.id} onClick={() => setMenuId(menuId === task.id ? null : task.id)}><MoreHorizontal size={14} /></button>
+                          {menuId === task.id ? <div className="sidebar-row-menu" role="menu" aria-label="会话操作">
+                            {onRename ? <button type="button" role="menuitem" className="pressable hover-fill" onClick={() => { setMenuId(null); startRename(task); }}><Pencil size={12} />重命名</button> : null}
+                            <button type="button" role="menuitem" className="pressable hover-fill" aria-label={`归档 ${task.title}`} onClick={() => { setMenuId(null); onArchive(task.id); }}><Archive size={12} />归档</button>
+                          </div> : null}
+                        </div>
                       </div>
                     </li>
                   );

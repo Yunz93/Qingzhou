@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { FolderPicker } from "./FolderPicker";
 import { isDesktopApp } from "../../desktop-bridge";
@@ -25,6 +26,7 @@ export type SetupStatus = {
   canInstallPi?: boolean;
   authEntries?: Array<{ id: string; label: string; kind: "api_key" | "oauth" | "other" }>;
   hasModelsFile?: boolean;
+  modelsFilePath?: string;
   modelCount?: number;
   trustProject?: boolean;
   devSelfWorkspace?: boolean;
@@ -96,16 +98,8 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
       .catch(() => setError("连不上轻舟。确认应用正在运行。"));
   }, []);
 
-  useEffect(() => {
-    if (!onCancel) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(panelRef, () => { if (!busy && !installing) onCancel?.(); }, Boolean(status));
 
   async function saveApiKey() {
     const providerId = activeProviderId || provider;
@@ -260,7 +254,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
       {onCancel ? (
         <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onCancel} />
       ) : null}
-      <div className="dialog-panel dialog-panel-lg" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+      <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-lg" role="dialog" aria-modal="true" aria-labelledby="setup-title">
         <div className="dialog-head">
           <div className="dialog-head-text">
             <p className="dialog-kicker">{isDesktopApp() ? "欢迎使用轻舟" : "轻舟设置"}</p>

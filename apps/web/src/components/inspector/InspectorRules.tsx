@@ -1,3 +1,4 @@
+import { useEditorDraft } from "../../hooks/useEditorDraft";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PiResources } from "@qingzhou/protocol";
 
@@ -29,12 +30,15 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
     });
   }, [cwd, files]);
   const [selected, setSelected] = useState<string | null>(ordered[0]?.path ?? null);
-  const [draft, setDraft] = useState("");
   const [saved, setSaved] = useState("");
   const [truncated, setTruncated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = ordered.find((file) => file.path === selected) ?? ordered[0] ?? null;
+  const currentPathRef = useRef(current?.path);
+  currentPathRef.current = current?.path;
+  const editor = useEditorDraft(`qingzhou:rules:${current?.path ?? "none"}`, { content: saved });
+  const draft = editor.draft.content;
   const dirty = Boolean(current) && draft !== saved && !truncated;
   const onReadRef = useRef(onRead);
   onReadRef.current = onRead;
@@ -46,7 +50,6 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
 
   useEffect(() => {
     if (!current) {
-      setDraft("");
       setSaved("");
       setTruncated(false);
       return;
@@ -57,7 +60,6 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
     void onReadRef.current(current.path)
       .then((preview) => {
         if (cancelled) return;
-        setDraft(preview.content);
         setSaved(preview.content);
         setTruncated(preview.truncated);
       })
@@ -76,16 +78,18 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
   }, [current?.path]);
 
   async function save(): Promise<void> {
-    if (!current || !dirty || truncated) return;
+    if (!current || !dirty || truncated || busy) return;
+    const savePath = current.path;
     setBusy(true);
     setError("");
     try {
-      await onWrite(current.path, draft);
-      setSaved(draft);
+      await onWrite(savePath, draft);
+      editor.clear({ content: draft });
+      if (currentPathRef.current === savePath) setSaved(draft);
     } catch (item: unknown) {
-      setError(item instanceof Error ? item.message : "保存失败");
+      if (currentPathRef.current === savePath) setError(item instanceof Error ? item.message : "保存失败");
     } finally {
-      setBusy(false);
+      if (currentPathRef.current === savePath) setBusy(false);
     }
   }
 
@@ -118,6 +122,7 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
             key={file.path}
             type="button"
             title={file.path}
+            disabled={busy}
             className={`pressable h-7 shrink-0 rounded-md px-2 text-[12px] ${
               file.path === current?.path ? "bg-fill-strong text-ink" : "hover-fill text-mute"
             }`}
@@ -132,10 +137,11 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
           disabled={!dirty || busy}
           onClick={() => void save()}
         >
-          保存
+          {busy ? "处理中…" : "保存"}
         </button>
       </div>
-      {error ? <p className="shrink-0 px-3 py-1.5 text-[12px] text-danger">{error}</p> : null}
+      {dirty ? <div className="draft-notice"><span>草稿已暂存，切换后可继续编辑</span><button type="button" className="pressable text-accent" disabled={busy} onClick={() => editor.discard()}>放弃修改</button></div> : null}
+      {error ? <p role="alert" className="shrink-0 px-3 py-1.5 text-[12px] text-danger">{error}</p> : null}
       {truncated ? (
         <p className="shrink-0 px-3 py-1.5 text-[12px] text-mute">文件太大，这里只能看前一段，不能改。</p>
       ) : null}
@@ -145,7 +151,7 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
         className="min-h-0 flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[12px] leading-5 text-ink outline-none"
         value={draft}
         disabled={busy || truncated || !current}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => editor.update({ content: event.target.value })}
         onKeyDown={(event) => {
           if ((event.metaKey || event.ctrlKey) && event.key === "s") {
             event.preventDefault();

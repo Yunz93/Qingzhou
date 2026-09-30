@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAgentStore } from "../../stores/agent-store";
 import { socketClient } from "../../transport/socket-client";
 import { shortcutLabel } from "../../lib/hotkeys";
@@ -24,6 +25,9 @@ export function CommandPalette({ open, onClose, onNewTask, onRenameSession, onFi
   const workProjects = useAgentStore((state) => state.workProjects);
   const activeTaskId = useAgentStore((state) => state.activeTaskId);
   const navigate = useNavigate();
+  const location = useLocation();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(panelRef, onClose, open);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
 
@@ -38,7 +42,7 @@ export function CommandPalette({ open, onClose, onNewTask, onRenameSession, onFi
     const commands: PaletteItem[] = [
       { id: "new", label: "新对话", shortcut: shortcutLabel("Mod+N"), run: onNewTask },
       { id: "board", label: "打开任务", shortcut: shortcutLabel("Mod+Shift+B"), run: () => navigate("/board") },
-      { id: "settings", label: "打开设置", shortcut: shortcutLabel("Mod+Comma"), run: () => navigate("/settings") },
+      { id: "settings", label: "打开设置", shortcut: shortcutLabel("Mod+Comma"), run: () => navigate("/settings", { state: { from: location.pathname + location.search } }) },
       ...(onRenameSession && activeTaskId
         ? [{ id: "rename", label: "重命名会话", run: onRenameSession }]
         : []),
@@ -77,7 +81,7 @@ export function CommandPalette({ open, onClose, onNewTask, onRenameSession, onFi
     }));
     const q = query.trim().toLowerCase();
     return [...commands, ...projectItems, ...taskItems].filter((item) => item.label.toLowerCase().includes(q));
-  }, [activeTaskId, navigate, onFindInConversation, onNewTask, onRenameSession, query, tasks, workProjects]);
+  }, [location.pathname, location.search, activeTaskId, navigate, onFindInConversation, onNewTask, onRenameSession, query, tasks, workProjects]);
 
   const safeIndex = items.length === 0 ? 0 : Math.min(index, items.length - 1);
 
@@ -113,7 +117,7 @@ export function CommandPalette({ open, onClose, onNewTask, onRenameSession, onFi
   return (
     <div className="dialog-scrim items-start pt-[12vh]">
       <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onClose} />
-      <div className="dialog-panel dialog-panel-cmd" role="dialog" aria-modal="true" aria-label="命令面板">
+      <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-cmd" role="dialog" aria-modal="true" aria-label="命令面板">
         <input
           autoFocus
           value={query}

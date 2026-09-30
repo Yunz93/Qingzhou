@@ -63,8 +63,9 @@ test("workbench core loop", async ({ page }) => {
   await expect(page.getByRole("button", { name: "克隆会话" })).toBeVisible();
 
   await page.getByRole("button", { name: "模式" }).click();
-  await page.getByRole("menuitem", { name: "每次确认" }).click();
-  await expect(page.getByRole("button", { name: "模式" })).toHaveText(/每次确认/);
+  await page.getByRole("button", { name: "每次确认", exact: true }).click();
+  await expect(page.getByRole("button", { name: "模式", exact: true })).toHaveText(/每次确认/);
+  await page.keyboard.press("Escape");
 
   await page.getByLabel("输入消息").fill("WRITE:denied.txt:secret");
   await page.getByRole("button", { name: "发送" }).click();
@@ -87,7 +88,8 @@ test("workbench core loop", async ({ page }) => {
 
   await page.getByRole("button", { name: "模型和思考" }).click();
   await page.getByRole("slider", { name: "滑动选择思考强度" }).fill("4");
-  await page.getByRole("button", { name: /归档 E2E task/ }).click();
+  await page.getByRole("button", { name: "会话操作 E2E task" }).click();
+  await page.getByRole("menuitem", { name: /归档 E2E task/ }).click();
 });
 
 test("shows an explicit banner when the model changes", async ({ page }) => {
@@ -109,6 +111,8 @@ test("shows an explicit banner when the model changes", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Fast 模式" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "选择模型" }).click();
   await expect(page.getByText("推荐模型集")).toBeVisible();
+  await page.getByRole("button", { name: /^(?:设为默认|默认模型) Fake Model$/ }).click();
+  await expect(page.getByRole("button", { name: "默认模型 Fake Model", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "设为默认 Fake Model 2" }).click();
   await expect(page.getByRole("button", { name: "默认模型 Fake Model 2" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Fake Model 2" }).click();
@@ -195,9 +199,10 @@ test("reduced motion disables the status ring spin", async ({ page }) => {
 
 test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) => {
   await page.goto("/settings");
+  await page.getByRole("button", { name: "更新详情", exact: true }).click();
   await expect(page.getByText("启动后自动检查更新")).toBeVisible();
   await expect(page.getByRole("button", { name: /立即检查|正在检查/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "认证" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "账号与认证" })).toBeVisible();
   await expect(page.getByRole("button", { name: "订阅登录", pressed: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "环境变量", exact: true })).toBeVisible();
   await expect(page.getByLabel("服务商")).toHaveValue("github");
@@ -205,7 +210,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeEnabled({ timeout: 20_000 });
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
-  await expect(page.getByText("仅检测进程环境中的密钥，不在此编辑")).toBeVisible();
+  await expect(page.getByText(/检测服务启动时读取的环境变量/)).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新状态" })).toBeVisible();
   await page.getByRole("button", { name: "API Key", exact: true }).click();
   await page.getByLabel("服务商").selectOption("anthropic");
@@ -213,8 +218,8 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await page.getByRole("button", { name: "保存密钥" }).click();
   await expect(page.getByText("已保存 Anthropic (Claude) 的密钥。")).toBeVisible();
   await expect(page.getByText("已保存密钥").first()).toBeVisible();
-  await expect(page.getByText(/models\.json/)).toBeVisible();
-  await expect(page.getByText("已找到")).toBeVisible();
+  await expect(page.getByText("models.json", { exact: true })).toBeVisible();
+  await expect(page.getByText(/已配置.*个模型/)).toBeVisible();
   await expect(page.getByText("信任当前项目")).toBeVisible();
   await page.getByRole("button", { name: "打开设置向导" }).click();
   await page.getByRole("button", { name: "继续" }).click();
@@ -335,7 +340,8 @@ async function createTask(page: import("@playwright/test").Page, title: string):
     const count = await list.count();
     const item = list.first();
     await item.hover();
-    await item.getByRole("button", { name: /^归档 / }).click();
+    await item.getByRole("button", { name: /^会话操作 / }).click();
+    await item.getByRole("menuitem", { name: /^归档 / }).click();
     await expect(list).toHaveCount(count - 1);
   }
   await page.getByRole("button", { name: "新对话" }).click();
@@ -343,6 +349,9 @@ async function createTask(page: import("@playwright/test").Page, title: string):
   await page.getByLabel("工作文件夹").fill(project);
   await page.getByLabel("标题").fill(title);
   await page.getByRole("button", { name: "创建对话" }).click();
+  await expect(page.getByRole("dialog", { name: "新对话", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("banner").getByText(title, { exact: true })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "会话", exact: true }).getByRole("button").filter({ hasText: title }).first()).toContainText("就绪");
   await expect(page.getByRole("banner").getByText(title)).toBeVisible();
 }
 
@@ -378,6 +387,43 @@ test("HTTP 401 shows a red error instead of failing silently", async ({ page }) 
     timeout: 15_000,
   });
   await expect(page.getByText("还没有连接 AI")).toHaveCount(0);
+});
+
+test("manual reconnect starts Pi again after the agent exits", async ({ page }) => {
+  await createTask(page, "Manual Pi recovery");
+  await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
+  await page.getByLabel("输入消息").fill("CRASH");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByRole("button", { name: "重新连接", exact: true })).toBeVisible();
+  await page.getByLabel("输入消息").fill("draft kept during recovery");
+  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await expect(page.getByRole("button", { name: "重新连接", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
+  await expect(page.getByLabel("输入消息")).toHaveValue("draft kept during recovery");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("Echo: draft kept during recovery").first()).toBeVisible();
+});
+
+test("manual reconnect restores a broken socket without losing the draft", async ({ page }) => {
+  let disconnect: (() => void) | undefined;
+  await page.routeWebSocket("**/ws", (socket) => {
+    socket.connectToServer();
+    disconnect = () => socket.close();
+  });
+  await createTask(page, "Manual socket recovery");
+  await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
+  await page.getByLabel("输入消息").fill("draft kept after disconnect");
+  await page.route("**/api/session", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  expect(disconnect).toBeDefined();
+  disconnect!();
+  await expect(page.getByRole("button", { name: "重新连接", exact: true })).toBeVisible();
+  await page.unroute("**/api/session");
+  await page.getByRole("button", { name: "重新连接", exact: true }).click();
+  await expect(page.getByRole("button", { name: "重新连接", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
+  await expect(page.getByLabel("输入消息")).toHaveValue("draft kept after disconnect");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("Echo: draft kept after disconnect").first()).toBeVisible();
 });
 
 test("reload during a run keeps the agent going", async ({ page }) => {
@@ -660,8 +706,9 @@ test("work titlebar theme and settings stay clickable", async ({ page }) => {
 
 test("work mode creates an objective and starts an agent run", async ({ page }) => {
   await page.goto("/board");
-  await expect(page.getByRole("tab", { name: "工作" })).toBeVisible();
-  await page.getByRole("button", { name: "启动项目" }).click();
+  await expect(page.getByRole("link", { name: "工作" })).toBeVisible();
+  await page.getByRole("button", { name: "项目", exact: true }).click();
+  await page.getByRole("menuitem", { name: "新项目…" }).click();
   await page.getByRole("button", { name: "输入路径" }).click();
   await page.getByLabel("项目文件夹").fill(project);
   await page.getByLabel("项目名称").fill("E2E project");
@@ -676,7 +723,7 @@ test("work mode creates an objective and starts an agent run", async ({ page }) 
     timeout: 20_000,
   });
   await expect(page.getByRole("button", { name: "查看执行" })).toBeVisible();
-  await page.getByRole("tab", { name: "对话" }).click();
+  await page.getByRole("link", { name: "对话" }).click();
   const sessions = page.getByRole("complementary", { name: "会话" });
   await expect(sessions.getByText("Board e2e job", { exact: true })).toBeVisible();
   await sessions.getByRole("button", { name: "新对话" }).click();

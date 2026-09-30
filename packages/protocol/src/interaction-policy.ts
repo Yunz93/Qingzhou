@@ -16,14 +16,14 @@ export const approvalPolicies: Array<{
   label: string;
   description: string;
 }> = [
+  { value: "read_only", label: "只读", description: "拒绝所有改动" },
   { value: "ask", label: "每次确认", description: "改文件和跑命令都先问你" },
-  { value: "workspace", label: "自动改文件", description: "工作区内改文件自动允许，命令仍要确认" },
   {
     value: "auto",
     label: "自动审核",
     description: "自动放行普通操作，高危命令（sudo、rm -rf、格式化、强制推送等）仍需确认",
   },
-  { value: "read_only", label: "只读", description: "拒绝所有改动" },
+  { value: "always", label: "自动通过", description: "改文件和跑命令自动允许，包括高危命令" },
 ];
 
 export const MODE_PREFIX: Record<Exclude<InteractionMode, "agent">, string> = {
@@ -46,7 +46,6 @@ export function effectiveApprovalPolicy(
 const HIGH_RISK_PATTERNS: RegExp[] = [
   /\bsudo\b/, // 提权
   /\bdoas\b/, // OpenBSD/部分 Linux 提权
-  /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*[rf][a-zA-Z]*/, // rm -rf 递归强制删除
   /\brm\s+--\s*\/\b|\brm\s+\/\s*$/, // 删根
   /\b(dd|mkfs(?:\.\w+)?|fdisk|parted|gdisk|diskutil\s+erase)\b/, // 磁盘/分区操作
   /\b(curl|wget|fetch)\b[\s\S]*\|\s*(?:sudo\s+)?(?:ba|z|fi|da)?sh\b/, // 远程脚本管道到 shell
@@ -61,7 +60,7 @@ const HIGH_RISK_PATTERNS: RegExp[] = [
   /\bchown\s+-[a-zA-Z]*R[a-zA-Z]*\b/, // 递归改属主
   /\bgit\s+push\b[\s\S]*\s(?:-f|--force)(?:\s|$)/, // 强制推送
   /\bgit\s+reset\s+--hard\b/, // 丢弃提交历史
-  /\bgit\s+clean\s+-[a-zA-Z]*[fdx][a-zA-Z]*/, // 删除未跟踪文件
+  /\bgit\s+clean\s+-[a-zA-Z]*[fdxX][a-zA-Z]*/, // 删除未跟踪/被忽略文件
   /\b(kill|pkill)\s+-9\b|\bkillall\s+-9\b/, // 强杀进程
   /\b(useradd|userdel|usermod|passwd|visudo)\b/, // 账号管理
   /\b(shutdown|reboot|poweroff|halt)\b|\binit\s+[06]\b/, // 关机/重启
@@ -90,6 +89,8 @@ export function normalizeCommandForRisk(command: string): string {
         ),
       )
       .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+      // shell 会吞掉任意字符前的反斜杠：s\udo / r\m 必须还原后再匹配
+      .replace(/\\([^\\])/g, "$1")
       // strip quotes that only break keyword matching: su''do, "rm" -rf
       .replace(/['"]+/g, "")
       .replace(/[ \t]{2,}/g, " ")
@@ -102,18 +103,37 @@ export function splitCommandSegments(command: string): string[] {
   const normalized = normalizeCommandForRisk(command);
   if (!normalized) return [];
   return normalized
-    .split(/(?:&&|\|\||;|\||`)/g)
+    .split(/(?:&&|\|\||;|\||&|`)/g)
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+/**
+ * `rm` 的递归强制删除：大小写、参数顺序（-Rf / -fR）、同 token 或分开写（-r -f）、
+ * 以及 --recursive/--force 长参数都要命中。旧实现只认同一 token 内的小写 r+f。
+ */
+function isHighRiskRm(normalized: string): boolean {
+  const tokens = normalized.split(/[\s();|&]+/).filter(Boolean);
+  const rmIndex = tokens.findIndex((token) => token === "rm" || token.endsWith("/rm"));
+  if (rmIndex < 0) return false;
+  let recursive = false;
+  let force = false;
+  for (const token of tokens.slice(rmIndex + 1)) {
+    if (token === "--") break; // 之后都是文件名
+    if (token === "--recursive" || /^-[a-zA-Z]*[rR][a-zA-Z]*$/.test(token)) recursive = true;
+    if (token === "--force" || /^-[a-zA-Z]*[fF][a-zA-Z]*$/.test(token)) force = true;
+  }
+  return recursive && force;
 }
 
 export function isHighRiskCommand(command: string): boolean {
   const normalized = normalizeCommandForRisk(command);
   if (!normalized) return false;
   // Full line catches pipe-to-shell / compound patterns; segments catch chained parts.
+  if (isHighRiskRm(normalized)) return true;
   if (HIGH_RISK_PATTERNS.some((pattern) => pattern.test(normalized))) return true;
-  return splitCommandSegments(command).some((segment) =>
-    HIGH_RISK_PATTERNS.some((pattern) => pattern.test(segment)),
+  return splitCommandSegments(command).some(
+    (segment) => isHighRiskRm(segment) || HIGH_RISK_PATTERNS.some((pattern) => pattern.test(segment)),
   );
 }
 
@@ -122,6 +142,7 @@ export function approvalDecision(
   approval: ApprovalRequest,
 ): boolean | null {
   if (policy === "read_only") return false;
+  if (policy === "always") return true;
   if (policy === "workspace" && (approval.toolName === "edit" || approval.toolName === "write")) {
     return true;
   }

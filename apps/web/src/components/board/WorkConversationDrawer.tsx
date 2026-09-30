@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel, WorkItemSummary } from "@qingzhou/protocol";
@@ -21,6 +22,8 @@ function DrawerConversation({ taskId }: { taskId: string }) {
 }
 
 export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
+  const panelRef = useRef<HTMLElement>(null);
+  useDialogLayer(panelRef, onClose);
   const tasks = useAgentStore((state) => state.tasks);
   const messages = useAgentStore((state) =>
     item.taskId ? (state.messagesByTask[item.taskId] ?? state.messages) : state.messages,
@@ -111,7 +114,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
     return (
       <div className="work-panel-layer" role="presentation">
         <button type="button" className="work-panel-scrim" aria-label="关闭对话" onClick={onClose} />
-        <aside className="work-panel work-conversation-panel" role="dialog" aria-modal="true" aria-label="任务对话">
+        <aside ref={panelRef} tabIndex={-1} className="work-panel work-conversation-panel" role="dialog" aria-modal="true" aria-label="任务对话">
           <header className="work-panel-head">
             <h2>{item.title}</h2>
             <button type="button" className="pressable icon-btn" aria-label="关闭" onClick={onClose}>
@@ -127,7 +130,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
   return (
     <div className="work-panel-layer" role="presentation">
       <button type="button" className="work-panel-scrim" aria-label="关闭对话" onClick={onClose} />
-      <aside className="work-panel work-conversation-panel" role="dialog" aria-modal="true" aria-labelledby="work-conversation-title">
+      <aside ref={panelRef} tabIndex={-1} className="work-panel work-conversation-panel" role="dialog" aria-modal="true" aria-labelledby="work-conversation-title">
         <header className="work-panel-head">
           <div>
             <p className="work-panel-kicker">任务对话</p>

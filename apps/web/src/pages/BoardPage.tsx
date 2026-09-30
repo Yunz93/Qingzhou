@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Settings } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary } from "@qingzhou/protocol";
 import { WorkDashboard, type WorkFilter } from "../components/board/WorkDashboard";
@@ -18,6 +18,7 @@ import { socketClient } from "../transport/socket-client";
 import { clientErrorMessage } from "../lib/client-error";
 
 export function BoardPage() {
+  const connection = useAgentStore((state) => state.connection);
   const items = useAgentStore((state) => state.workItems);
   const projects = useAgentStore((state) => state.workProjects);
   const activeProjectId = useAgentStore((state) => state.activeProjectId);
@@ -29,12 +30,16 @@ export function BoardPage() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<{ text: string; kind: "error" | "ok" } | null>(null);
-  const [filter, setFilter] = useState<WorkFilter>("all");
-  const [query, setQuery] = useState("");
   const [details, setDetails] = useState<WorkItemDetails | null>(null);
   const [conversationItem, setConversationItem] = useState<WorkItemSummary | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const filterValue = searchParams.get("filter") ?? "all";
+  const filter: WorkFilter = ["all", "attention", "working", "ready", "completed", "archived"].includes(filterValue) ? filterValue as WorkFilter : "all";
+  const query = searchParams.get("q") ?? "";
+  function setFilter(value: WorkFilter) { setSearchParams((previous) => { previous.set("filter", value); return previous; }, { replace: true }); }
+  function setQuery(value: string) { setSearchParams((previous) => { if (value) previous.set("q", value); else previous.delete("q"); return previous; }, { replace: true }); }
   const focusItemId = searchParams.get("item");
   const defaultCwd = workspaceRoot ?? allowedRoots[0] ?? "";
   const project = useMemo(
@@ -54,14 +59,15 @@ export function BoardPage() {
   const selectedSummary = focusItemId ? items.find((item) => item.id === focusItemId) : undefined;
 
   useEffect(() => {
-    void socketClient.send("workItem.list").catch(() => undefined);
-  }, []);
+    if (connection === "open") void socketClient.send("workItem.list").catch(() => undefined);
+  }, [connection]);
 
   useEffect(() => {
     if (!focusItemId) {
       setDetails(null);
       return;
     }
+    if (connection !== "open") return;
     let current = true;
     void socketClient
       .send<WorkItemDetails>("workItem.details", { id: focusItemId })
@@ -72,12 +78,12 @@ export function BoardPage() {
         if (!current) return;
         setNotice({ text: clientErrorMessage(error, "读取任务详情失败"), kind: "error" });
         setDetails(null);
-        setSearchParams({});
+        setSearchParams((previous) => { previous.delete("item"); return previous; });
       });
     return () => {
       current = false;
     };
-  }, [focusItemId, selectedSummary?.updatedAt, selectedSummary?.runCount, selectedSummary?.feedbackCount, setSearchParams]);
+  }, [connection, focusItemId, selectedSummary?.updatedAt, selectedSummary?.runCount, selectedSummary?.feedbackCount, setSearchParams]);
 
   function showError(error: unknown, fallback: string) {
     setNotice({ text: clientErrorMessage(error, fallback), kind: "error" });
@@ -85,12 +91,11 @@ export function BoardPage() {
 
   function openDetails(item: WorkItemSummary) {
     setDetails(null);
-    setSearchParams({ item: item.id });
+    setSearchParams((previous) => { previous.set("item", item.id); return previous; });
   }
 
   function closeDetails() {
-    setDetails(null);
-    setSearchParams({});
+    setSearchParams((previous) => { previous.delete("item"); return previous; });
   }
 
   function openConversation(item: WorkItemSummary) {
@@ -175,7 +180,7 @@ export function BoardPage() {
         <div className="work-head-end app-no-drag">
           <UpdateBanner />
           <ThemeToggle />
-          <Link to="/settings" aria-label="设置" className="pressable app-no-drag icon-btn">
+          <Link to="/settings" state={{ from: location.pathname + location.search }} aria-label="设置" className="pressable app-no-drag icon-btn">
             <Settings size={15} />
           </Link>
         </div>
@@ -268,9 +273,7 @@ export function BoardPage() {
           details={details}
           onClose={closeDetails}
           onSave={(input) => {
-            void socketClient
-              .send("workItem.update", { id: focusItemId, ...input })
-              .catch((error: unknown) => showError(error, "更新任务失败"));
+            return socketClient.send("workItem.update", { id: focusItemId, ...input }).then(() => undefined);
           }}
           onFeedback={async (text) => {
             try {

@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel } from "@qingzhou/protocol";
 import { approvalPolicies, interactionModes } from "@qingzhou/protocol";
@@ -57,7 +58,7 @@ function GearSlider<T extends string>({
   const pct = sliderPercent(index, options.length);
   return (
     <div className={`policy-picker-rail ${disabled ? "policy-picker-rail-disabled" : ""}`}>
-      <p className="policy-picker-label">{label}</p>
+      <p className="policy-picker-label"><span>{ariaLabel.replace("滑动选择", "")}</span><strong>{label}</strong></p>
       <div className="model-picker-slider-wrap">
         <div className="model-picker-track" style={{ "--slider-pct": `${pct}%` } as CSSProperties} aria-hidden>
           <div className="model-picker-dots">
@@ -81,6 +82,9 @@ function GearSlider<T extends string>({
             if (next) onChange(next.value);
           }}
         />
+      </div>
+      <div className="slider-labels">
+        {options.map((item) => <button key={item.value} type="button" className="pressable" disabled={disabled} aria-pressed={value === item.value} onClick={() => onChange(item.value)}>{item.label}</button>)}
       </div>
     </div>
   );
@@ -111,9 +115,14 @@ export function ComposerCapsules({
     approvalPolicy === "read_only" && mode !== "agent" ? "auto" : approvalPolicy,
   );
   const rootRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(rootRef, () => { setOpen(false); setModelListOpen(false); }, open, false);
+  useDialogLayer(rootRef, () => setModelListOpen(false), open && modelListOpen, false);
   const modeLabel = interactionModes.find((item) => item.value === mode)?.label ?? mode;
   const effectivePolicy = mode === "agent" ? approvalPolicy : "read_only";
-  const policyLabel = approvalPolicies.find((item) => item.value === effectivePolicy)?.label ?? effectivePolicy;
+  const policyOptions = effectivePolicy === "workspace"
+    ? [...approvalPolicies.slice(0, 2), { value: "workspace" as const, label: "自动改文件" }, ...approvalPolicies.slice(2)]
+    : approvalPolicies;
+  const policyLabel = policyOptions.find((item) => item.value === effectivePolicy)?.label ?? effectivePolicy;
   const activeModelKey = pendingModelKey ?? modelId;
   const activeModel = models.find((model) => modelKey(model) === activeModelKey);
   const currentModel = models.find((model) => modelKey(model) === modelId);
@@ -195,7 +204,7 @@ export function ComposerCapsules({
             />
             <GearSlider
               label={mode === "agent" ? policyLabel : "只读"}
-              options={approvalPolicies}
+              options={policyOptions}
               value={mode === "agent" ? approvalPolicy : "read_only"}
               disabled={mode !== "agent"}
               ariaLabel="滑动选择审批策略"
@@ -336,7 +345,9 @@ export function ComposerCapsules({
           {models.length === 0 ? (
             <p className="model-picker-empty">暂无模型</p>
           ) : intensityLevels.length > 1 ? (
-            <div className="model-picker-slider-wrap">
+            <div>
+              <p className="policy-picker-label"><span>思考强度</span><strong>{THINKING_LABEL[activeThinking] ?? activeThinking}</strong></p>
+              <div className="model-picker-slider-wrap">
               <div
                 className="model-picker-track"
                 style={{ "--slider-pct": `${sliderPercent(thinkingIndex, intensityLevels.length)}%` } as CSSProperties}
@@ -361,6 +372,8 @@ export function ComposerCapsules({
                 aria-valuetext={THINKING_LABEL[activeThinking] ?? activeThinking}
                 onChange={(event) => pickThinkingAt(Number(event.target.value))}
               />
+              </div>
+              <div className="slider-labels">{intensityLevels.map((level, index) => <button key={level} type="button" className="pressable" aria-pressed={level === activeThinking} onClick={() => pickThinkingAt(index)}>{THINKING_LABEL[level] ?? level}</button>)}</div>
             </div>
           ) : (
             <p className="model-picker-empty">该模型不支持思考强度</p>

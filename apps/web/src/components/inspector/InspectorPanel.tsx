@@ -1,3 +1,4 @@
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pin, PinOff, X, PanelRight, PanelRightClose } from "lucide-react";
 import {
@@ -207,6 +208,10 @@ export function InspectorPanel({
     setCommitMode("commit");
     setCommitError("");
   };
+  const restorePanelRef = useRef<HTMLDivElement>(null);
+  const commitPanelRef = useRef<HTMLFormElement>(null);
+  useDialogLayer(restorePanelRef, () => setRestoreAllOpen(false), restoreAllOpen);
+  useDialogLayer(commitPanelRef, closeCommit, commitOpen);
   const submitCommit = () => {
     const message = commitMessage.trim();
     if (!message || !onGitCommit || commitBusy) return;
@@ -618,7 +623,7 @@ export function InspectorPanel({
     {restoreAllOpen ? (
       <div className="dialog-scrim z-[60]">
         <button type="button" className="absolute inset-0" aria-label="关闭" onClick={() => setRestoreAllOpen(false)} />
-        <div className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="git-restore-title">
+        <div ref={restorePanelRef} tabIndex={-1} className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="git-restore-title">
           <div className="dialog-head">
             <div className="dialog-head-text">
               <h2 id="git-restore-title" className="dialog-title">
@@ -649,6 +654,7 @@ export function InspectorPanel({
       <div className="dialog-scrim z-[60]">
         <button type="button" className="absolute inset-0" aria-label="关闭" onClick={closeCommit} />
         <form
+          ref={commitPanelRef}
           className="dialog-panel"
           role="dialog"
           aria-modal="true"

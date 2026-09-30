@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useRef, useState } from "react";
 import { X } from "lucide-react";
 
 type Props = {
@@ -41,10 +42,14 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
     }
   }
 
+  const panelRef = useRef<HTMLFormElement>(null);
+  useDialogLayer(panelRef, () => { if (!busy) onCancel(); });
+
   return (
     <div className="dialog-scrim z-40">
-      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onCancel} />
+      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }} />
       <form
+        ref={panelRef}
         className="dialog-panel"
         role="dialog"
         aria-modal="true"
@@ -61,7 +66,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
             </h2>
             <p className="dialog-copy">{projectName}</p>
           </div>
-          <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={onCancel}>
+          <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }}>
             <X size={16} />
           </button>
         </div>
@@ -115,7 +120,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
           ) : null}
         </div>
         <div className="dialog-actions">
-          <button type="button" className="pressable btn btn-ghost" onClick={onCancel} disabled={busy !== null}>
+          <button type="button" className="pressable btn btn-ghost" onClick={() => { if (!busy) onCancel(); }} disabled={busy !== null}>
             取消
           </button>
           <button

@@ -25,6 +25,20 @@ describe("unifiedDiff", () => {
 });
 
 describe("parseGitPatch", () => {
+  it("keeps content that resembles file headers inside hunks", () => {
+    const files = parseGitPatch(`diff --git a/note.txt b/note.txt
+--- a/note.txt
++++ b/note.txt
+@@ -1,2 +1,2 @@
+---- old divider
+++++ new divider
+`);
+    expect(files[0]?.path).toBe("note.txt");
+    expect(files[0]?.lines).toContainEqual({ type: "remove", text: "--- old divider" });
+    expect(files[0]?.lines).toContainEqual({ type: "add", text: "+++ new divider" });
+    expect(patchLineCounts(files[0]?.lines ?? [])).toEqual({ added: 1, removed: 1 });
+  });
+
   it("splits unified git output into per-file add/remove lines", () => {
     const files = parseGitPatch(`diff --git a/note.txt b/note.txt
 index 111..222 100644

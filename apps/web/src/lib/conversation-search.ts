@@ -6,14 +6,14 @@ export function conversationMessageDomId(messageId: string): string {
   return `conversation-msg-${messageId}`;
 }
 
-export function searchableText(message: Pick<TimelineMessage, "role" | "text">): string {
+export function searchableText(message: Pick<TimelineMessage, "role" | "text"> & { thinking?: string }): string {
   if (message.role === "toolResult") return "";
   if (message.role === "user") return stripModePrefix(message.text);
-  return message.text;
+  return [message.text, message.thinking].filter(Boolean).join("\n");
 }
 
 export function matchConversationMessages(
-  messages: Array<Pick<TimelineMessage, "id" | "role" | "text">>,
+  messages: Array<Pick<TimelineMessage, "id" | "role" | "text"> & { thinking?: string }>,
   query: string,
 ): string[] {
   const needle = query.trim().toLowerCase();

@@ -138,40 +138,47 @@ function pathFromDiffGitHeader(header: string): string {
 export function parseGitPatch(diff: string): GitPatchFile[] {
   const files: GitPatchFile[] = [];
   let current: GitPatchFile | null = null;
+  // 只有在 `diff --git` 之后的文件头区域才认 ---/+++，否则内容行 "++ x" 会被当成 +++ 头丢掉。
+  let inHeader = false;
   const raw = diff.replace(/\r\n/g, "\n").split("\n");
   for (const line of raw) {
     if (line.startsWith("diff --git ")) {
       if (current) files.push(current);
       current = { path: pathFromDiffGitHeader(line), lines: [] };
+      inHeader = true;
       continue;
     }
     if (!current) continue;
     if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
       current.binary = true;
+      inHeader = false;
       continue;
     }
-    if (line.startsWith("+++ ")) {
+    if (inHeader && line.startsWith("+++ ")) {
       const next = stripGitPathPrefix(line.slice(4));
       if (next && next !== "/dev/null") current.path = next;
       continue;
     }
     if (
-      line.startsWith("--- ") ||
-      line.startsWith("index ") ||
-      line.startsWith("new file") ||
-      line.startsWith("deleted file") ||
-      line.startsWith("old mode") ||
-      line.startsWith("new mode") ||
-      line.startsWith("similarity ") ||
-      line.startsWith("rename ") ||
-      line.startsWith("copy ")
+      inHeader &&
+      (line.startsWith("--- ") ||
+        line.startsWith("index ") ||
+        line.startsWith("new file") ||
+        line.startsWith("deleted file") ||
+        line.startsWith("old mode") ||
+        line.startsWith("new mode") ||
+        line.startsWith("similarity ") ||
+        line.startsWith("rename ") ||
+        line.startsWith("copy "))
     ) {
       continue;
     }
     if (line.startsWith("@@")) {
+      inHeader = false;
       current.lines.push({ type: "equal", text: line });
       continue;
     }
+    inHeader = false;
     if (line.startsWith("+")) {
       current.lines.push({ type: "add", text: line.slice(1) });
       continue;

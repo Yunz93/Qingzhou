@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { FolderPicker } from "../setup/FolderPicker";
 import { isDesktopApp } from "../../desktop-bridge";
@@ -18,10 +19,14 @@ export function NewWorkProjectDialog({ defaultCwd, defaultName = "", onCancel, o
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"browse" | "type">("browse");
 
+  const panelRef = useRef<HTMLFormElement>(null);
+  useDialogLayer(panelRef, () => { if (!busy) onCancel(); });
+
   return (
     <div className="dialog-scrim z-40">
-      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onCancel} />
+      <button type="button" className="absolute inset-0" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }} />
       <form
+        ref={panelRef}
         className="dialog-panel"
         role="dialog"
         aria-modal="true"
@@ -52,7 +57,7 @@ export function NewWorkProjectDialog({ defaultCwd, defaultName = "", onCancel, o
             </h2>
             <p className="dialog-copy">选一个文件夹作为项目。之后在里面创建任务、追加内容，直到任务闭环。</p>
           </div>
-          <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={onCancel}>
+          <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }}>
             <X size={16} />
           </button>
         </div>
@@ -113,7 +118,7 @@ export function NewWorkProjectDialog({ defaultCwd, defaultName = "", onCancel, o
           {error ? <p className="text-sm text-danger">{error}</p> : null}
         </div>
         <div className="dialog-actions">
-          <button type="button" className="pressable btn btn-ghost" onClick={onCancel} disabled={busy}>
+          <button type="button" className="pressable btn btn-ghost" onClick={() => { if (!busy) onCancel(); }} disabled={busy}>
             取消
           </button>
           <button type="submit" className="pressable btn btn-primary" disabled={busy}>

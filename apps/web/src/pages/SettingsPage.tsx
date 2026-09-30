@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { getDesktop } from "../desktop-bridge";
+import { settingsReturnPath } from "../lib/settings-navigation";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import { useAgentStore } from "../stores/agent-store";
 import { SetupWizard, type SetupStatus, setupStorePayload } from "../components/setup/SetupWizard";
@@ -21,6 +23,11 @@ type PiLatest = {
 };
 
 export function SettingsPage() {
+  const location = useLocation();
+  const returnPath = settingsReturnPath(location.state);
+  const [setupLoading, setSetupLoading] = useState(true);
+  const [setupError, setSetupError] = useState("");
+  const [trustError, setTrustError] = useState("");
   const piVersion = useAgentStore((state) => state.piVersion);
   const piError = useAgentStore((state) => state.piError);
   const allowedRoots = useAgentStore((state) => state.allowedRoots);
@@ -30,7 +37,7 @@ export function SettingsPage() {
   const trustProject = useAgentStore((state) => state.trustProject);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [theme, setTheme] = useTheme();
-  const [models, setModels] = useState<{ present: boolean; count: number }>({ present: false, count: 0 });
+  const [models, setModels] = useState<{ present: boolean; count: number; path: string }>({ present: false, count: 0, path: "" });
   const [trustBusy, setTrustBusy] = useState(false);
   const [installBusy, setInstallBusy] = useState(false);
   const [installError, setInstallError] = useState("");
@@ -48,10 +55,11 @@ export function SettingsPage() {
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [flash, setFlash] = useState<{ id: string; tone: "ok" | "err"; text: string } | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("oauth");
-  const [selectedProvider, setSelectedProvider] = useState("github");
+  const [selectedProvider, setSelectedProvider] = useState("");
 
-  function applySetup(setup: SetupStatus) {
-    setModels({ present: Boolean(setup.hasModelsFile), count: setup.modelCount ?? 0 });
+  const applySetup = useCallback((setup: SetupStatus) => {
+    setSetupError("");
+    setModels({ present: Boolean(setup.hasModelsFile), count: setup.modelCount ?? 0, path: setup.modelsFilePath ?? "" });
     setCanInstallPi(setup.canInstallPi !== false && !setup.piBundled);
     if (setup.providers?.length) {
       setProviders(setup.providers);
@@ -60,27 +68,38 @@ export function SettingsPage() {
       setOauthProviders(setup.oauthProviders);
     }
     useAgentStore.getState().setSetupState(setupStorePayload(setup));
-  }
+  }, []);
+
+  const loadSetup = useCallback(async (signal?: AbortSignal) => {
+    setSetupLoading(true);
+    setSetupError("");
+    try {
+      const response = await fetch("/api/setup", { credentials: "same-origin", signal });
+      if (!response.ok) throw new Error("读取设置失败，请重试。");
+      const setup = await response.json() as SetupStatus;
+      if (!signal?.aborted) applySetup(setup);
+    } catch (error: unknown) {
+      if (!signal?.aborted) setSetupError(error instanceof Error ? error.message : "无法连接服务，请重试。");
+    } finally {
+      if (!signal?.aborted) setSetupLoading(false);
+    }
+  }, [applySetup]);
 
   useEffect(() => {
-    void fetch("/api/setup", { credentials: "same-origin" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((setup: SetupStatus | null) => {
-        if (!setup) return;
-        applySetup(setup);
-      });
+    const controller = new AbortController();
+    void loadSetup(controller.signal);
     void fetch("/api/setup/pi-latest", { credentials: "same-origin" })
       .then((response) => (response.ok ? response.json() : null))
       .then((json: PiLatest | null) => {
         if (json) setPiLatest(json);
       })
-      .catch(() => {
-        /* 打开设置页时检查失败不挡操作，可再点「检查更新」。 */
-      });
-  }, []);
+      .catch(() => { /* 检查失败可手动重试。 */ });
+    return () => controller.abort();
+  }, [loadSetup]);
 
   async function toggleTrust(next: boolean) {
     setTrustBusy(true);
+    setTrustError("");
     try {
       const response = await fetch("/api/setup/trust", {
         method: "POST",
@@ -88,9 +107,11 @@ export function SettingsPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ trust: next }),
       });
-      if (!response.ok) return;
-      const setup = (await response.json()) as SetupStatus;
+      const setup = (await response.json()) as SetupStatus & { error?: string };
+      if (!response.ok) throw new Error(setup.error ?? "保存信任设置失败，请重试。");
       applySetup(setup);
+    } catch (error: unknown) {
+      setTrustError(error instanceof Error ? error.message : "保存失败，请检查连接后重试。");
     } finally {
       setTrustBusy(false);
     }
@@ -279,7 +300,8 @@ export function SettingsPage() {
 
   const catalog = mergeAuthCatalog(oauthProviders, providers, authEntries);
   const modeProviders = providersForMode(catalog, authMode);
-  const activeProviderId = pickDefaultProvider(catalog, authMode, selectedProvider);
+  const connectedProvider = authMode === "env" ? undefined : modeProviders.find((item) => findAuthEntry(authEntries, item.id, authMode));
+  const activeProviderId = pickDefaultProvider(catalog, authMode, selectedProvider || connectedProvider?.id);
   const activeItem = modeProviders.find((item) => item.id === activeProviderId) ?? modeProviders[0] ?? null;
   const activeEntry =
     activeItem && authMode !== "env" ? findAuthEntry(authEntries, activeItem.id, authMode) : undefined;
@@ -302,11 +324,11 @@ export function SettingsPage() {
       </a>
       <header className="titlebar app-drag traffic-inline flex items-center gap-2 border-b border-line px-3">
         <Link
-          to="/"
+          to={returnPath}
           className="pressable app-no-drag inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[13px] text-accent"
         >
           <ChevronLeft size={16} />
-          返回对话
+          {returnPath.startsWith("/board") ? "返回工作" : "返回对话"}
         </Link>
         <h1 className="flex-1 text-center text-[13px] font-semibold tracking-tight">设置</h1>
         <div className="app-no-drag flex w-[72px] justify-end">
@@ -315,34 +337,12 @@ export function SettingsPage() {
       </header>
       <main id="main-content" className="flex-1 overflow-y-auto px-5 py-8">
         <div className="settings-shell space-y-7">
-          <AppUpdateSection />
+          <nav className="settings-nav" aria-label="设置分组">{[["auth", "账号与认证"], ["engine", "模型与引擎"], ["project", "项目"], ["appearance", "外观"], ["about", "关于与更新"]].map(([id, label]) => <a key={id} className="pressable hover-fill" href={`#settings-${id}`}>{label}</a>)}</nav>
+          {setupLoading ? <p role="status" className="settings-load-note">正在读取设置…</p> : setupError ? <div className="settings-load-note text-danger" role="alert"><span>{setupError}</span><button type="button" className="pressable text-accent" onClick={() => void loadSetup()}>重试</button></div> : null}
 
-          <section>
-            <h2 className="settings-label">外观</h2>
-            <div className="settings-card">
-              <div className="settings-row flex-col items-stretch gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[13px] text-ink">主题</p>
-                  <div className="seg w-[168px]">
-                    {(["light", "dark"] as const).map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={`pressable btn ${theme === value ? "seg-active" : "text-mute"}`}
-                        aria-pressed={theme === value}
-                        onClick={() => setTheme(value)}
-                      >
-                        {value === "dark" ? "深色" : "浅色"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
 
-          <section>
-            <h2 className="settings-label">认证</h2>
+          <section id="settings-auth">
+            <h2 className="settings-label">账号与认证</h2>
             <div className="settings-card">
               <div className="settings-row flex-col items-stretch gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -377,7 +377,7 @@ export function SettingsPage() {
                     <div className="min-w-0">
                       <p className="text-[13px] text-ink">环境变量</p>
                       <p className="mt-0.5 text-[12px] text-mute">
-                        仅检测进程环境中的密钥，不在此编辑；请在系统或 .env 中修改。
+                        检测服务启动时读取的环境变量。修改系统环境或 .env 后，请重启应用或服务；刷新状态只重新检测当前进程，不会重新载入这些修改。
                       </p>
                     </div>
                     <button
@@ -401,7 +401,7 @@ export function SettingsPage() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-[13px] text-mute">未检测到环境变量中的密钥。</p>
+                    <p className="text-[13px] text-mute">{setupLoading ? "正在检测环境变量…" : setupError ? "暂时无法检测环境变量。" : "未检测到环境变量中的密钥。"}</p>
                   )}
                   {flash?.id === "sync" ? (
                     <p className={`text-[12px] ${flash.tone === "err" ? "text-danger" : "text-success"}`}>
@@ -439,7 +439,7 @@ export function SettingsPage() {
                         <div className="min-w-0">
                           <p className="text-[13px] text-ink">{activeItem.label}</p>
                           <p className="mt-0.5 text-[12px] text-mute">
-                            {authEntryStatusLabel(activeEntry, {
+                            {setupLoading ? "正在读取…" : setupError ? "暂时无法读取认证状态" : authEntryStatusLabel(activeEntry, {
                               oauth: authMode === "oauth",
                               apiKey: authMode === "api_key",
                             })}
@@ -452,7 +452,7 @@ export function SettingsPage() {
                                 <button
                                   type="button"
                                   className="pressable btn btn-ghost"
-                                  disabled={authBusy === activeItem.id}
+                                  disabled={authBusy === activeItem.id || authBusy === activeEntry?.id}
                                   onClick={() => void loginProvider(activeItem.id)}
                                 >
                                   {authBusy === activeItem.id ? "正在登录…" : oauthButtonLabel(activeEntry?.kind)}
@@ -472,10 +472,10 @@ export function SettingsPage() {
                             <button
                               type="button"
                               className="pressable btn btn-ghost"
-                              disabled={authBusy === activeItem.id}
+                              disabled={authBusy === activeItem.id || authBusy === activeEntry?.id}
                               onClick={() => void logoutProvider(activeEntry?.id ?? activeItem.id)}
                             >
-                              {authBusy === activeItem.id
+                              {(authBusy === activeItem.id || authBusy === activeEntry?.id)
                                 ? "正在退出…"
                                 : activeEntry.kind === "api_key"
                                   ? "移除密钥"
@@ -564,8 +564,8 @@ export function SettingsPage() {
             </div>
           </section>
 
-          <section>
-            <h2 className="settings-label">引擎</h2>
+          <section id="settings-engine">
+            <h2 className="settings-label">模型与引擎</h2>
             <div className="settings-card">
               <div className="settings-row items-center">
                 <div className="min-w-0 pr-3">
@@ -613,14 +613,19 @@ export function SettingsPage() {
                 <div>
                   <p className="text-[13px] text-ink">models.json</p>
                   <p className="mt-0.5 text-[12px] text-mute">
-                    {models.present ? `已找到${models.count ? ` · ${models.count} 个模型` : ""}` : "未找到"}
+                    {setupLoading ? "正在读取…" : setupError ? "暂时无法读取" : models.present ? `已配置${models.count ? ` · ${models.count} 个模型` : ""}` : "可选的自定义模型配置，内置模型无需此文件。"}
                   </p>
+                  {models.path ? <p className="mt-1 break-all font-mono text-[11px] text-mute">{models.path}</p> : null}
+                  {models.path && getDesktop()?.openPath ? <button type="button" className="pressable mt-2 text-[12px] text-accent" onClick={() => {
+                    const target = models.present ? models.path : models.path.replace(/[\\/][^\\/]+$/, "");
+                    void getDesktop()?.openPath?.(target).then((error) => { if (error) setSetupError(error); }).catch(() => setSetupError("无法打开配置位置。"));
+                  }}>{models.present ? "打开配置文件" : "打开配置目录"}</button> : null}
                 </div>
               </div>
             </div>
           </section>
 
-          <section>
+          <section id="settings-project">
             <h2 className="settings-label">项目</h2>
             <div className="settings-card">
               <div className="settings-row items-center">
@@ -631,13 +636,14 @@ export function SettingsPage() {
                   <input
                     type="checkbox"
                     checked={trustProject}
-                    disabled={trustBusy}
+                    disabled={trustBusy || setupLoading || Boolean(setupError)}
                     onChange={(event) => void toggleTrust(event.target.checked)}
                     aria-label="信任当前项目"
                   />
                   <span />
                 </label>
               </div>
+              {trustError ? <p role="alert" className="px-4 py-2 text-[12px] text-danger">{trustError}</p> : null}
               <div className="settings-row">
                 <div className="min-w-0">
                   <p className="text-[13px] text-ink">工作文件夹</p>
@@ -654,6 +660,32 @@ export function SettingsPage() {
               </div>
             </div>
           </section>
+
+          <section id="settings-appearance">
+            <h2 className="settings-label">外观</h2>
+            <div className="settings-card">
+              <div className="settings-row flex-col items-stretch gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-[13px] text-ink">主题</p>
+                  <div className="seg w-[168px]">
+                    {(["light", "dark"] as const).map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`pressable btn ${theme === value ? "seg-active" : "text-mute"}`}
+                        aria-pressed={theme === value}
+                        onClick={() => setTheme(value)}
+                      >
+                        {value === "dark" ? "深色" : "浅色"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <AppUpdateSection />
 
           <button
             type="button"

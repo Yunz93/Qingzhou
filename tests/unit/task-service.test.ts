@@ -307,6 +307,11 @@ describe("task service process reservations", () => {
       trustProject: false,
     };
     const service = new TaskService(config, store, "test", null);
+    const publishedStatuses: string[] = [];
+    service.addSocket({ closed: false, send: (data) => {
+      const event = JSON.parse(data);
+      if (event.type === "task.updated") publishedStatuses.push(event.payload.task.status);
+    } });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -340,6 +345,10 @@ describe("task service process reservations", () => {
     expect(rpc).not.toHaveBeenCalled();
     release();
     await expect(promptPromise).resolves.toEqual({ ok: true });
+    expect(publishedStatuses).toContain("booting");
+    const readyIndex = publishedStatuses.indexOf("idle");
+    expect(readyIndex).toBeGreaterThanOrEqual(0);
+    expect(publishedStatuses.slice(readyIndex + 1)).not.toContain("booting");
     expect(rpc).toHaveBeenCalledWith(
       created.task.id,
       expect.objectContaining({ type: "prompt", message: expect.stringContaining("hello after create") }),
@@ -463,4 +472,94 @@ describe("task service default model", () => {
     expect(settings.defaultModel).toBe("gpt-5.4");
     service.dispose();
   });
+});
+
+it("restores an archived conversation without starting Pi and persists its identity", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-restore-"));
+  const store = new TaskStore(root);
+  await store.load();
+  const id = "11111111-1111-4111-8111-111111111111";
+  const original = { ...task(id, root), title: "保留的会话", sessionPath: path.join(root, "session.jsonl"), archivedAt: new Date().toISOString() };
+  await store.upsert(original);
+    const config: AppConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      piBin: "pi",
+      piCommand: "pi",
+      piPrefixArgs: [],
+      piExtraEnv: {},
+      dataDir: root,
+      allowedRoots: [root],
+      maxProcesses: 1,
+      mutations: "approval",
+      nodeEnv: "test",
+      approvalTimeoutMs: 1000,
+      allowedOrigins: [],
+      webDistDir: root,
+      approvalExtensionPath: path.join(root, "approval.ts"),
+      homeDir: root,
+      piBundled: false,
+      piAgentDir: path.join(root, ".pi", "agent"),
+      trustProject: false,
+    };
+  const service = new TaskService(config, store, "test", null);
+  const boot = vi.spyOn(service.supervisor, "boot");
+  await expect(service.handleCommand({ id: "archived", type: "task.listArchived", payload: {} })).resolves.toEqual({ tasks: [original] });
+  let finishFirstStop!: () => void;
+  const delayedStop = new Promise<void>((resolve) => { finishFirstStop = resolve; });
+  vi.spyOn(service.supervisor, "stop").mockImplementationOnce(() => delayedStop).mockResolvedValue(undefined);
+  const slowRestore = service.handleCommand({ id: "slow-restore", type: "task.restore", taskId: id, payload: {} });
+  await service.handleCommand({ id: "restore", type: "task.restore", taskId: id, payload: {} });
+  expect(store.listVisible()).toEqual([expect.objectContaining({ id, title: original.title, sessionPath: original.sessionPath, archivedAt: null, status: "stopped" })]);
+  await store.upsert({ ...store.get(id)!, title: "新的标题", approvalPolicy: "read_only", status: "running" });
+  finishFirstStop();
+  await slowRestore;
+  expect(store.get(id)).toMatchObject({ title: "新的标题", approvalPolicy: "read_only", status: "running" });
+  expect(boot).not.toHaveBeenCalled();
+  await expect(service.handleCommand({ id: "archived-empty", type: "task.listArchived", payload: {} })).resolves.toEqual({ tasks: [] });
+  await store.flushSync();
+  const reloaded = new TaskStore(root);
+  await reloaded.load();
+  expect(reloaded.listVisible()[0]?.id).toBe(id);
+  await expect(service.handleCommand({ id: "missing", type: "task.restore", taskId: "missing", payload: {} })).rejects.toThrow("找不到");
+});
+
+it("handles optional resource scan failures after boot without an unhandled rejection", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-resource-failure-"));
+  const store = new TaskStore(root);
+  await store.load();
+  const id = "22222222-2222-4222-8222-222222222222";
+  await store.upsert(task(id, root));
+    const config: AppConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      piBin: "pi",
+      piCommand: "pi",
+      piPrefixArgs: [],
+      piExtraEnv: {},
+      dataDir: root,
+      allowedRoots: [root],
+      maxProcesses: 1,
+      mutations: "approval",
+      nodeEnv: "test",
+      approvalTimeoutMs: 1000,
+      allowedOrigins: [],
+      webDistDir: root,
+      approvalExtensionPath: path.join(root, "approval.ts"),
+      homeDir: root,
+      piBundled: false,
+      piAgentDir: path.join(root, ".pi", "agent"),
+      trustProject: false,
+    };
+  const service = new TaskService(config, store, "test", null);
+  const scan = vi.spyOn(service as unknown as { emitResources: (id: string) => Promise<unknown> }, "emitResources").mockRejectedValue(new Error("scan failed"));
+  vi.spyOn(service.supervisor, "boot").mockResolvedValue({ sessionPath: null, model: null, thinkingLevel: "off" });
+  vi.spyOn(service.supervisor, "snapshot").mockReturnValue(null);
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    await service.handleCommand({ id: "activate", type: "task.activate", taskId: id, payload: {} });
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledWith(id));
+    await vi.waitFor(() => expect(warning).toHaveBeenCalled());
+    expect(store.get(id)?.status).toBe("idle");
+  } finally { warning.mockRestore(); service.dispose(); }
 });

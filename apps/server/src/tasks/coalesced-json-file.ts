@@ -81,7 +81,8 @@ export class CoalescedJsonFile<T> {
       this.timer = null;
       this.kick(this.fsync);
     }, this.debounceMs);
-    this.timer.unref?.();
+    // Awaited writes also run before the server starts listening. Keep the
+    // debounce alive so startup recovery cannot exit before it is persisted.
   }
 
   private kick(fsync: boolean): void {
