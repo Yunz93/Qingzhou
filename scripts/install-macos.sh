@@ -7,7 +7,6 @@
 # Usage:
 #   curl -fsSL https://github.com/Yunz93/Qingzhou/releases/latest/download/install-macos.sh | bash
 #   ./scripts/install-macos.sh
-#   ./scripts/install-macos.sh --nightly
 #   ./scripts/install-macos.sh /path/to/Qingzhou.dmg
 #   ./scripts/install-macos.sh --build
 #   ./scripts/install-macos.sh --trust-only /Applications/Qingzhou.app
@@ -19,7 +18,6 @@ REPO="${QINGZHOU_REPO:-${MOWEN_REPO:-${OHMYPI_REPO:-Yunz93/Qingzhou}}}"
 DEST_DIR="/Applications"
 BUILD=0
 LOCAL=0
-NIGHTLY=0
 TRUST_ONLY=0
 OPEN_AFTER=1
 SOURCE=""
@@ -74,7 +72,6 @@ usage() {
   $0 [选项] [Qingzhou.app|Qingzhou.dmg|Qingzhou.zip]
 
 选项:
-  --nightly       安装 nightly 预发布包
   --version VER   安装指定版本（例如 v0.1.0）
   --repo OWNER/NAME
   --local         使用仓库里 apps/desktop/release 的包
@@ -90,7 +87,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) BUILD=1; shift ;;
     --local) LOCAL=1; shift ;;
-    --nightly) NIGHTLY=1; VERSION="nightly"; shift ;;
     --version) VERSION="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
     --trust-only) TRUST_ONLY=1; shift ;;
@@ -102,6 +98,8 @@ while [[ $# -gt 0 ]]; do
     *) SOURCE="$1"; shift ;;
   esac
 done
+
+[[ "$VERSION" == "latest" || "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本必须是 latest 或正式版本号（例如 v0.1.21）。"
 
 # In-app updates launch this script detached, then quit the running Electron
 # process. Wait for it to disappear before replacing the application bundle.
@@ -228,7 +226,7 @@ download_release() {
   if [[ "$tag" == "latest" ]]; then
     base="https://github.com/${REPO}/releases/latest/download"
   else
-    [[ "$tag" == v* || "$tag" == "nightly" ]] || tag="v${tag}"
+    [[ "$tag" == v* ]] || tag="v${tag}"
     base="https://github.com/${REPO}/releases/download/${tag}"
   fi
 

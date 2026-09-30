@@ -4,27 +4,25 @@
 # Usage (PowerShell):
 #   irm https://github.com/Yunz93/Qingzhou/releases/latest/download/install-windows.ps1 | iex
 #   .\scripts\install-windows.ps1
-#   .\scripts\install-windows.ps1 -Nightly
 #   .\scripts\install-windows.ps1 -Version v0.1.0
 
+[CmdletBinding()]
 param(
   [string] $Repo = $(if ($env:QINGZHOU_REPO) { $env:QINGZHOU_REPO } elseif ($env:MOWEN_REPO) { $env:MOWEN_REPO } elseif ($env:OHMYPI_REPO) { $env:OHMYPI_REPO } else { "Yunz93/Qingzhou" }),
-  [string] $Version = $(if ($env:QINGZHOU_VERSION) { $env:QINGZHOU_VERSION } elseif ($env:MOWEN_VERSION) { $env:MOWEN_VERSION } elseif ($env:OHMYPI_VERSION) { $env:OHMYPI_VERSION } else { "latest" }),
-  [switch] $Nightly
+  [string] $Version = $(if ($env:QINGZHOU_VERSION) { $env:QINGZHOU_VERSION } elseif ($env:MOWEN_VERSION) { $env:MOWEN_VERSION } elseif ($env:OHMYPI_VERSION) { $env:OHMYPI_VERSION } else { "latest" })
 )
 
 $ErrorActionPreference = "Stop"
 $AppName = "Qingzhou"
+if ($Version -notmatch '^(latest|v?[0-9]+\.[0-9]+\.[0-9]+)$') {
+  throw "版本必须是 latest 或正式版本号（例如 v0.1.21）。"
+}
 
 $UpdateParentPid = if ($env:QINGZHOU_UPDATE_PARENT_PID -match '^\d+$') { $env:QINGZHOU_UPDATE_PARENT_PID } elseif ($env:MOWEN_UPDATE_PARENT_PID -match '^\d+$') { $env:MOWEN_UPDATE_PARENT_PID } else { $null }
 if ($UpdateParentPid) {
   while (Get-Process -Id ([int]$UpdateParentPid) -ErrorAction SilentlyContinue) {
     Start-Sleep -Milliseconds 200
   }
-}
-
-if ($Nightly) {
-  $Version = "nightly"
 }
 
 $arch = "x64"
@@ -35,7 +33,7 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_ARCHITEW6432 -eq 
 if ($Version -eq "latest") {
   $base = "https://github.com/$Repo/releases/latest/download"
 } else {
-  if ($Version -notmatch '^v' -and $Version -ne "nightly") {
+  if ($Version -notmatch '^v') {
     $Version = "v$Version"
   }
   $base = "https://github.com/$Repo/releases/download/$Version"

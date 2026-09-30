@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,7 +14,8 @@ describe("install-macos.sh", () => {
     const out = execFileSync("bash", [script, "--help"], { encoding: "utf8" });
     expect(out).toContain("一键安装");
     expect(out).toContain("--trust-only");
-    expect(out).toContain("--nightly");
+    expect(out).toContain("releases/latest/download");
+    expect(out).not.toContain("--nightly");
     expect(out).toContain("GitHub Release");
     expect(out).toContain("Yunz93/Qingzhou");
   });
@@ -50,4 +51,11 @@ describe("install-macos.sh", () => {
     expect(src).not.toMatch(/\$name[，。]/);
     expect(src).toContain("${name}，跳过");
   });
+});
+
+
+it.each([{ args: ["--nightly"] }, { args: ["--version", "nightly"] }, { args: ["--version", "main"] }])("rejects unsupported release selection %j before installing", ({ args }) => {
+  const result = spawnSync("bash", [script, ...args], { encoding: "utf8", env: { ...process.env, QINGZHOU_SELF_TEST: "1" } });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toMatch(/未知选项|正式版本号/);
 });

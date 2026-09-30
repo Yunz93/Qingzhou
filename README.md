@@ -18,12 +18,6 @@ curl -fsSL https://github.com/Yunz93/Qingzhou/releases/latest/download/install-m
 
 脚本会下载应用、拷到 `/Applications`、去掉隔离属性、在本机做 ad-hoc 签名，然后打开轻舟。
 
-开发中的每日构建：
-
-```bash
-curl -fsSL https://github.com/Yunz93/Qingzhou/releases/download/nightly/install-macos.sh | bash -s -- --nightly
-```
-
 若仍无法打开：系统设置 → 隐私与安全性 → 仍要打开。或再跑一次：
 
 ```bash
@@ -40,12 +34,14 @@ irm https://github.com/Yunz93/Qingzhou/releases/latest/download/install-windows.
 
 ### 发布稳定版
 
+先同步所有 `package.json` 的版本号并更新 `CHANGELOG.md`，再创建对应的正式版本标签：
+
 ```bash
-git tag v0.1.20
-git push origin v0.1.20
+git tag v0.1.21
+git push origin v0.1.21
 ```
 
-这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt` 和 `latest.json`。日常 `main` 推送会更新 `nightly` 预发布。安装脚本会校验清单（旧版本没有清单时只警告）。
+这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt` 和 `latest.json`。正式版本会设为 GitHub `latest`，安装与应用内更新统一读取它。`main` 推送只运行 CI；手动发布也须选择与各 `package.json` 版本一致的 `vX.Y.Z` 标签。安装脚本会校验清单（旧版本没有清单时只警告）。
 
 合入前可手动运行 Release 工作流并勾选 `verify_only`，只执行三个平台的安装、lint、类型检查、单测和集成测试，不打包或发布。macOS 正式打包后还会检查内置 fd / rg 的目标架构，避免交叉编译时混入宿主架构的工具。
 
@@ -54,7 +50,7 @@ git push origin v0.1.20
 从仓库本地安装：
 
 ```bash
-bash scripts/install-macos.sh --nightly   # 下载 GitHub 包
+bash scripts/install-macos.sh             # 下载 latest 正式版
 bash scripts/install-macos.sh --build     # 本机打包再安装
 bash scripts/install-macos.sh --user      # ~/Applications，不需要管理员
 bash scripts/install-macos.sh --trust-only /Applications/Qingzhou.app

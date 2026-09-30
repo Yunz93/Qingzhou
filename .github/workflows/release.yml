@@ -4,14 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
-    branches:
-      - main
   workflow_dispatch:
     inputs:
-      prerelease:
-        description: Publish as a prerelease
-        type: boolean
-        default: true
       verify_only:
         description: Run platform checks without packaging or publishing
         type: boolean
@@ -63,8 +57,14 @@ jobs:
 
       - name: Install and verify
         shell: bash
+        env:
+          VERIFY_ONLY: ${{ inputs.verify_only }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           pnpm install --frozen-lockfile
+          if [[ "$VERIFY_ONLY" != "true" ]]; then
+            pnpm exec tsx scripts/verify-release-version.ts "$RELEASE_TAG"
+          fi
           pnpm lint
           pnpm typecheck
           pnpm test
@@ -101,7 +101,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    if: ${{ !inputs.verify_only }}
+    if: ${{ !inputs.verify_only && startsWith(github.ref, 'refs/tags/v') }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -148,41 +148,8 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          prerelease: false
           make_latest: true
           fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Nightly prerelease from main
-        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v'))
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: Nightly
-          prerelease: true
-          make_latest: false
-          overwrite_files: true
-          target_commitish: ${{ github.sha }}
-          files: dist/*
-          fail_on_unmatched_files: true
-          body: |
-            Automated desktop build from `${{ github.sha }}`.
-
-            macOS has no Apple notarization. Install with the script (do not double-click the DMG):
-
-            **macOS**
-            ```bash
-            curl -fsSL https://github.com/${{ github.repository }}/releases/download/nightly/install-macos.sh | bash -s -- --nightly
-            ```
-
-            Stable (when a version tag exists):
-            ```bash
-            curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install-macos.sh | bash
-            ```
-
-            **Windows (PowerShell)**
-            ```powershell
-            irm https://github.com/${{ github.repository }}/releases/latest/download/install-windows.ps1 | iex
-            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
