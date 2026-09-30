@@ -782,35 +782,32 @@ export function WorkbenchLayout() {
                 aria-label="会话标题"
                 className="h-7 w-full max-w-[min(100%,360px)] rounded-md bg-fill-strong px-1.5 text-[12.5px] font-medium tracking-tight text-ink"
               />
-            ) : (
+            ) : task ? (
               <div className="group/title flex min-w-0 flex-1 items-center gap-1.5">
                 <p
                   className="shrink truncate text-[12.5px] font-medium tracking-tight text-ink"
-                  title={task ? "双击重命名" : undefined}
+                  title="双击重命名"
                   onDoubleClick={() => {
-                    if (!task) return;
                     setTitleDraft(task.title);
                     setEditingTitle(true);
                   }}
                 >
-                  {task?.title ?? "还没有对话"}
+                  {task.title}
                 </p>
-                {task ? (
-                  <button
-                    type="button"
-                    className="pressable icon-btn title-rename-btn"
-                    aria-label="重命名"
-                    onClick={() => {
-                      setTitleDraft(task.title);
-                      setEditingTitle(true);
-                    }}
-                  >
-                    <Pencil size={12} />
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className="pressable icon-btn title-rename-btn"
+                  aria-label="重命名"
+                  onClick={() => {
+                    setTitleDraft(task.title);
+                    setEditingTitle(true);
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
                 <div className="titlebar-context">
-                  <span className="titlebar-meta" title={task?.cwd}>
-                    {headerSubtitle(task?.cwd, Boolean(task), status)}
+                  <span className="titlebar-meta" title={task.cwd}>
+                    {headerSubtitle(task.cwd, true, status)}
                   </span>
                   {linkedWorkItem ? (
                     <Link
@@ -824,6 +821,8 @@ export function WorkbenchLayout() {
                   ) : null}
                 </div>
               </div>
+            ) : (
+              <div className="min-w-0 flex-1" />
             )}
           </div>
           <div className="app-no-drag flex shrink-0 items-center gap-0.5">
