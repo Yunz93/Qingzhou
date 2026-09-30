@@ -10,10 +10,14 @@ export {
   serverFrameSchema,
   serverEventTypeSchema,
   snapshotPayloadSchema,
+  filePreviewKindSchema,
+  filePreviewPayloadSchema,
   type ServerEvent,
   type ServerFrame,
   type ServerEventType,
   type SnapshotPayload,
+  type FilePreviewKind,
+  type FilePreviewPayload,
 } from "./server-events.js";
 export {
   TASK_SCHEMA_VERSION,

@@ -392,6 +392,9 @@ export function InspectorPanel({
                       content={preview.content}
                       language={preview.language}
                       truncated={preview.truncated}
+                      kind={preview.kind}
+                      mimeType={preview.mimeType}
+                      dataUrl={preview.dataUrl}
                       chrome={false}
                     />
                   ) : (

@@ -344,7 +344,11 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
     ...commandBase,
     type: z.literal("files.read"),
     taskId: z.string().min(1),
-    payload: z.object({ path: z.string().min(1) }),
+    payload: z.object({
+      path: z.string().min(1),
+      /** When false, return preview data without broadcasting files.preview (chat inline media). */
+      emit: z.boolean().optional(),
+    }),
   }),
   z.object({
     ...commandBase,

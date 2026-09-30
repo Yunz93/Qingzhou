@@ -16,6 +16,7 @@ import {
   OPEN_CONVERSATION_SEARCH_EVENT,
   stepSearchIndex,
 } from "../../lib/conversation-search";
+import { useAgentStore } from "../../stores/agent-store";
 
 type Props = {
   messages: TimelineMessage[];
@@ -219,9 +220,11 @@ function SystemNotice({
 const AssistantMessage = memo(function AssistantMessage({
   message,
   highlighted,
+  taskId,
 }: {
   message: TimelineMessage;
   highlighted?: boolean;
+  taskId: string | null;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   return (
@@ -230,7 +233,7 @@ const AssistantMessage = memo(function AssistantMessage({
       className={`mr-auto w-full max-w-[90%] shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
     >
       <ThinkingBlock message={message} highlighted={highlighted} />
-      <AssistantMarkdown text={message.text} streaming={message.streaming} />
+      <AssistantMarkdown text={message.text} streaming={message.streaming} taskId={taskId} />
       {message.streaming ? <span className="sr-only" aria-live="polite">正在回复</span> : null}
       {message.text ? (
         <button
@@ -262,6 +265,7 @@ export function ConversationTimeline({
   onUndoFile,
   onStarter,
 }: Props) {
+  const taskId = useAgentStore((state) => state.activeTaskId);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pinnedRef = useRef(true);
@@ -385,13 +389,14 @@ export function ConversationTimeline({
     return entries.map((entry) => {
       if (entry.kind === "group") {
         for (const tool of entry.tools) renderedTools.add(tool.toolCallId);
-        return <ToolGroupRow key={entry.tools[0]?.toolCallId} tools={entry.tools} onOpen={onOpenFile} />;
+        return <ToolGroupRow key={entry.tools[0]?.toolCallId} tools={entry.tools} taskId={taskId} onOpen={onOpenFile} />;
       }
       renderedTools.add(entry.tool.toolCallId);
       return (
         <ToolExecutionRow
           key={entry.tool.toolCallId}
           tool={entry.tool}
+          taskId={taskId}
           onOpen={onOpenFile}
           onUndo={onUndoFile}
         />
@@ -441,7 +446,7 @@ export function ConversationTimeline({
       }
       if (message.role === "assistant" && !message.text && !message.thinking && !message.streaming) continue;
       flushTools();
-      rows.push(<AssistantMessage key={message.id} message={message} highlighted={highlighted} />);
+      rows.push(<AssistantMessage key={message.id} message={message} highlighted={highlighted} taskId={taskId} />);
     }
     flushTools();
     const leftovers = tools.filter((tool) => !renderedTools.has(tool.toolCallId));

@@ -122,9 +122,21 @@ describe("InspectorPanel tabs", () => {
     expect(skills).not.toMatch(/导出 HTML/);
     expect(preview).toMatch(/whitespace-pre-wrap/);
     expect(preview).toMatch(/break-words/);
+    expect(preview).toMatch(/kind === "image"/);
+    expect(preview).toMatch(/kind === "audio"/);
+    expect(preview).toMatch(/kind === "video"/);
+    expect(preview).toMatch(/dataUrl/);
+    const markdown = readFileSync(path.resolve("apps/web/src/components/timeline/AssistantMarkdown.tsx"), "utf8");
+    expect(markdown).toMatch(/WorkspaceMediaPreview/);
+    expect(markdown).toMatch(/isWorkspaceMediaPath/);
+    const toolRow = readFileSync(path.resolve("apps/web/src/components/timeline/ToolExecutionRow.tsx"), "utf8");
+    expect(toolRow).toMatch(/WorkspaceMediaPreview/);
+    expect(toolRow).toMatch(/showMedia/);
     const header = src.slice(src.indexOf("tab === \"files\""), src.indexOf("tab === \"git\""));
     expect(header.indexOf("preview?.path")).toBeGreaterThan(-1);
     expect(header.indexOf("隐藏文件树")).toBeGreaterThan(header.indexOf("preview?.path"));
+    expect(src).toMatch(/preview\.kind/);
+    expect(src).toMatch(/preview\.dataUrl/);
   });
 });
 

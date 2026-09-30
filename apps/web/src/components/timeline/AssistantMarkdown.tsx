@@ -3,7 +3,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import hljs from "highlight.js";
-import { escapeHtml, shouldOpenMarkdownLink, stabilizeMarkdown } from "../../lib/assistant-markdown";
+import {
+  escapeHtml,
+  isWorkspaceMediaPath,
+  markdownUrlTransform,
+  shouldOpenMarkdownLink,
+  stabilizeMarkdown,
+} from "../../lib/assistant-markdown";
+import { WorkspaceMediaPreview } from "./WorkspaceMediaPreview";
 
 class MarkdownErrorBoundary extends Component<{ text: string; children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
@@ -38,12 +45,12 @@ function onMarkdownLinkClick(event: MouseEvent<HTMLAnchorElement>, href: string 
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
-function AssistantMarkdownView({ text }: { text: string }) {
+function AssistantMarkdownView({ text, taskId }: { text: string; taskId: string | null }) {
   return (
     <div className="markdown">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
-        urlTransform={(url) => (shouldOpenMarkdownLink(url) ? url : "")}
+        urlTransform={markdownUrlTransform}
         components={{
           pre({ children }) {
             let language = "";
@@ -79,6 +86,15 @@ function AssistantMarkdownView({ text }: { text: string }) {
               </a>
             );
           },
+          img({ src, alt }) {
+            if (shouldOpenMarkdownLink(src)) {
+              return <img src={src} alt={alt ?? ""} className="my-2 max-h-[360px] max-w-full rounded-md" />;
+            }
+            if (isWorkspaceMediaPath(src)) {
+              return <WorkspaceMediaPreview src={src!} alt={alt} taskId={taskId} />;
+            }
+            return alt ? <span className="text-mute">{alt}</span> : null;
+          },
           input({ checked }) {
             return <input type="checkbox" checked={checked ?? false} disabled readOnly />;
           },
@@ -93,9 +109,11 @@ function AssistantMarkdownView({ text }: { text: string }) {
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   text,
   streaming,
+  taskId = null,
 }: {
   text: string;
   streaming?: boolean;
+  taskId?: string | null;
 }) {
   if (!text) return null;
   if (streaming) {
@@ -103,7 +121,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   }
   return (
     <MarkdownErrorBoundary text={text}>
-      <AssistantMarkdownView text={text} />
+      <AssistantMarkdownView text={text} taskId={taskId} />
     </MarkdownErrorBoundary>
   );
 });

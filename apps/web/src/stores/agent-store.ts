@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   ApprovalRequest,
   AuthEntry,
+  FilePreviewPayload,
   InteractionRequest,
   ModelRef,
   PiResources,
@@ -268,7 +269,7 @@ type AgentState = {
   homeDir: string;
   workspaceRoot: string | null;
   fileEntries: Array<{ path: string; name: string; kind: "file" | "dir" }>;
-  filePreview: { path: string; content: string; truncated: boolean; language?: string } | null;
+  filePreview: FilePreviewPayload | null;
   pendingApprovals: ApprovalRequest[];
   commands: AgentCommand[];
   git: GitSnapshot | null;

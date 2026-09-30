@@ -19,6 +19,21 @@ import {
   toolExecutionSchema,
 } from "./task-schema.js";
 
+export const filePreviewKindSchema = z.enum(["text", "image", "audio", "video", "binary"]);
+
+export const filePreviewPayloadSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+  truncated: z.boolean(),
+  language: z.string().optional(),
+  kind: filePreviewKindSchema.default("text"),
+  mimeType: z.string().optional(),
+  dataUrl: z.string().optional(),
+});
+
+export type FilePreviewKind = z.infer<typeof filePreviewKindSchema>;
+export type FilePreviewPayload = z.infer<typeof filePreviewPayloadSchema>;
+
 export const serverEventTypeSchema = z.enum([
   "snapshot",
   "task.created",
@@ -275,12 +290,7 @@ export const serverEventSchema = z.discriminatedUnion("type", [
   z.object({
     ...eventBase,
     type: z.literal("files.preview"),
-    payload: z.object({
-      path: z.string(),
-      content: z.string(),
-      truncated: z.boolean(),
-      language: z.string().optional(),
-    }),
+    payload: filePreviewPayloadSchema,
   }),
   z.object({
     ...eventBase,

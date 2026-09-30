@@ -11,6 +11,7 @@ import {
   stripModePrefix,
   type AuthEntry,
   type ClientCommand,
+  type FilePreviewPayload,
   type ModelRef,
   type PiResources,
   type ServerEvent,
@@ -434,7 +435,9 @@ export class TaskService {
       case "files.tree":
         return this.fileTree(command.taskId);
       case "files.read":
-        return this.filePreview(command.taskId, command.payload.path);
+        return this.filePreview(command.taskId, command.payload.path, {
+          emit: command.payload.emit !== false,
+        });
       case "task.search":
         return {
           tasks: this.listTasks().filter((task) => {
@@ -1041,10 +1044,15 @@ export class TaskService {
     return { entries };
   }
 
-  private async filePreview(taskId: string, relativePath: string): Promise<void> {
+  private async filePreview(
+    taskId: string,
+    relativePath: string,
+    options?: { emit?: boolean },
+  ): Promise<FilePreviewPayload> {
     const task = this.requireTask(taskId);
     const preview = await previewProjectFile(relativePath, task.cwd, this.config.allowedRoots);
-    this.emit(taskId, "files.preview", preview);
+    if (options?.emit !== false) this.emit(taskId, "files.preview", preview);
+    return preview;
   }
 
   private async setPolicy(
