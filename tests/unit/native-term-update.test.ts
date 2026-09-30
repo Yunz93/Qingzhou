@@ -9,6 +9,10 @@ describe("native terminal and in-app updates", () => {
     expect(src).toContain("addon-fit");
     expect(src).toContain("allowTransparency: true");
     expect(src).toContain('aria-label", "终端"');
+    expect(src).toContain("term-xterm-frame");
+    expect(src).toContain("overviewRuler");
+    // PTY must start after fit with measured cols/rows — default 80×24 then resize leaves blank rows.
+    expect(src).toMatch(/fit\.fit\(\);\s*\n\s*await socketClient\.send\("term\.start"/);
     expect(src).not.toContain("term-input");
   });
 

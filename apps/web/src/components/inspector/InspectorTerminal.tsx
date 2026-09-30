@@ -26,40 +26,19 @@ export function InspectorTerminal({ taskId, cwd }: Props) {
   const shell = session?.shell ? session.shell.split(/[/\\]/).pop() : null;
 
   useEffect(() => {
-    if (!taskId) return;
-    setError("");
-    let cancelled = false;
-    const start = async () => {
-      let lastError: unknown;
-      for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
-        try {
-          const cols = termRef.current?.cols ?? 80;
-          const rows = termRef.current?.rows ?? 24;
-          await socketClient.send("term.start", { cols, rows }, taskId);
-          return;
-        } catch (cause) {
-          lastError = cause;
-          await new Promise((resolve) => window.setTimeout(resolve, 250));
-        }
-      }
-      if (!cancelled) setError(lastError instanceof Error ? lastError.message : "终端启动失败。");
-    };
-    void start();
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId]);
-
-  useEffect(() => {
     const host = hostRef.current;
     if (!host || !taskId) return;
+    setError("");
+    let cancelled = false;
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
       fontFamily: '"Commit Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 12,
-      lineHeight: 1.35,
+      lineHeight: 1.2,
       scrollback: 5000,
+      // FitAddon reserves this width when scrollback > 0; keep 0 so cols match the host.
+      overviewRuler: { width: 0 },
       theme: termTheme(readTheme()),
       macOptionIsMeta: true,
       allowTransparency: true,
@@ -73,6 +52,11 @@ export function InspectorTerminal({ taskId, cwd }: Props) {
     termRef.current = term;
     fitRef.current = fit;
     writtenRef.current = 0;
+    const buffered = useAgentStore.getState().termByTask[taskId]?.text ?? "";
+    if (buffered) {
+      term.write(buffered);
+      writtenRef.current = buffered.length;
+    }
     const dataSub = term.onData((data) => {
       void socketClient.send("term.input", { data }, taskId).catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : "输入发送失败。");
@@ -107,9 +91,25 @@ export function InspectorTerminal({ taskId, cwd }: Props) {
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
-    resize();
+    // Start the PTY only after the first fit so the shell opens at the real size
+    // (starting at the 80×24 default then resizing can leave blank rows above the prompt).
+    void (async () => {
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 5 && !cancelled; attempt += 1) {
+        try {
+          fit.fit();
+          await socketClient.send("term.start", { cols: term.cols, rows: term.rows }, taskId);
+          return;
+        } catch (cause) {
+          lastError = cause;
+          await new Promise((resolve) => window.setTimeout(resolve, 250));
+        }
+      }
+      if (!cancelled) setError(lastError instanceof Error ? lastError.message : "终端启动失败。");
+    })();
     term.focus();
     return () => {
+      cancelled = true;
       dataSub.dispose();
       observer.disconnect();
       term.dispose();
@@ -170,18 +170,20 @@ export function InspectorTerminal({ taskId, cwd }: Props) {
         </button>
       </div>
       {error ? <p className="term-error px-3 py-1.5 text-[12px]">{error}</p> : null}
-      <div
-        ref={hostRef}
-        className="term-xterm"
-        onClick={() => {
-          termRef.current?.focus();
-          if (!connected && taskId) {
-            const cols = termRef.current?.cols ?? 80;
-            const rows = termRef.current?.rows ?? 24;
-            void socketClient.send("term.start", { cols, rows }, taskId).catch(() => undefined);
-          }
-        }}
-      />
+      <div className="term-xterm-frame">
+        <div
+          ref={hostRef}
+          className="term-xterm"
+          onClick={() => {
+            termRef.current?.focus();
+            if (!connected && taskId) {
+              const cols = termRef.current?.cols ?? 80;
+              const rows = termRef.current?.rows ?? 24;
+              void socketClient.send("term.start", { cols, rows }, taskId).catch(() => undefined);
+            }
+          }}
+        />
+      </div>
     </div>
   );
 }
