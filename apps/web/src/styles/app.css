@@ -2612,5 +2612,6 @@ html.desktop[data-platform="darwin"] .traffic-inline {
 .settings-load-note { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; }
 .work-search-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 36px 12px; color: var(--color-mute); font-size: 13px; }
 .thinking-group { border-left: 2px solid var(--color-line); padding-left: 12px; }
+.composer-image-preview { pointer-events: none; }
 .thinking-group-body { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .sidebar-project svg { transition: none; } }

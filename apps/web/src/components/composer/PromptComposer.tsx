@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEv
 import type { ApprovalPolicy, InteractionMode, TaskStatus, ThinkingLevel } from "@qingzhou/protocol";
 import { extractAtMentions } from "@qingzhou/protocol";
 import { ArrowUp, Check, Clock3, CornerUpRight, Pencil, Plus, Square, X } from "lucide-react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { composerCanSubmit, filesFromClipboard, nextComposerDomValue, shouldSubmitOnEnter } from "../../lib/composer-input";
 import { composerPlaceholder } from "../../copy";
 import { busySubmitKind, readBusySendMode, writeBusySendMode, type BusySendMode } from "../../lib/ui-prefs";
@@ -114,6 +115,9 @@ export function PromptComposer({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [busySendMode, setBusySendMode] = useState<BusySendMode>(() => readBusySendMode());
+  const [previewImage, setPreviewImage] = useState<ComposerImage | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(previewRef, () => setPreviewImage(null), previewImage !== null);
   const [queueEdit, setQueueEdit] = useState<{
     kind: "steering" | "followUp";
     index: number;
@@ -318,6 +322,7 @@ export function PromptComposer({
   };
 
   return (
+    <>
     <div className="px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-1">
       <div
         className="composer-well relative mx-auto max-w-[720px]"
@@ -333,11 +338,19 @@ export function PromptComposer({
           <ul className="flex flex-wrap gap-1.5 px-3.5 pt-3" aria-label={`已添加 ${images.length} 张图`}>
             {images.map((image) => (
               <li key={image.id} className="relative">
-                <img
-                  src={image.previewUrl}
-                  alt={image.name}
-                  className="h-14 w-14 rounded-lg bg-fill object-cover"
-                />
+                <button
+                  type="button"
+                  className="pressable block overflow-hidden rounded-lg"
+                  aria-label={`双击放大 ${image.name}`}
+                  title="双击放大"
+                  onDoubleClick={() => setPreviewImage(image)}
+                >
+                  <img
+                    src={image.previewUrl}
+                    alt={image.name}
+                    className="pointer-events-none h-14 w-14 bg-fill object-cover"
+                  />
+                </button>
                 <button
                   type="button"
                   className="pressable absolute -right-1 -top-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-elevated text-mute shadow-dialog"
@@ -498,5 +511,16 @@ export function PromptComposer({
         </div>
       </div>
     </div>
+    {previewImage ? (
+      <div ref={previewRef} className="dialog-scrim z-[70]" role="dialog" aria-modal="true" aria-label={`放大 ${previewImage.name}`}>
+        <button type="button" className="absolute inset-0" aria-label="关闭预览" onClick={() => setPreviewImage(null)} />
+        <img
+          src={previewImage.previewUrl}
+          alt={previewImage.name}
+          className="composer-image-preview relative z-[1] max-h-[min(88dvh,900px)] max-w-[min(92vw,960px)] rounded-xl bg-elevated object-contain shadow-dialog"
+        />
+      </div>
+    ) : null}
+    </>
   );
 }
