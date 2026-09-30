@@ -304,6 +304,8 @@ test("sliders expose all choices and settings fits narrow light and dark views",
   await page.goto("/settings");
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
   await expect(page.getByText(/修改系统环境或 .env 后/)).toBeVisible();
+  await expect(page.getByText("默认工作文件夹")).toBeVisible();
+  await expect(page.getByText("新建对话或任务时的默认目录")).toBeVisible();
   await page.setViewportSize({ width: 533, height: 600 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(533);
   await page.screenshot({ path: "/tmp/qingzhou-settings-after-light.png", fullPage: true });

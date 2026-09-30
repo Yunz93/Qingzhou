@@ -630,7 +630,8 @@ export function SettingsPage() {
             <div className="settings-card">
               <div className="settings-row items-center">
                 <div className="min-w-0 pr-3">
-                  <p className="text-[13px] text-ink">信任当前项目</p>
+                  <p className="text-[13px] text-ink">信任默认工作区</p>
+                  <p className="mt-0.5 text-[12px] text-mute">仅作用于下方默认文件夹；其它会话目录不受此开关影响。</p>
                 </div>
                 <label className="mac-toggle">
                   <input
@@ -646,16 +647,20 @@ export function SettingsPage() {
               {trustError ? <p role="alert" className="px-4 py-2 text-[12px] text-danger">{trustError}</p> : null}
               <div className="settings-row">
                 <div className="min-w-0">
-                  <p className="text-[13px] text-ink">工作文件夹</p>
-                  <p className="mt-0.5 break-all font-mono text-[11px] text-mute">
+                  <p className="text-[13px] text-ink">默认工作文件夹</p>
+                  <p className="mt-0.5 text-[12px] text-mute">
+                    新建对话或任务时的默认目录，不是唯一可用项目。主界面每个会话仍可选用其它文件夹。
+                  </p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-mute">
                     {workspaceRoot ?? allowedRoots[0] ?? "—"}
                   </p>
                 </div>
               </div>
               <div className="settings-row">
                 <div className="min-w-0">
-                  <p className="text-[13px] text-ink">数据保存在</p>
-                  <p className="mt-0.5 break-all font-mono text-[11px] text-mute">{dataDir}</p>
+                  <p className="text-[13px] text-ink">应用数据目录</p>
+                  <p className="mt-0.5 text-[12px] text-mute">轻舟自己的会话与配置存放处，不是你的代码项目。</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-mute">{dataDir}</p>
                 </div>
               </div>
             </div>
