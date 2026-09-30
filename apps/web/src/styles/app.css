@@ -815,6 +815,8 @@ html.dark {
     appearance: none;
     background: transparent;
     cursor: pointer;
+    pointer-events: auto;
+    touch-action: none;
   }
 
   .model-picker-slider::-webkit-slider-runnable-track {

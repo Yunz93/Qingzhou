@@ -93,6 +93,11 @@ describe("conversation interaction chrome", () => {
     expect(capsules).toContain("policy-picker-rail");
     expect(capsules).toContain("滑动选择交互模式");
     expect(capsules).toContain("滑动选择审批策略");
+    expect(capsules).toContain("pendingMode");
+    expect(capsules).toContain("pendingPolicy");
+    expect(capsules).toContain("activeThinking");
+    expect(capsules).toContain("capsuleModelLabel");
+    expect(capsules).not.toContain("<span>思考强度</span>");
     expect(capsules).toContain("滑动选择思考强度");
     expect(capsules).not.toContain("composer-popover-item");
     const appCss = readFileSync(path.resolve("apps/web/src/styles/app.css"), "utf8");

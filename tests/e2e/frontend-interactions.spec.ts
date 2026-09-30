@@ -283,6 +283,10 @@ test("sliders expose all choices and settings fits narrow light and dark views",
   await expect(policy.getByText("交互模式", { exact: true })).toBeVisible();
   await expect(policy.getByRole("button", { name: "每次确认", exact: true })).toBeVisible();
   await expect(policy.locator(".policy-picker-rail").last().getByRole("button")).toHaveText(["只读", "每次确认", "自动审核", "自动通过"]);
+  await policy.getByRole("slider", { name: "滑动选择交互模式" }).fill("1");
+  await expect(policy.getByRole("slider", { name: "滑动选择交互模式" })).toHaveAttribute("aria-valuetext", "规划");
+  await policy.getByRole("slider", { name: "滑动选择交互模式" }).fill("2");
+  await expect(policy.getByRole("slider", { name: "滑动选择交互模式" })).toHaveAttribute("aria-valuetext", "代理");
   await policy.getByRole("button", { name: "自动通过", exact: true }).click();
   await expect(policy.getByRole("slider", { name: "滑动选择审批策略" })).toHaveAttribute("aria-valuetext", "自动通过");
   await page.keyboard.press("Escape");
@@ -292,7 +296,10 @@ test("sliders expose all choices and settings fits narrow light and dark views",
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "模型和思考", exact: true }).click();
   const model = page.getByRole("dialog", { name: "模型和思考" });
-  await expect(model.getByText("思考强度", { exact: true })).toBeVisible();
+  await expect(model.getByRole("slider", { name: "滑动选择思考强度" })).toBeVisible();
+  await expect(model.getByText("思考强度", { exact: true })).toHaveCount(0);
+  await model.getByRole("slider", { name: "滑动选择思考强度" }).fill("3");
+  await expect(page.getByRole("button", { name: "模型和思考" })).toContainText("中");
   await page.keyboard.press("Escape");
   await page.goto("/settings");
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
