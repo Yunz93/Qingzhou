@@ -52,7 +52,15 @@ describe("agent-native work mode", () => {
     expect(panel).toMatch(/执行记录/);
     expect(panel).toMatch(/确认删除/);
     expect(panel).toMatch(/onDelete/);
+    expect(board).toMatch(/ensureWorkConversationTranscript/);
     expect(board).toMatch(/workItem\.delete/);
+    const drawer = readFileSync(path.resolve("apps/web/src/components/board/WorkConversationDrawer.tsx"), "utf8");
+    expect(drawer).toMatch(/ensureWorkConversationTranscript/);
+    expect(drawer).toMatch(/work-panel-head app-drag/);
+    expect(drawer).toMatch(/app-no-drag flex shrink-0/);
+    expect(drawer).toMatch(/messagesByTask\[taskId\] \?\? \[\]/);
+    expect(drawer).not.toMatch(/messagesByTask\[taskId\] \?\? state\.messages/);
+    expect(styles).toMatch(/html\.desktop\[data-platform="darwin"\] \.work-panel-head/);
     expect(dashboard).not.toMatch(/<select/);
   });
 

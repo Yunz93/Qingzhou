@@ -162,8 +162,7 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     if (connection !== "open" || !activeTaskId) return;
-    // Cold activate already pushes a snapshot on the WS reply path; warm
-    // intentionally skips the bulky transcript — do not queue a second snap.
+    // Activate pushes a snapshot on the WS reply path (including warm sessions).
     void socketClient.send("task.activate", {}, activeTaskId).catch(() => {
       // Boot errors surface via task status / server.error.
     });

@@ -2355,6 +2355,13 @@ html.desktop[data-platform="darwin"] .traffic-inline {
   background: var(--color-surface);
 }
 
+.work-panel-head .app-no-drag,
+.work-panel-head button,
+.work-panel-head a {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 .work-panel-kicker {
   color: var(--color-mute);
   font-size: 10px;
@@ -2568,6 +2575,10 @@ html.desktop[data-platform="darwin"] .traffic-inline {
   .work-panel {
     width: 100%;
     border-left: 0;
+  }
+
+  html.desktop[data-platform="darwin"] .work-panel-head {
+    padding-left: var(--traffic-lights-inset) !important;
   }
 
   .work-panel-body {
