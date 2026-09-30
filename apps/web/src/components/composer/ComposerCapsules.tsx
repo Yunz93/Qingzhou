@@ -59,10 +59,7 @@ function GearSlider<T extends string>({
   const title = ariaLabel.replace(/^滑动选择/, "");
   return (
     <div className={`policy-picker-rail ${disabled ? "policy-picker-rail-disabled" : ""}`}>
-      <p className="policy-picker-label">
-        <span>{title}</span>
-        <strong>{label}</strong>
-      </p>
+      <p className="policy-picker-label">{title}</p>
       <div className="model-picker-slider-wrap">
         <div className="model-picker-track" style={{ "--slider-pct": `${pct}%` } as CSSProperties} aria-hidden>
           <div className="model-picker-dots">
