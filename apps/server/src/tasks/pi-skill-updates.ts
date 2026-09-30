@@ -361,7 +361,9 @@ async function extractGithubSkillTarball(
       );
     }
     await pipeline(response.body, createWriteStream(archive));
-    await execFileAsync("tar", ["xf", archive, "-C", extractDir], { timeout: 60_000, windowsHide: true });
+    await execFileAsync("tar", ["xf", path.basename(archive), "-C", path.relative(tmp, extractDir)], {
+      cwd: tmp, timeout: 60_000, windowsHide: true,
+    });
     const roots = await readdir(extractDir, { withFileTypes: true });
     const root = roots.find((item) => item.isDirectory());
     if (!root) throw new Error("下载的技能包是空的。");

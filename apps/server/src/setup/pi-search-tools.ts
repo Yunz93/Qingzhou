@@ -149,7 +149,11 @@ function findExtractedBinary(rootDir: string, binaryName: string): string | null
 
 async function extractArchive(archivePath: string, extractDir: string): Promise<void> {
   await mkdir(extractDir, { recursive: true });
-  const result = spawnSync("tar", ["xf", archivePath, "-C", extractDir], { stdio: "pipe" });
+  const archiveDir = path.dirname(archivePath);
+  const result = spawnSync("tar", ["xf", path.basename(archivePath), "-C", path.relative(archiveDir, extractDir)], {
+    cwd: archiveDir,
+    stdio: "pipe",
+  });
   if (result.status !== 0) {
     const detail = result.stderr?.toString().trim() || result.stdout?.toString().trim() || `exit ${result.status}`;
     throw new Error(`Failed to extract ${path.basename(archivePath)}: ${detail}`);

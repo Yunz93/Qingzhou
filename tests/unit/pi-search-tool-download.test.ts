@@ -29,7 +29,7 @@ it("finishes copying the downloaded binary before removing its extraction direct
     await mkdir(contents);
     await writeFile(path.join(contents, "fd"), "pinned fd binary");
     const archive = path.join(root, "fd.tar.gz");
-    execFileSync("tar", ["czf", archive, "-C", contents, "fd"]);
+    execFileSync("tar", ["czf", "fd.tar.gz", "-C", "contents", "fd"], { cwd: root });
     const bytes = await readFile(archive);
     state.events = [];
     state.destDir = path.join(root, "installed");
