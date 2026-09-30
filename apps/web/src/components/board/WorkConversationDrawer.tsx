@@ -1,5 +1,5 @@
 import { useDialogLayer } from "../../hooks/useDialogLayer";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, X } from "lucide-react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel, WorkItemSummary } from "@qingzhou/protocol";
 import { workItemIsClosed } from "@qingzhou/protocol";
@@ -15,9 +15,16 @@ type Props = {
   onOpenFull: () => void;
 };
 
+/** Activate a work conversation and wait until a transcript snapshot is available. */
+export async function ensureWorkConversationTranscript(taskId: string): Promise<void> {
+  await socketClient.send("task.activate", {}, taskId);
+  if (useAgentStore.getState().messagesByTask[taskId] !== undefined) return;
+  await socketClient.send("snapshot.request", { taskId }, taskId);
+}
+
 function DrawerConversation({ taskId }: { taskId: string }) {
-  const messages = useAgentStore((state) => state.messagesByTask[taskId] ?? state.messages);
-  const tools = useAgentStore((state) => state.toolsByTask[taskId] ?? state.tools);
+  const messages = useAgentStore((state) => state.messagesByTask[taskId] ?? []);
+  const tools = useAgentStore((state) => state.toolsByTask[taskId] ?? []);
   return <ConversationTimeline messages={messages} tools={tools} />;
 }
 
@@ -25,9 +32,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   useDialogLayer(panelRef, onClose);
   const tasks = useAgentStore((state) => state.tasks);
-  const messages = useAgentStore((state) =>
-    item.taskId ? (state.messagesByTask[item.taskId] ?? state.messages) : state.messages,
-  );
+  const messages = useAgentStore((state) => (item.taskId ? (state.messagesByTask[item.taskId] ?? []) : []));
   const models = useAgentStore((state) => state.models);
   const thinkingLevels = useAgentStore((state) => state.thinkingLevels);
   const defaultModel = useAgentStore((state) => state.defaultModel);
@@ -53,6 +58,13 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
   const hasTurns = messages.some((message) => message.role === "user");
   const blockingInteraction = pendingInteractions.some((entry) => entry.taskId === task?.id);
   const itemClosed = workItemIsClosed(item.state);
+
+  useEffect(() => {
+    const taskId = item.taskId;
+    if (!taskId || connection !== "open") return;
+    if (useAgentStore.getState().messagesByTask[taskId] !== undefined) return;
+    void ensureWorkConversationTranscript(taskId).catch(() => undefined);
+  }, [connection, item.taskId]);
 
   async function uploadImages(filesToUpload: FileList | File[]) {
     const next: ComposerImage[] = [];
@@ -115,9 +127,9 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
       <div className="work-panel-layer" role="presentation">
         <button type="button" className="work-panel-scrim" aria-label="关闭对话" onClick={onClose} />
         <aside ref={panelRef} tabIndex={-1} className="work-panel work-conversation-panel" role="dialog" aria-modal="true" aria-label="任务对话">
-          <header className="work-panel-head">
+          <header className="work-panel-head app-drag">
             <h2>{item.title}</h2>
-            <button type="button" className="pressable icon-btn" aria-label="关闭" onClick={onClose}>
+            <button type="button" className="pressable app-no-drag icon-btn" aria-label="关闭" onClick={onClose}>
               <X size={16} />
             </button>
           </header>
@@ -131,12 +143,12 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull }: Props) {
     <div className="work-panel-layer" role="presentation">
       <button type="button" className="work-panel-scrim" aria-label="关闭对话" onClick={onClose} />
       <aside ref={panelRef} tabIndex={-1} className="work-panel work-conversation-panel" role="dialog" aria-modal="true" aria-labelledby="work-conversation-title">
-        <header className="work-panel-head">
-          <div>
+        <header className="work-panel-head app-drag">
+          <div className="min-w-0">
             <p className="work-panel-kicker">任务对话</p>
             <h2 id="work-conversation-title">{item.title}</h2>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="app-no-drag flex shrink-0 items-center gap-1">
             <button type="button" className="pressable btn btn-ghost h-7" onClick={onOpenFull}>
               对话模式
               <ArrowUpRight size={13} />

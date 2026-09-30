@@ -730,6 +730,8 @@ export class TaskService {
           nodes: runtime.sessionTree,
           leafId: runtime.sessionLeafId,
         });
+        // Activate may have raced an empty snapshot before boot finished — send the transcript now.
+        this.emit(taskId, "snapshot", this.buildSnapshot(taskId));
       }
       // Don't block pi_ready on resource scans / stats / work-item start.
       void this.emitResources(taskId).catch((error: unknown) => {

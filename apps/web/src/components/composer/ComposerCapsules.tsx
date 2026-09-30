@@ -56,9 +56,13 @@ function GearSlider<T extends string>({
     options.findIndex((item) => item.value === value),
   );
   const pct = sliderPercent(index, options.length);
+  const title = ariaLabel.replace(/^滑动选择/, "");
   return (
     <div className={`policy-picker-rail ${disabled ? "policy-picker-rail-disabled" : ""}`}>
-      <p className="policy-picker-label"><span>{ariaLabel.replace("滑动选择", "")}</span><strong>{label}</strong></p>
+      <p className="policy-picker-label">
+        <span>{title}</span>
+        <strong>{label}</strong>
+      </p>
       <div className="model-picker-slider-wrap">
         <div className="model-picker-track" style={{ "--slider-pct": `${pct}%` } as CSSProperties} aria-hidden>
           <div className="model-picker-dots">
@@ -84,7 +88,18 @@ function GearSlider<T extends string>({
         />
       </div>
       <div className="slider-labels">
-        {options.map((item) => <button key={item.value} type="button" className="pressable" disabled={disabled} aria-pressed={value === item.value} onClick={() => onChange(item.value)}>{item.label}</button>)}
+        {options.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            className="pressable"
+            disabled={disabled}
+            aria-pressed={value === item.value}
+            onClick={() => onChange(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -111,14 +126,18 @@ export function ComposerCapsules({
   const [modelListOpen, setModelListOpen] = useState(false);
   const [pendingModelKey, setPendingModelKey] = useState<string | null>(null);
   const [pendingThinking, setPendingThinking] = useState<ThinkingLevel | null>(null);
+  const [pendingMode, setPendingMode] = useState<InteractionMode | null>(null);
+  const [pendingPolicy, setPendingPolicy] = useState<ApprovalPolicy | null>(null);
   const [agentPolicy, setAgentPolicy] = useState<ApprovalPolicy>(
     approvalPolicy === "read_only" && mode !== "agent" ? "auto" : approvalPolicy,
   );
   const rootRef = useRef<HTMLDivElement>(null);
   useDialogLayer(rootRef, () => { setOpen(false); setModelListOpen(false); }, open, false);
   useDialogLayer(rootRef, () => setModelListOpen(false), open && modelListOpen, false);
-  const modeLabel = interactionModes.find((item) => item.value === mode)?.label ?? mode;
-  const effectivePolicy = mode === "agent" ? approvalPolicy : "read_only";
+  const displayMode = pendingMode ?? mode;
+  const displayPolicy = pendingPolicy ?? approvalPolicy;
+  const modeLabel = interactionModes.find((item) => item.value === displayMode)?.label ?? displayMode;
+  const effectivePolicy = displayMode === "agent" ? displayPolicy : "read_only";
   const policyOptions = effectivePolicy === "workspace"
     ? [...approvalPolicies.slice(0, 2), { value: "workspace" as const, label: "自动改文件" }, ...approvalPolicies.slice(2)]
     : approvalPolicies;
@@ -134,15 +153,15 @@ export function ComposerCapsules({
     (models.length === 0 ? "暂无模型" : "选择模型");
   const fastOn = fastModeActive === true || (fastModeActive !== false && fastModeEnabled === true);
   const grouped = groupPickerModels(models, defaultModelId);
-  const capsuleLabel = capsuleModelLabel(
-    currentModel?.name ?? currentModel?.id ?? modelLabel,
-    thinkingLevel,
-    fastOn,
-  );
   const intensityLevels = pickerThinkingLevels(activeModel ?? currentModel, thinkingLevels);
   const activeThinking =
     pendingThinking && intensityLevels.includes(pendingThinking) ? pendingThinking : thinkingLevel;
   const thinkingIndex = indexOfThinking(intensityLevels, activeThinking);
+  const capsuleLabel = capsuleModelLabel(
+    currentModel?.name ?? currentModel?.id ?? modelLabel,
+    activeThinking,
+    fastOn,
+  );
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
@@ -168,8 +187,23 @@ export function ComposerCapsules({
   }, [thinkingLevel, pendingThinking]);
 
   useEffect(() => {
-    if (mode === "agent") setAgentPolicy(approvalPolicy);
-  }, [mode, approvalPolicy]);
+    if (pendingMode !== null && pendingMode === mode) setPendingMode(null);
+  }, [mode, pendingMode]);
+
+  useEffect(() => {
+    if (pendingPolicy !== null && pendingPolicy === approvalPolicy) setPendingPolicy(null);
+  }, [approvalPolicy, pendingPolicy]);
+
+  useEffect(() => {
+    if ((pendingMode ?? mode) === "agent") setAgentPolicy(pendingPolicy ?? approvalPolicy);
+  }, [mode, approvalPolicy, pendingMode, pendingPolicy]);
+
+  const applyPolicy = (nextMode: InteractionMode, nextPolicy: ApprovalPolicy) => {
+    setPendingMode(nextMode);
+    setPendingPolicy(nextPolicy);
+    if (nextMode === "agent") setAgentPolicy(nextPolicy);
+    onPolicy(nextMode, nextPolicy);
+  };
 
   if (slot === "mode") {
     return (
@@ -183,7 +217,7 @@ export function ComposerCapsules({
           onClick={() => setOpen((value) => !value)}
         >
           <span className="min-w-0 truncate">
-            {mode === "agent" ? `${modeLabel} · ${policyLabel}` : `${modeLabel} · 只读`}
+            {displayMode === "agent" ? `${modeLabel} · ${policyLabel}` : `${modeLabel} · 只读`}
           </span>
           <ChevronDown size={12} strokeWidth={2} className="shrink-0 opacity-70" />
         </button>
@@ -192,25 +226,24 @@ export function ComposerCapsules({
             <GearSlider
               label={modeLabel}
               options={interactionModes}
-              value={mode}
+              value={displayMode}
               ariaLabel="滑动选择交互模式"
               onChange={(nextMode) => {
                 if (nextMode === "agent") {
-                  onPolicy(nextMode, agentPolicy);
+                  applyPolicy(nextMode, agentPolicy);
                 } else {
-                  onPolicy(nextMode, "read_only");
+                  applyPolicy(nextMode, "read_only");
                 }
               }}
             />
             <GearSlider
-              label={mode === "agent" ? policyLabel : "只读"}
+              label={displayMode === "agent" ? policyLabel : "只读"}
               options={policyOptions}
-              value={mode === "agent" ? approvalPolicy : "read_only"}
-              disabled={mode !== "agent"}
+              value={displayMode === "agent" ? displayPolicy : "read_only"}
+              disabled={displayMode !== "agent"}
               ariaLabel="滑动选择审批策略"
               onChange={(nextPolicy) => {
-                setAgentPolicy(nextPolicy);
-                onPolicy("agent", nextPolicy);
+                applyPolicy("agent", nextPolicy);
               }}
             />
           </div>
@@ -346,7 +379,6 @@ export function ComposerCapsules({
             <p className="model-picker-empty">暂无模型</p>
           ) : intensityLevels.length > 1 ? (
             <div>
-              <p className="policy-picker-label"><span>思考强度</span><strong>{THINKING_LABEL[activeThinking] ?? activeThinking}</strong></p>
               <div className="model-picker-slider-wrap">
               <div
                 className="model-picker-track"

@@ -2,7 +2,7 @@ import { ArchivedTasksDialog } from "../components/tasks/ArchivedTasksDialog";
 import { hasDialogLayer } from "../hooks/useDialogLayer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, MessageSquare, PanelRight, Pencil, Plus, Settings } from "lucide-react";
+import { ArrowUpRight, MessageSquare, PanelRight, Pencil, Settings } from "lucide-react";
 import { TaskSidebar } from "../components/tasks/TaskSidebar";
 import { ConversationTimeline } from "../components/timeline/ConversationTimeline";
 import { PromptComposer, type ComposerImage } from "../components/composer/PromptComposer";
@@ -162,8 +162,7 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     if (connection !== "open" || !activeTaskId) return;
-    // Cold activate already pushes a snapshot on the WS reply path; warm
-    // intentionally skips the bulky transcript — do not queue a second snap.
+    // Activate pushes a snapshot on the WS reply path (including warm sessions).
     void socketClient.send("task.activate", {}, activeTaskId).catch(() => {
       // Boot errors surface via task status / server.error.
     });
@@ -608,7 +607,7 @@ export function WorkbenchLayout() {
         onShowArchived={() => setArchivedOpen(true)}
         onRename={(id, title) => void renameTask(id, title)}
         pinned={leftPinned}
-        onPinToggle={toggleLeftPinned}
+        onPinToggle={isMd ? toggleLeftPinned : undefined}
         workTaskIds={workTaskIds}
         onOpenBoard={() => navigate("/board")}
         onReorder={(cwd, taskIds) => void socketClient.send("task.reorder", { cwd, taskIds }).catch((error: unknown) => setNotice(error instanceof Error ? error.message : "调整顺序失败"))}
@@ -745,14 +744,6 @@ export function WorkbenchLayout() {
           >
             <MessageSquare size={14} />
             会话
-          </button>
-          <button
-            type="button"
-            className={`pressable app-no-drag icon-btn ${dockLeft ? "md:hidden" : ""}`}
-            aria-label="新对话"
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={15} />
           </button>
           <ModeSwitcher />
           <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2">
