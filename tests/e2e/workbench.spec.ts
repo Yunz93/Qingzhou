@@ -627,6 +627,10 @@ test("attached images show a thumbnail that can be removed", async ({ page }) =>
   });
   await expect(page.getByRole("img", { name: "shot.png" })).toBeVisible();
   await expect(page.getByRole("img", { name: "shot.png" })).toHaveCount(1);
+  await page.getByRole("button", { name: "双击放大 shot.png" }).dblclick();
+  await expect(page.getByRole("dialog", { name: "放大 shot.png" })).toBeVisible();
+  await page.getByRole("button", { name: "关闭预览" }).click();
+  await expect(page.getByRole("dialog", { name: "放大 shot.png" })).toHaveCount(0);
   await page.getByLabel("输入消息").fill("see this screenshot");
   await expectPreviewAboveInput(page);
   await page.getByRole("button", { name: "移除 shot.png" }).click();
@@ -651,6 +655,10 @@ test("pasting one image attaches a single preview", async ({ page }) => {
     document.activeElement?.dispatchEvent(event);
   }, TINY_PNG.toString("base64"));
   await expect(page.getByRole("img", { name: "pasted.png" })).toHaveCount(1);
+  await page.getByRole("button", { name: "双击放大 pasted.png" }).dblclick();
+  await expect(page.getByRole("dialog", { name: "放大 pasted.png" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "放大 pasted.png" })).toHaveCount(0);
   await page.getByLabel("输入消息").fill("pasted above this line");
   await expectPreviewAboveInput(page);
 });

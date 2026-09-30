@@ -86,6 +86,9 @@ describe("conversation interaction chrome", () => {
     expect(composer).toContain("正在启动");
     expect(composer).toContain("aria-label={showStop ? \"停止\" : \"发送\"}");
     expect(composer).toContain("const showStop = running && !canSubmit");
+    expect(composer).toContain("双击放大");
+    expect(composer).toContain("composer-image-preview");
+    expect(composer).toContain("关闭预览");
     expect(capsules).toContain("Fast 模式");
     expect(capsules).toContain("model-picker");
     expect(capsules).toContain("policy-picker");
