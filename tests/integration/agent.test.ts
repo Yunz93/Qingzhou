@@ -548,12 +548,20 @@ describe("integration fake-pi", () => {
       await sock.waitForRequest("branch");
 
       const beforeRuntimeSet = sock.events.length;
+      // Keep an old metadata event in the buffer while applying the settings.
+      isolated.service.supervisor.patchRuntime(taskId, {});
+      await sock.waitFor("runtime.status", 12_000, beforeRuntimeSet);
       sock.send({ id: "rt", type: "runtime.set", taskId, payload: { autoCompaction: false, autoRetry: false, fastMode: true } });
-      await sock.waitForRequest("rt");
-      const runtime = await sock.waitFor("runtime.status", 12_000, beforeRuntimeSet);
-      expect((runtime.payload as { autoCompaction?: boolean }).autoCompaction).toBe(false);
-      expect((runtime.payload as { fastModeEnabled?: boolean }).fastModeEnabled).toBe(true);
-      expect((runtime.payload as { fastModeActive?: boolean }).fastModeActive).toBe(true);
+      const runtimeSet = await sock.waitForRequest("rt");
+      expect(runtimeSet.type, runtimeSet.payload?.error).toBe("request.succeeded");
+      await vi.waitFor(() => {
+        const runtime = sock.events.slice(beforeRuntimeSet)
+          .filter((event) => event.type === "runtime.status" && event.taskId === taskId)
+          .at(-1);
+        expect(runtime?.payload).toMatchObject({
+          autoCompaction: false, autoRetry: false, fastModeEnabled: true, fastModeActive: true,
+        });
+      }, { timeout: 5000 });
 
       sock.send({ id: "list", type: "sessions.list", payload: {} });
       const listed = await sock.waitFor("sessions.listed");
