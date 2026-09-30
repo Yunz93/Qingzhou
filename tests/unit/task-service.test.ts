@@ -281,7 +281,7 @@ describe("task service process reservations", () => {
     service.dispose();
   });
 
-  it("returns task.create before Pi boot finishes and lets prompt wait on the same boot", async () => {
+  it.each([false, true])("waits for Pi boot before prompting when runtime already exists: %s", async (runtimeExistsBeforeReady) => {
     const root = await mkdtemp(path.join(os.tmpdir(), "mypi-bg-boot-"));
     const store = new TaskStore(root);
     await store.load();
@@ -318,6 +318,7 @@ describe("task service process reservations", () => {
     });
     let hasRuntime = false;
     vi.spyOn(service.supervisor, "boot").mockImplementation(async () => {
+      hasRuntime = runtimeExistsBeforeReady;
       await gate;
       hasRuntime = true;
       return { sessionPath: null, model: null, thinkingLevel: "off" };
@@ -332,7 +333,8 @@ describe("task service process reservations", () => {
       payload: { cwd: root, title: "bg boot" },
     })) as { task: TaskRecord };
     expect(created.task.id).toBeTruthy();
-    expect(hasRuntime).toBe(false);
+    await vi.waitFor(() => expect(service.supervisor.boot).toHaveBeenCalled());
+    expect(hasRuntime).toBe(runtimeExistsBeforeReady);
 
     const clientMessageId = "77777777-7777-4777-8777-777777777777";
     const promptPromise = service.handleCommand({
@@ -341,7 +343,7 @@ describe("task service process reservations", () => {
       taskId: created.task.id,
       payload: { message: "hello after create", clientMessageId },
     });
-    await vi.waitFor(() => expect(service.supervisor.boot).toHaveBeenCalled());
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(rpc).not.toHaveBeenCalled();
     release();
     await expect(promptPromise).resolves.toEqual({ ok: true });
@@ -349,6 +351,7 @@ describe("task service process reservations", () => {
     const readyIndex = publishedStatuses.indexOf("idle");
     expect(readyIndex).toBeGreaterThanOrEqual(0);
     expect(publishedStatuses.slice(readyIndex + 1)).not.toContain("booting");
+    expect(service.listTasks().find((item) => item.id === created.task.id)?.status).toBe("running");
     expect(rpc).toHaveBeenCalledWith(
       created.task.id,
       expect.objectContaining({ type: "prompt", message: expect.stringContaining("hello after create") }),

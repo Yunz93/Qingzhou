@@ -771,13 +771,13 @@ export class TaskService {
     if (task.status === "stopped" || task.status === "error") {
       await this.activate(taskId);
     }
-    // activate no longer awaits boot — wait on the boot Promise (or re-check queue).
+    // A runtime is registered before Pi is ready; always wait for its boot.
+    let pendingBoot = this.booting.get(taskId);
     if (!this.supervisor.has(taskId)) {
       const latestAfterActivate = this.requireTask(taskId);
       if (latestAfterActivate.status === "queued") {
         throw new Error("正在排队，请稍等。");
       }
-      let pendingBoot = this.booting.get(taskId);
       if (
         !pendingBoot &&
         (latestAfterActivate.status === "booting" ||
@@ -787,8 +787,8 @@ export class TaskService {
         void this.startBoot(taskId).catch(() => undefined);
         pendingBoot = this.booting.get(taskId);
       }
-      if (pendingBoot) await pendingBoot;
     }
+    if (pendingBoot) await pendingBoot;
     const latest = this.requireTask(taskId);
     // Pi queues `follow_up` until a later `prompt`. After settle that queue never
     // drains, so idle "continue the conversation" must be sent as `prompt`.

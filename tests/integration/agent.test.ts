@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { serverFrameSchema } from "@qingzhou/protocol";
 import { createApp } from "../../apps/server/src/index.ts";
@@ -27,7 +27,7 @@ type EventMsg = {
 };
 
 async function listen(env: NodeJS.ProcessEnv) {
-  const { app, config, service } = await createApp(env);
+  const { app, config, service } = await createApp({ ...env, QINGZHOU_SKIP_PI_TOOLS_FETCH: "1" });
   await app.listen({ host: config.host, port: 0 });
   const address = app.server.address();
   if (!address || typeof address === "string") throw new Error("no port");
@@ -140,11 +140,19 @@ describe("integration fake-pi", () => {
     });
     await sock.waitForRequest("ask-policy");
 
-    sock.send({ id: "p1", type: "prompt.send", taskId, payload: { message: "hello world" } });
+    const waitUntilIdle = () => vi.waitFor(() => {
+      expect(ctx.service.listTasks().find((task) => task.id === taskId)?.status).toBe("idle");
+    }, { timeout: 5000 });
+    sock.send({ id: "p1", type: "prompt.send", taskId, payload: { message: "hello world stream this slowly" } });
     await sock.waitFor("message.delta");
     sock.send({ id: "s1", type: "prompt.steer", taskId, payload: { message: "turn left" } });
-    await sock.waitFor("request.succeeded");
-    await new Promise((r) => setTimeout(r, 800));
+    const steered = await sock.waitForRequest("s1");
+    expect(steered.type, steered.payload?.error).toBe("request.succeeded");
+    await vi.waitFor(() => {
+      const messages = ctx.service.buildSnapshot(taskId).messages as Array<{ text: string }>;
+      expect(messages.some((message) => message.text.includes("Steered: turn left"))).toBe(true);
+      expect(ctx.service.listTasks().find((task) => task.id === taskId)?.status).toBe("idle");
+    }, { timeout: 5000 });
 
     sock.send({ id: "w1", type: "prompt.send", taskId, payload: { message: "WRITE:secret.txt:nope" } });
     const approval = await sock.waitFor("approval.requested");
@@ -155,7 +163,7 @@ describe("integration fake-pi", () => {
       payload: { requestId: approval.payload?.approval?.requestId ?? "", allow: false },
     });
     await sock.waitFor("tool.completed");
-    await new Promise((r) => setTimeout(r, 300));
+    await waitUntilIdle();
     await expect(import("node:fs/promises").then((fs) => fs.access(path.join(project, "secret.txt")))).rejects.toThrow();
 
     sock.send({ id: "b1", type: "prompt.send", taskId, payload: { message: "BASH:echo hi" } });
@@ -168,7 +176,7 @@ describe("integration fake-pi", () => {
     });
     const blocked = await sock.waitFor("tool.completed");
     expect(blocked.payload?.tool?.status === "blocked" || blocked.payload?.tool?.isError).toBeTruthy();
-    await new Promise((r) => setTimeout(r, 400));
+    await waitUntilIdle();
 
     sock.ws.close();
     const sock2 = await openSocket(ctx.base);
