@@ -220,7 +220,10 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByText("已保存密钥").first()).toBeVisible();
   await expect(page.getByText("models.json", { exact: true })).toBeVisible();
   await expect(page.getByText(/已配置.*个模型/)).toBeVisible();
-  await expect(page.getByText("信任当前项目")).toBeVisible();
+  await expect(page.getByText("信任默认工作区")).toBeVisible();
+  await expect(page.getByText("默认工作文件夹")).toBeVisible();
+  await expect(page.getByText("应用数据目录")).toBeVisible();
+  await expect(page.getByText("新建对话或任务时的默认目录")).toBeVisible();
   await page.getByRole("button", { name: "打开设置向导" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await expect(page.getByText("/login")).toBeVisible();
