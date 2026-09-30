@@ -38,6 +38,10 @@ export type WorkItemControllerHost = {
   removeQueued: (taskId: string) => void;
   cwdRoots: () => string[];
   adoptAllowedRoot: (cwd: string) => void;
+  /** Soft-archive the linked session if it is still visible. No-op when already archived/missing. */
+  archiveTask: (taskId: string) => Promise<{ ok: true }>;
+  /** Clear archivedAt on the linked session if present. No-op when missing/not archived. */
+  restoreTask: (taskId: string) => Promise<{ task: TaskRecord } | { ok: true }>;
 };
 
 export class WorkItemController {
@@ -234,7 +238,14 @@ export class WorkItemController {
     }
     const next = await this.host.workItems.setState(id, state);
     this.emitWorkItems();
-    return { item: next };
+    // Keep the linked work session in sync: archive ↔ archive, reopen ↔ restore.
+    if (state === "archived" && next.taskId) {
+      await this.host.archiveTask(next.taskId);
+    } else if (state === "open" && next.taskId) {
+      const linked = this.host.store.get(next.taskId);
+      if (linked?.archivedAt) await this.host.restoreTask(next.taskId);
+    }
+    return { item: this.host.workItems.get(id) ?? next };
   }
 
   async deleteWorkItem(id: string): Promise<{ ok: true }> {
