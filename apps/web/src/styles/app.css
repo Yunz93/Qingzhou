@@ -618,6 +618,48 @@ html.dark {
     background: var(--color-line);
   }
 
+  .policy-picker {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 30;
+    width: min(280px, calc(100vw - 24px));
+    overflow: hidden;
+    border-radius: 22px;
+    background: var(--color-elevated);
+    padding: 14px 16px 10px;
+    box-shadow: var(--shadow-dialog);
+  }
+
+  html.dark .policy-picker {
+    background: oklch(0.22 0.01 264);
+  }
+
+  .policy-picker-rail + .policy-picker-rail {
+    margin-top: 4px;
+  }
+
+  .policy-picker-label {
+    margin: 0;
+    color: var(--color-ink);
+    font-size: 14px;
+    font-weight: 560;
+    letter-spacing: 0.01em;
+    text-align: center;
+  }
+
+  .policy-picker-rail .model-picker-slider-wrap {
+    margin: 6px 2px 8px;
+  }
+
+  .policy-picker-rail-disabled {
+    opacity: 0.45;
+  }
+
+  .policy-picker-rail-disabled .model-picker-slider {
+    cursor: default;
+  }
+
   .model-picker {
     position: absolute;
     right: 0;

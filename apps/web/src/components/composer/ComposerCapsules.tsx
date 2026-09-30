@@ -33,6 +33,59 @@ type Props = {
   onFastMode?: (enabled: boolean) => void;
 };
 
+type GearOption<T extends string> = { value: T; label: string };
+
+function GearSlider<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  disabled = false,
+  ariaLabel,
+}: {
+  label: string;
+  options: GearOption<T>[];
+  value: T;
+  onChange: (next: T) => void;
+  disabled?: boolean;
+  ariaLabel: string;
+}) {
+  const index = Math.max(
+    0,
+    options.findIndex((item) => item.value === value),
+  );
+  const pct = sliderPercent(index, options.length);
+  return (
+    <div className={`policy-picker-rail ${disabled ? "policy-picker-rail-disabled" : ""}`}>
+      <p className="policy-picker-label">{label}</p>
+      <div className="model-picker-slider-wrap">
+        <div className="model-picker-track" style={{ "--slider-pct": `${pct}%` } as CSSProperties} aria-hidden>
+          <div className="model-picker-dots">
+            {options.map((item) => (
+              <span key={item.value} className="model-picker-dot" />
+            ))}
+          </div>
+        </div>
+        <input
+          type="range"
+          className="model-picker-slider"
+          min={0}
+          max={Math.max(0, options.length - 1)}
+          step={1}
+          value={index}
+          disabled={disabled}
+          aria-label={ariaLabel}
+          aria-valuetext={options[index]?.label ?? label}
+          onChange={(event) => {
+            const next = options[clampIndex(Number(event.target.value), options.length)];
+            if (next) onChange(next.value);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ComposerCapsules({
   slot,
   mode,
@@ -54,9 +107,13 @@ export function ComposerCapsules({
   const [modelListOpen, setModelListOpen] = useState(false);
   const [pendingModelKey, setPendingModelKey] = useState<string | null>(null);
   const [pendingThinking, setPendingThinking] = useState<ThinkingLevel | null>(null);
+  const [agentPolicy, setAgentPolicy] = useState<ApprovalPolicy>(
+    approvalPolicy === "read_only" && mode !== "agent" ? "auto" : approvalPolicy,
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const modeLabel = interactionModes.find((item) => item.value === mode)?.label ?? mode;
-  const policyLabel = approvalPolicies.find((item) => item.value === approvalPolicy)?.label ?? approvalPolicy;
+  const effectivePolicy = mode === "agent" ? approvalPolicy : "read_only";
+  const policyLabel = approvalPolicies.find((item) => item.value === effectivePolicy)?.label ?? effectivePolicy;
   const activeModelKey = pendingModelKey ?? modelId;
   const activeModel = models.find((model) => modelKey(model) === activeModelKey);
   const currentModel = models.find((model) => modelKey(model) === modelId);
@@ -101,13 +158,17 @@ export function ComposerCapsules({
     if (pendingThinking && pendingThinking === thinkingLevel) setPendingThinking(null);
   }, [thinkingLevel, pendingThinking]);
 
+  useEffect(() => {
+    if (mode === "agent") setAgentPolicy(approvalPolicy);
+  }, [mode, approvalPolicy]);
+
   if (slot === "mode") {
     return (
       <div ref={rootRef} className="relative min-w-0">
         <button
           type="button"
           className="pressable composer-capsule"
-          aria-haspopup="menu"
+          aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="模式"
           onClick={() => setOpen((value) => !value)}
@@ -118,40 +179,31 @@ export function ComposerCapsules({
           <ChevronDown size={12} strokeWidth={2} className="shrink-0 opacity-70" />
         </button>
         {open ? (
-          <div className="composer-popover" role="menu" aria-label="模式">
-            {interactionModes.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                role="menuitem"
-                className={`pressable composer-popover-item ${mode === item.value ? "composer-popover-active" : ""}`}
-                onClick={() => {
-                  onPolicy(item.value, item.value === "agent" ? approvalPolicy : "read_only");
-                  if (item.value !== "agent") setOpen(false);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-            {mode === "agent" ? (
-              <>
-                <div className="composer-popover-sep" />
-                {approvalPolicies.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    role="menuitem"
-                    className={`pressable composer-popover-item ${approvalPolicy === item.value ? "composer-popover-active" : ""}`}
-                    onClick={() => {
-                      onPolicy(mode, item.value);
-                      setOpen(false);
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </>
-            ) : null}
+          <div className="policy-picker" role="dialog" aria-label="模式与审批">
+            <GearSlider
+              label={modeLabel}
+              options={interactionModes}
+              value={mode}
+              ariaLabel="滑动选择交互模式"
+              onChange={(nextMode) => {
+                if (nextMode === "agent") {
+                  onPolicy(nextMode, agentPolicy);
+                } else {
+                  onPolicy(nextMode, "read_only");
+                }
+              }}
+            />
+            <GearSlider
+              label={mode === "agent" ? policyLabel : "只读"}
+              options={approvalPolicies}
+              value={mode === "agent" ? approvalPolicy : "read_only"}
+              disabled={mode !== "agent"}
+              ariaLabel="滑动选择审批策略"
+              onChange={(nextPolicy) => {
+                setAgentPolicy(nextPolicy);
+                onPolicy("agent", nextPolicy);
+              }}
+            />
           </div>
         ) : null}
       </div>
