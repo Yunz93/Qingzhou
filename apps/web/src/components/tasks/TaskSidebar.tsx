@@ -178,7 +178,7 @@ export function TaskSidebar({
                       }}
                     >
                       <div
-                        className={`source-item group flex items-start gap-1 px-1 ${active ? "source-item-active" : "hover-fill"} ${dragId === task.id ? "opacity-50" : ""}`}
+                        className={`source-item group flex items-center gap-1 px-1 ${active ? "source-item-active" : "hover-fill"} ${dragId === task.id ? "opacity-50" : ""}`}
                       >
                         {editingId === task.id ? (
                           <form
@@ -234,7 +234,9 @@ export function TaskSidebar({
                           </button>
                         )}
                         <div ref={menuId === task.id ? menuRef : undefined} className="sidebar-row-actions">
-                          <button type="button" className="pressable source-item-accessory icon-btn" aria-label={`会话操作 ${task.title}`} aria-expanded={menuId === task.id} onClick={() => setMenuId(menuId === task.id ? null : task.id)}><MoreHorizontal size={14} /></button>
+                          <button type="button" className="pressable source-item-accessory icon-btn leading-none" aria-label={`会话操作 ${task.title}`} aria-expanded={menuId === task.id} onClick={() => setMenuId(menuId === task.id ? null : task.id)}>
+                            <MoreHorizontal size={14} className="block" aria-hidden="true" />
+                          </button>
                           {menuId === task.id ? <div className="sidebar-row-menu" role="menu" aria-label="会话操作">
                             {onRename ? <button type="button" role="menuitem" className="pressable hover-fill" onClick={() => { setMenuId(null); startRename(task); }}><Pencil size={12} />重命名</button> : null}
                             <button type="button" role="menuitem" className="pressable hover-fill" aria-label={`归档 ${task.title}`} onClick={() => { setMenuId(null); onArchive(task.id); }}><Archive size={12} />归档</button>

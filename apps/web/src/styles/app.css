@@ -2610,8 +2610,8 @@ html.desktop[data-platform="darwin"] .traffic-inline {
 /* Frontend interaction polish: existing materials, quieter controls and clear states. */
 .sidebar-project { display: flex; align-items: center; gap: 5px; width: 100%; padding: 5px 8px; font-size: 11px; color: var(--color-mute); text-align: left; }
 .sidebar-project svg { transition: transform 120ms ease; }
-.sidebar-row-actions { position: relative; margin-top: 2px; }
-.sidebar-row-menu { position: absolute; z-index: 35; right: 0; top: 28px; min-width: 124px; padding: 4px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); box-shadow: 0 6px 20px #0002; }
+.sidebar-row-actions { position: relative; display: flex; align-items: center; }
+.sidebar-row-menu { position: absolute; z-index: 35; right: 0; top: calc(100% + 4px); min-width: 124px; padding: 4px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); box-shadow: 0 6px 20px #0002; }
 .sidebar-row-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px; border-radius: 6px; text-align: left; font-size: 12px; }
 .draft-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-radius: 8px; background: var(--color-fill); color: var(--color-mute); font-size: 11px; }
 .work-panel-section .draft-notice { margin-bottom: 12px; }
