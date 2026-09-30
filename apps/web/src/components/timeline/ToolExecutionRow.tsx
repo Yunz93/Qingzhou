@@ -4,6 +4,8 @@ import { sanitizeToolResultText, type ToolExecution } from "@qingzhou/protocol";
 import { Ban, Check, CircleAlert, LoaderCircle, Shield } from "lucide-react";
 import { toolNameLabel, toolStatusLabel } from "../../copy";
 import { toneClass } from "../../lib/status-tone";
+import { isWorkspaceMediaPath } from "../../lib/assistant-markdown";
+import { WorkspaceMediaPreview } from "./WorkspaceMediaPreview";
 
 const ICONS = {
   pending: LoaderCircle,
@@ -20,6 +22,7 @@ const UNDO_TOOLS = new Set(["write", "edit"]);
 
 type Props = {
   tool: ToolExecution;
+  taskId?: string | null;
   onOpen?: (path: string) => void;
   onUndo?: (path: string) => void;
   compact?: boolean;
@@ -33,7 +36,7 @@ function toolTone(status: ToolExecution["status"]): "idle" | "busy" | "wait" | "
   return "idle";
 }
 
-export function ToolExecutionRow({ tool, onOpen, onUndo, compact }: Props) {
+export function ToolExecutionRow({ tool, taskId = null, onOpen, onUndo, compact }: Props) {
   const displayResult = tool.resultText ? sanitizeToolResultText(tool.resultText) : "";
   const [open, setOpen] = useState(Boolean(tool.isError) || tool.status === "failed");
   const Icon = ICONS[tool.status];
@@ -43,6 +46,8 @@ export function ToolExecutionRow({ tool, onOpen, onUndo, compact }: Props) {
   const target = tool.target?.trim() ?? "";
   const canOpen = Boolean(onOpen && target && FILE_TOOLS.has(tool.toolName));
   const canUndo = Boolean(onUndo && target && UNDO_TOOLS.has(tool.toolName) && tool.status === "succeeded");
+  const showMedia =
+    tool.status === "succeeded" && FILE_TOOLS.has(tool.toolName) && isWorkspaceMediaPath(target);
   const tone = useMemo(() => toolTone(tool.status), [tool.status]);
 
   return (
@@ -89,6 +94,11 @@ export function ToolExecutionRow({ tool, onOpen, onUndo, compact }: Props) {
           </span>
         ) : null}
       </div>
+      {showMedia ? (
+        <div className="border-t border-line bg-canvas px-3 py-2">
+          <WorkspaceMediaPreview src={target} alt={target.replaceAll("\\", "/").split("/").pop()} taskId={taskId} />
+        </div>
+      ) : null}
       {open && displayResult ? (
         <pre className="max-h-64 overflow-auto border-t border-line bg-canvas px-3 py-2 font-mono text-xs leading-5 text-mute fade-in">
           {displayResult}

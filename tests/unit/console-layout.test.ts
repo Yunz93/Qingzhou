@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { escapeHtml, shouldOpenMarkdownLink, stabilizeMarkdown } from "../../apps/web/src/lib/assistant-markdown.ts";
+import { escapeHtml, isWorkspaceMediaPath, markdownUrlTransform, shouldOpenMarkdownLink, stabilizeMarkdown } from "../../apps/web/src/lib/assistant-markdown.ts";
 import { isNearBottom } from "../../apps/web/src/lib/stick-to-bottom.ts";
 
 describe("assistant markdown helpers", () => {
@@ -19,6 +19,18 @@ describe("assistant markdown helpers", () => {
     expect(shouldOpenMarkdownLink("javascript:alert(1)")).toBe(false);
     expect(shouldOpenMarkdownLink("http://127.0.0.1:5173/")).toBe(false);
     expect(shouldOpenMarkdownLink("http://localhost:4310/")).toBe(false);
+  });
+
+  it("keeps workspace media paths for inline preview instead of blanking them", () => {
+    expect(isWorkspaceMediaPath("小鸡吃米.svg")).toBe(true);
+    expect(isWorkspaceMediaPath("/Users/yunz/Qingzhou Chat/小鸡吃米.svg")).toBe(true);
+    expect(isWorkspaceMediaPath("./shots/demo.png")).toBe(true);
+    expect(isWorkspaceMediaPath("clip.mp4")).toBe(true);
+    expect(isWorkspaceMediaPath("https://cdn.example.com/a.png")).toBe(false);
+    expect(isWorkspaceMediaPath("javascript:alert(1)")).toBe(false);
+    expect(markdownUrlTransform("小鸡吃米.svg")).toBe("小鸡吃米.svg");
+    expect(markdownUrlTransform("https://cdn.example.com/a.png")).toBe("https://cdn.example.com/a.png");
+    expect(markdownUrlTransform("javascript:alert(1)")).toBe("");
   });
 
   it("escapes HTML when highlight falls back", () => {

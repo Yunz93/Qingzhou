@@ -6,10 +6,11 @@ import { ToolExecutionRow } from "./ToolExecutionRow";
 
 type Props = {
   tools: ToolExecution[];
+  taskId?: string | null;
   onOpen?: (path: string) => void;
 };
 
-export function ToolGroupRow({ tools, onOpen }: Props) {
+export function ToolGroupRow({ tools, taskId = null, onOpen }: Props) {
   const [open, setOpen] = useState(tools.some((tool) => tool.status === "failed" || tool.isError));
   return (
     <div className="overflow-hidden rounded-[10px] bg-fill">
@@ -26,7 +27,7 @@ export function ToolGroupRow({ tools, onOpen }: Props) {
       {open ? (
         <div className="space-y-1 border-t border-line p-1.5">
           {tools.map((tool) => (
-            <ToolExecutionRow key={tool.toolCallId} tool={tool} onOpen={onOpen} compact />
+            <ToolExecutionRow key={tool.toolCallId} tool={tool} taskId={taskId} onOpen={onOpen} compact />
           ))}
         </div>
       ) : null}
