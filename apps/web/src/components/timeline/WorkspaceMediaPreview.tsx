@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FilePreviewPayload } from "@qingzhou/protocol";
+import {
+  humanizeWorkspaceMediaError,
+  normalizeWorkspaceMediaPath,
+} from "../../lib/assistant-markdown";
 import { socketClient } from "../../transport/socket-client";
 
 type Props = {
@@ -9,20 +13,25 @@ type Props = {
 };
 
 export function WorkspaceMediaPreview({ src, alt, taskId }: Props) {
+  const path = useMemo(() => normalizeWorkspaceMediaPath(src), [src]);
   const [preview, setPreview] = useState<FilePreviewPayload | null>(null);
   const [error, setError] = useState("");
-  const label = alt?.trim() || src.replaceAll("\\", "/").split("/").pop() || "媒体";
+  const label = alt?.trim() || path.replaceAll("\\", "/").split("/").pop() || "媒体";
 
   useEffect(() => {
     if (!taskId) {
       setError("没有可用会话，无法预览本地文件。");
       return;
     }
+    if (!path) {
+      setError("无效的文件路径。");
+      return;
+    }
     let cancelled = false;
     setPreview(null);
     setError("");
     void socketClient
-      .send<FilePreviewPayload>("files.read", { path: src, emit: false }, taskId)
+      .send<FilePreviewPayload>("files.read", { path, emit: false }, taskId)
       .then((result) => {
         if (cancelled) return;
         if (!result?.dataUrl && result?.kind !== "binary" && result?.kind !== "text") {
@@ -32,18 +41,21 @@ export function WorkspaceMediaPreview({ src, alt, taskId }: Props) {
         setPreview(result);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "预览失败");
+        if (!cancelled) {
+          const raw = cause instanceof Error ? cause.message : "预览失败";
+          setError(humanizeWorkspaceMediaError(raw));
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [src, taskId]);
+  }, [path, taskId]);
 
   if (error) {
     return (
-      <span className="inline-flex flex-col gap-1 rounded-md border border-line bg-fill px-2 py-1.5 text-[12px] text-mute">
-        <span>{label}</span>
-        <span className="text-danger">{error}</span>
+      <span className="my-1 inline-flex max-w-full flex-col gap-0.5 rounded-md border border-line bg-fill px-2.5 py-1.5 text-[12px] leading-snug text-mute">
+        <span className="truncate text-ink">{label}</span>
+        <span className="break-all text-danger">{error}</span>
       </span>
     );
   }
@@ -59,7 +71,7 @@ export function WorkspaceMediaPreview({ src, alt, taskId }: Props) {
         href={preview.dataUrl}
         target="_blank"
         rel="noreferrer"
-        title={src}
+        title={path}
       >
         <img src={preview.dataUrl} alt={label} className="max-h-[360px] max-w-full object-contain" />
       </a>
@@ -94,9 +106,9 @@ export function WorkspaceMediaPreview({ src, alt, taskId }: Props) {
   }
 
   return (
-    <span className="inline-flex flex-col gap-1 rounded-md border border-line bg-fill px-2 py-1.5 text-[12px] text-mute">
-      <span>{label}</span>
-      <span>{preview.content || "暂不支持预览这个文件。"}</span>
+    <span className="my-1 inline-flex max-w-full flex-col gap-0.5 rounded-md border border-line bg-fill px-2.5 py-1.5 text-[12px] leading-snug text-mute">
+      <span className="truncate text-ink">{label}</span>
+      <span className="break-all">{preview.content || "暂不支持预览这个文件。"}</span>
     </span>
   );
 }

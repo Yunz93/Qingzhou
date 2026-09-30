@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { escapeHtml, isWorkspaceMediaPath, markdownUrlTransform, shouldOpenMarkdownLink, stabilizeMarkdown } from "../../apps/web/src/lib/assistant-markdown.ts";
+import { escapeHtml, humanizeWorkspaceMediaError, isWorkspaceMediaPath, markdownUrlTransform, normalizeWorkspaceMediaPath, shouldOpenMarkdownLink, stabilizeMarkdown } from "../../apps/web/src/lib/assistant-markdown.ts";
 import { isNearBottom } from "../../apps/web/src/lib/stick-to-bottom.ts";
 
 describe("assistant markdown helpers", () => {
@@ -31,6 +31,17 @@ describe("assistant markdown helpers", () => {
     expect(markdownUrlTransform("小鸡吃米.svg")).toBe("小鸡吃米.svg");
     expect(markdownUrlTransform("https://cdn.example.com/a.png")).toBe("https://cdn.example.com/a.png");
     expect(markdownUrlTransform("javascript:alert(1)")).toBe("");
+  });
+
+  it("decodes percent-encoded workspace media paths before files.read", () => {
+    expect(normalizeWorkspaceMediaPath("/Users/yunz/Qingzhou%20Chat/%E5%B0%8F%E9%B8%A1%E5%90%83%E7%B1%B3.svg")).toBe(
+      "/Users/yunz/Qingzhou Chat/小鸡吃米.svg",
+    );
+    expect(normalizeWorkspaceMediaPath("file:///Users/yunz/Qingzhou%20Chat/%E5%B0%8F%E9%B8%A1%E5%90%83%E7%B1%B3.svg")).toBe(
+      "/Users/yunz/Qingzhou Chat/小鸡吃米.svg",
+    );
+    expect(normalizeWorkspaceMediaPath("小鸡吃米.svg")).toBe("小鸡吃米.svg");
+    expect(humanizeWorkspaceMediaError("ENOENT: no such file or directory, open '/tmp/x.svg'")).toBe("找不到这个文件。");
   });
 
   it("escapes HTML when highlight falls back", () => {
