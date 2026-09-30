@@ -3,6 +3,8 @@ import {
   authEntryStatusLabel,
   authSourceLabel,
   authStatusLabel,
+  connectedAuthEntries,
+  envAuthEntries,
   findAuthEntry,
   isRemovableAuthEntry,
   logoutNotice,
@@ -52,8 +54,23 @@ describe("settings auth catalog", () => {
     );
     expect(providersForMode(catalog, "oauth").map((item) => item.id)).toEqual(["github", "openai"]);
     expect(providersForMode(catalog, "api_key").map((item) => item.id)).toEqual(["openai", "anthropic"]);
+    expect(providersForMode(catalog, "env")).toEqual([]);
     expect(pickDefaultProvider(catalog, "oauth")).toBe("github");
     expect(pickDefaultProvider(catalog, "api_key", "anthropic")).toBe("anthropic");
+    expect(pickDefaultProvider(catalog, "env")).toBe("");
+  });
+
+  it("keeps env credentials on their own tab", () => {
+    const entries = [
+      { id: "github", label: "GitHub Copilot", kind: "oauth" as const, source: "auth_file" as const },
+      { id: "anthropic", label: "Anthropic (Claude)", kind: "api_key" as const, source: "auth_file" as const },
+      { id: "deepseek", label: "DeepSeek", kind: "api_key" as const, source: "env" as const, envVar: "DEEPSEEK_API_KEY" },
+      { id: "acme", label: "acme", kind: "api_key" as const, source: "models_json" as const },
+    ];
+    expect(envAuthEntries(entries).map((item) => item.id)).toEqual(["deepseek"]);
+    expect(connectedAuthEntries(entries, "env").map((item) => item.id)).toEqual(["deepseek"]);
+    expect(connectedAuthEntries(entries, "oauth").map((item) => item.id)).toEqual(["github"]);
+    expect(connectedAuthEntries(entries, "api_key").map((item) => item.id)).toEqual(["anthropic", "acme"]);
   });
 
   it("labels saved api keys and oauth without sounding like buttons", () => {

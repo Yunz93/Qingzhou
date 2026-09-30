@@ -14,9 +14,25 @@ export type AuthCatalogItem = {
   apiKey: boolean;
 };
 
-export type AuthMode = "oauth" | "api_key";
+export type AuthMode = "oauth" | "api_key" | "env";
 
 const PREFERRED_ORDER = ["github", "openai"];
+
+/** Credentials detected from process env — shown in the env tab only. */
+export function envAuthEntries(entries: AuthEntryLike[]): AuthEntryLike[] {
+  return entries.filter((entry) => entry.source === "env");
+}
+
+/** Connected list for a tab; env credentials stay on the env tab. */
+export function connectedAuthEntries(entries: AuthEntryLike[], mode: AuthMode): AuthEntryLike[] {
+  if (mode === "env") return envAuthEntries(entries);
+  if (mode === "oauth") {
+    return entries.filter((entry) => entry.kind === "oauth" && entry.source !== "env");
+  }
+  return entries.filter(
+    (entry) => entry.kind === "api_key" && entry.source !== "env",
+  );
+}
 
 /** auth.json keys that count as logged-in for a UI oauth provider. */
 export function oauthAuthIds(providerId: string): string[] {
@@ -32,7 +48,7 @@ export function oauthAuthIds(providerId: string): string[] {
 export function findAuthEntry(
   entries: AuthEntryLike[],
   providerId: string,
-  mode: AuthMode,
+  mode: Exclude<AuthMode, "env">,
 ): AuthEntryLike | undefined {
   if (mode === "oauth") {
     const ids = new Set(oauthAuthIds(providerId));
@@ -94,8 +110,9 @@ export function mergeAuthCatalog(
   return [...preferred, ...rest].map((id) => items.get(id)!);
 }
 
-/** Providers available in the current auth mode (login vs API key). */
+/** Providers available in the current auth mode (login vs API key). Env tab has none. */
 export function providersForMode(catalog: AuthCatalogItem[], mode: AuthMode): AuthCatalogItem[] {
+  if (mode === "env") return [];
   return catalog.filter((item) => (mode === "oauth" ? item.oauth : item.apiKey));
 }
 
@@ -104,6 +121,7 @@ export function pickDefaultProvider(
   mode: AuthMode,
   preferredId?: string | null,
 ): string {
+  if (mode === "env") return "";
   const list = providersForMode(catalog, mode);
   if (preferredId && list.some((item) => item.id === preferredId)) return preferredId;
   return list[0]?.id ?? "";
