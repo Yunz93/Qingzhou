@@ -4,7 +4,7 @@ import { Settings } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary } from "@qingzhou/protocol";
 import { WorkDashboard, type WorkFilter } from "../components/board/WorkDashboard";
 import { WorkObjectivePanel } from "../components/board/WorkObjectivePanel";
-import { WorkConversationDrawer } from "../components/board/WorkConversationDrawer";
+import { WorkConversationDrawer, ensureWorkConversationTranscript } from "../components/board/WorkConversationDrawer";
 import { NewWorkItemDialog } from "../components/board/NewWorkItemDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import { WorkProjectPicker } from "../components/board/WorkProjectPicker";
@@ -103,8 +103,8 @@ export function BoardPage() {
     const taskId = item.taskId;
     if (taskId) {
       useAgentStore.getState().setActiveTask(taskId);
-      // Cold activate pushes snapshot on the reply path; skip a second request.
-      void socketClient.send("task.activate", {}, taskId).catch(() => undefined);
+      // Warm activate skips transcript; board may not have it cached — fetch if missing.
+      void ensureWorkConversationTranscript(taskId).catch(() => undefined);
     }
     setConversationItem(item);
   }

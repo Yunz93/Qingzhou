@@ -35,6 +35,9 @@ describe("agent-native work mode", () => {
     expect(picker).not.toMatch(/<select/);
     expect(styles).toMatch(/\.app-drag a[\s\S]*app-region:\s*no-drag/);
     expect(styles).toMatch(/\.work-page-head[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+    expect(styles).toMatch(/@media \(max-width: 640px\)[\s\S]*\.titlebar\.work-page-head[\s\S]*height:\s*auto/);
+    expect(styles).toMatch(/@media \(max-width: 640px\)[\s\S]*\.work-page-head[\s\S]*grid-template-rows:\s*52px auto/);
+    expect(styles).not.toMatch(/\.work-page-head[\s\S]*min-height:\s*88px/);
     expect(styles).toMatch(/\.work-project-button[\s\S]*font-size:\s*16px/);
     expect(styles).toMatch(/\.work-project-button[\s\S]*min-height:\s*36px/);
     expect(styles).toMatch(/\.work-toolbar[\s\S]*gap:\s*8px/);
@@ -49,7 +52,15 @@ describe("agent-native work mode", () => {
     expect(panel).toMatch(/执行记录/);
     expect(panel).toMatch(/确认删除/);
     expect(panel).toMatch(/onDelete/);
+    expect(board).toMatch(/ensureWorkConversationTranscript/);
     expect(board).toMatch(/workItem\.delete/);
+    const drawer = readFileSync(path.resolve("apps/web/src/components/board/WorkConversationDrawer.tsx"), "utf8");
+    expect(drawer).toMatch(/ensureWorkConversationTranscript/);
+    expect(drawer).toMatch(/work-panel-head app-drag/);
+    expect(drawer).toMatch(/app-no-drag flex shrink-0/);
+    expect(drawer).toMatch(/messagesByTask\[taskId\] \?\? \[\]/);
+    expect(drawer).not.toMatch(/messagesByTask\[taskId\] \?\? state\.messages/);
+    expect(styles).toMatch(/html\.desktop\[data-platform="darwin"\] \.work-panel-head/);
     expect(dashboard).not.toMatch(/<select/);
   });
 
