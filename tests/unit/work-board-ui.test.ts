@@ -115,7 +115,21 @@ describe("agent-native work mode", () => {
     expect(drawer).toMatch(/role="alert"/);
     expect(drawer).toMatch(/serverError/);
     expect(layout).toMatch(/随便聊聊/);
-    expect(layout).toMatch(/选择文件夹/);
+    expect(layout).toMatch(/随便看看/);
+    expect(layout).toMatch(/去工作/);
+    expect(layout).toMatch(/GoWorkDialog/);
+    expect(layout).toMatch(/NewWorkProjectDialog/);
+    expect(layout).not.toMatch(/选择文件夹/);
+    expect(layout).not.toMatch(/去任务/);
     expect(layout).toMatch(/dismissErrors/);
+  });
+
+  it("offers a home go-work dialog to pick or create a project", () => {
+    const dialog = readFileSync(path.resolve("apps/web/src/components/board/GoWorkDialog.tsx"), "utf8");
+    expect(dialog).toMatch(/去工作/);
+    expect(dialog).toMatch(/选择已有项目/);
+    expect(dialog).toMatch(/新建项目/);
+    expect(dialog).toMatch(/onSelect/);
+    expect(dialog).toMatch(/onCreate/);
   });
 });

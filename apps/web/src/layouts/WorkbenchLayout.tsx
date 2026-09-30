@@ -19,6 +19,8 @@ import { ModeSwitcher } from "../components/app/ModeSwitcher";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { CommandPalette } from "../components/command-palette/CommandPalette";
 import { NewTaskDialog } from "../components/tasks/NewTaskDialog";
+import { GoWorkDialog } from "../components/board/GoWorkDialog";
+import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import type { ApprovalPolicy, InteractionMode, PiPackageCatalogResult, ThinkingLevel } from "@qingzhou/protocol";
 import { stripModePrefix, workItemIsClosed } from "@qingzhou/protocol";
 import { headerSubtitle, STARTER_PROMPTS } from "../copy";
@@ -108,6 +110,8 @@ export function WorkbenchLayout() {
   const workspaceRoot = useAgentStore((state) => state.workspaceRoot);
   const pendingInteractions = useAgentStore((state) => state.pendingInteractions);
   const workItems = useAgentStore((state) => state.workItems);
+  const workProjects = useAgentStore((state) => state.workProjects);
+  const activeProjectId = useAgentStore((state) => state.activeProjectId);
   const toast = useAgentStore((state) => state.toast);
   const devSelfWorkspace = useAgentStore((state) => state.devSelfWorkspace);
 
@@ -116,6 +120,8 @@ export function WorkbenchLayout() {
   const [query, setQuery] = useState("");
   const [cwd, setCwd] = useState(workspaceRoot ?? allowedRoots[0] ?? "");
   const [creating, setCreating] = useState(false);
+  const [goingWork, setGoingWork] = useState(false);
+  const [creatingWorkProject, setCreatingWorkProject] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
   const [taskOpen, setTaskOpen] = useState(false);
@@ -993,11 +999,18 @@ export function WorkbenchLayout() {
                   随便聊聊
                 </button>
                 <button type="button" className="pressable btn btn-secondary" onClick={() => setCreating(true)}>
-                  选择文件夹
+                  随便看看
                 </button>
-                <Link to="/board" className="pressable btn btn-secondary">
-                  去任务
-                </Link>
+                <button
+                  type="button"
+                  className="pressable btn btn-secondary"
+                  onClick={() => {
+                    setGoingWork(true);
+                    if (connection === "open") void socketClient.send("workItem.list").catch(() => undefined);
+                  }}
+                >
+                  去工作
+                </button>
               </div>
               <div className="mt-8 flex flex-col items-stretch gap-2">
                 {STARTER_PROMPTS.map((item) => (
@@ -1204,6 +1217,37 @@ export function WorkbenchLayout() {
             });
             setCreating(false);
             if (result.task?.id) useAgentStore.getState().setActiveTask(result.task.id);
+          }}
+        />
+      ) : null}
+      {goingWork && !creatingWorkProject ? (
+        <GoWorkDialog
+          projects={workProjects}
+          activeProjectId={activeProjectId}
+          onCancel={() => setGoingWork(false)}
+          onSelect={async (id) => {
+            try {
+              await socketClient.send("workProject.select", { id });
+              setGoingWork(false);
+              navigate("/board");
+            } catch (error: unknown) {
+              reportRequestError(error, "切换项目失败");
+            }
+          }}
+          onCreate={() => {
+            setGoingWork(false);
+            setCreatingWorkProject(true);
+          }}
+        />
+      ) : null}
+      {creatingWorkProject ? (
+        <NewWorkProjectDialog
+          defaultCwd={cwd || workspaceRoot || allowedRoots[0] || ""}
+          onCancel={() => setCreatingWorkProject(false)}
+          onCreate={async (input) => {
+            await socketClient.send("workProject.create", input);
+            setCreatingWorkProject(false);
+            navigate("/board");
           }}
         />
       ) : null}
