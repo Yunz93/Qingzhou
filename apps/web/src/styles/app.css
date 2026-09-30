@@ -2509,17 +2509,29 @@ html.desktop[data-platform="darwin"] .traffic-inline {
 }
 
 @media (max-width: 640px) {
+  .titlebar.work-page-head {
+    height: auto;
+    min-height: 52px;
+  }
+
   .work-page-head {
-    min-height: 88px;
     grid-template-columns: minmax(0, 1fr) auto;
-    padding-top: 6px;
-    padding-bottom: 6px;
+    grid-template-rows: 52px auto;
+    align-items: center;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .work-head-start,
+  .work-head-end {
+    align-self: stretch;
   }
 
   .work-project-picker {
     grid-column: 1 / -1;
     order: 3;
     justify-self: center;
+    padding-bottom: 6px;
   }
 
   .work-objective {
