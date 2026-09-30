@@ -99,10 +99,13 @@ describe("conversation interaction chrome", () => {
     expect(capsules).toContain("capsuleModelLabel");
     expect(capsules).not.toContain("<span>思考强度</span>");
     expect(capsules).toContain("滑动选择思考强度");
+    expect(capsules).not.toContain("<strong>{label}</strong>");
     expect(capsules).not.toContain("composer-popover-item");
     const appCss = readFileSync(path.resolve("apps/web/src/styles/app.css"), "utf8");
     expect(appCss).toContain(".policy-picker");
     expect(appCss).toContain(".policy-picker-rail-disabled");
+    expect(appCss).toMatch(/\.policy-picker-label\s*\{[^}]*font-size:\s*12px/);
+    expect(appCss).not.toContain(".policy-picker-label strong");
     expect(capsules).toContain("推荐模型集");
     expect(capsules).toContain("设为默认");
     expect(capsules).toContain("model-picker-list");
