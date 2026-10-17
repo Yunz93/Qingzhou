@@ -15,6 +15,8 @@ export type ComposerImage = { id: string; previewUrl: string; name: string };
 
 type Props = {
   status: TaskStatus;
+  sending?: boolean;
+  recorded?: boolean;
   disabled: boolean;
   models: Array<{
     provider: string;
@@ -75,6 +77,8 @@ function slashQuery(value: string, caret: number): { start: number; query: strin
 
 export function PromptComposer({
   status,
+  sending = false,
+  recorded = false,
   disabled,
   models,
   thinkingLevels,
@@ -127,9 +131,10 @@ export function PromptComposer({
   } | null>(null);
   const starting = status === "booting" || status === "queued";
   const running = status === "running" || status === "waiting_approval" || status === "aborting";
-  const followUp = status === "idle" && hasTurns;
-  const canSubmit = !starting && composerCanSubmit(value, images.length);
-  const showStop = running && !canSubmit;
+  const followUp = !recorded && status === "idle" && hasTurns;
+  const hasContent = composerCanSubmit(value, images.length);
+  const canSubmit = !starting && !sending && hasContent;
+  const showStop = running && !hasContent;
   const mention = mentionQuery(value, caret);
   const slash = !mention ? slashQuery(value, caret) : null;
 
@@ -503,9 +508,10 @@ export function PromptComposer({
               onClick={showStop ? onAbort : () => submit()}
               disabled={disabled || (!showStop && !canSubmit)}
               aria-label={showStop ? "停止" : "发送"}
-              title={showStop ? "停止" : running ? (busySendMode === "followUp" ? "排队下一条" : "补充这条回复") : "发送"}
+              aria-busy={!showStop && sending}
+              title={showStop ? "停止" : sending ? "正在发送…" : running ? (busySendMode === "followUp" ? "排队下一条" : "补充这条回复") : "发送"}
             >
-              {showStop ? <Square size={10} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
+              {showStop ? <Square size={10} fill="currentColor" /> : sending ? <Clock3 size={15} /> : <ArrowUp size={15} strokeWidth={2.2} />}
             </button>
           </div>
         </div>

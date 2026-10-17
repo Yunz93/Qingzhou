@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isoTimestampSchema, type TaskStatus } from "./task-schema.js";
+import { isoTimestampSchema, timelineImageSchema, type TaskStatus } from "./task-schema.js";
 
 export const WORK_ITEM_SCHEMA_VERSION = 3;
 
@@ -17,7 +17,7 @@ export const workRunStatusSchema = z.enum([
 ]);
 export type WorkRunStatus = z.infer<typeof workRunStatusSchema>;
 
-export const workRunKindSchema = z.enum(["initial", "feedback", "retry", "migrated"]);
+export const workRunKindSchema = z.enum(["initial", "feedback", "retry", "migrated", "discussion"]);
 export type WorkRunKind = z.infer<typeof workRunKindSchema>;
 
 export const workItemViewStateSchema = z.enum([
@@ -51,6 +51,7 @@ export const workRunSchema = z.object({
   taskId: z.string().uuid(),
   kind: workRunKindSchema,
   instruction: z.string().min(1).max(30_000),
+  imageIds: z.array(z.string()).max(20).optional(),
   status: workRunStatusSchema,
   resultSummary: z.string().max(2_000).nullable().default(null),
   resultMessageId: z.string().nullable().default(null),
@@ -66,12 +67,24 @@ export const workItemFeedbackSchema = z.object({
   objectiveId: z.string().uuid(),
   runId: z.string().uuid().nullable().default(null),
   text: z.string().min(1).max(20_000),
+  imageIds: z.array(z.string()).max(20).optional(),
   createdAt: isoTimestampSchema,
   deliveredAt: isoTimestampSchema.nullable().default(null),
 });
 export type WorkItemFeedback = z.infer<typeof workItemFeedbackSchema>;
 
+export const workSourceSchema = z.object({
+  prdId: z.string().uuid().optional(),
+  moduleIds: z.array(z.string().uuid()).max(8).optional(),
+  taskId: z.string().uuid().optional(),
+  messageIds: z.array(z.string()).max(100).optional(),
+  excerpt: z.string().max(20_000).optional(),
+  images: z.array(timelineImageSchema).max(20).optional(),
+  integrationId: z.string().uuid().optional(),
+});
+
 export const workItemSchema = z.object({
+  source: workSourceSchema.optional(),
   schemaVersion: z.literal(WORK_ITEM_SCHEMA_VERSION).default(WORK_ITEM_SCHEMA_VERSION),
   id: z.string().uuid(),
   projectId: z.string().uuid(),
@@ -128,13 +141,16 @@ export function workItemPrompt(item: {
   ].join("\n");
 }
 
-export function workItemFeedbackPrompt(item: { title: string }, text: string): string {
+export function workItemFeedbackPrompt(item: { title: string; description?: string; acceptanceCriteria?: string }, text: string): string {
   return [
     `请继续工作目标「${item.title}」。`,
     "这是工作台补充要求后的新一轮：用户已确认继续，不要再等确认，也不要只输出计划就结束。",
     "先检查当前工作状态，不要重复已经完成的操作，然后立即实施下面的补充要求。",
     "若项目里的 AGENTS.md / 约定要求「先确认再改」，对本轮以本说明为准。",
     "",
+    ...(item.description?.trim() ? [`当前目标说明：\n${item.description.trim()}`, ""] : []),
+    ...(item.acceptanceCriteria?.trim() ? [`当前验收标准：\n${item.acceptanceCriteria.trim()}`, ""] : []),
+    "本轮补充要求：",
     text.trim(),
   ].join("\n");
 }

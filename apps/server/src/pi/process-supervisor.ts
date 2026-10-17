@@ -46,6 +46,7 @@ export type RuntimeSnapshot = {
 };
 
 type ApprovalPending = {
+  rpcRequestId: string;
   requestId: string;
   taskId: string;
   generation: number;
@@ -54,6 +55,7 @@ type ApprovalPending = {
 };
 
 type InteractionPending = {
+  rpcRequestId: string;
   requestId: string;
   taskId: string;
   generation: number;
@@ -547,8 +549,8 @@ export class ProcessSupervisor {
     }
     runtime.client.sendUiResponse(
       allow
-        ? { id: requestId, confirmed: true }
-        : { id: requestId, confirmed: false, cancelled: true },
+        ? { id: pending.rpcRequestId, confirmed: true }
+        : { id: pending.rpcRequestId, confirmed: false, cancelled: true },
     );
     this.finishApproval(requestId, allow);
     return true;
@@ -564,10 +566,10 @@ export class ProcessSupervisor {
       return false;
     }
     if (payload.cancelled) {
-      runtime.client.sendUiResponse({ id: requestId, cancelled: true });
+      runtime.client.sendUiResponse({ id: pending.rpcRequestId, cancelled: true });
     } else {
       runtime.client.sendUiResponse({
-        id: requestId,
+        id: pending.rpcRequestId,
         value: payload.value ?? "",
         confirmed: true,
       });
@@ -591,7 +593,7 @@ export class ProcessSupervisor {
     if (!pending) return;
     const runtime = this.runtimes.get(pending.taskId);
     if (runtime && runtime.generation === pending.generation) {
-      runtime.client.sendUiResponse({ id: requestId, confirmed: false, cancelled: true });
+      runtime.client.sendUiResponse({ id: pending.rpcRequestId, confirmed: false, cancelled: true });
     }
     this.finishApproval(requestId, false, reason);
   }
@@ -619,7 +621,7 @@ export class ProcessSupervisor {
       if (pending.taskId !== taskId) continue;
       const runtime = this.runtimes.get(pending.taskId);
       if (runtime && runtime.generation === pending.generation) {
-        runtime.client.sendUiResponse({ id: requestId, cancelled: true });
+        runtime.client.sendUiResponse({ id: pending.rpcRequestId, cancelled: true });
       }
       this.finishInteraction(requestId, true);
     }
@@ -734,6 +736,7 @@ export class ProcessSupervisor {
         break;
       }
       case "approval.ui": {
+        const scopedRequestId = `${taskId}:${generation}:${normalized.requestId}`;
         if (normalized.method === "notify") {
           const message = normalized.message ?? normalized.title ?? "通知";
           this.emit(taskId, "notification.shown", {
@@ -745,7 +748,7 @@ export class ProcessSupervisor {
         }
         if (normalized.method === "select" || normalized.method === "input") {
           const interaction: InteractionRequest = {
-            requestId: normalized.requestId,
+            requestId: scopedRequestId,
             taskId,
             method: normalized.method,
             title: normalized.title,
@@ -757,6 +760,7 @@ export class ProcessSupervisor {
             this.respondInteraction(interaction.requestId, { cancelled: true });
           }, this.config.approvalTimeoutMs);
           this.pendingInteractions.set(interaction.requestId, {
+            rpcRequestId: normalized.requestId,
             requestId: interaction.requestId,
             taskId,
             generation,
@@ -768,7 +772,7 @@ export class ProcessSupervisor {
         }
         if (normalized.method !== "confirm") break;
         const approval = parseApprovalMessage(
-          normalized.requestId,
+          scopedRequestId,
           taskId,
           normalized.title,
           normalized.message,
@@ -789,6 +793,7 @@ export class ProcessSupervisor {
           this.denyOne(approval.requestId, "Approval timed out");
         }, this.config.approvalTimeoutMs);
         this.pendingApprovals.set(approval.requestId, {
+          rpcRequestId: normalized.requestId,
           requestId: approval.requestId,
           taskId,
           generation,

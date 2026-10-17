@@ -207,6 +207,7 @@ export class WorkItemStore {
     acceptanceCriteria?: string;
     cwd: string;
     projectId?: string;
+    source?: WorkItem["source"];
   }): Promise<WorkItem> {
     let projectId = input.projectId;
     if (!projectId) {
@@ -222,6 +223,7 @@ export class WorkItemStore {
       schemaVersion: WORK_ITEM_SCHEMA_VERSION,
       id: randomUUID(),
       projectId,
+      source: input.source,
       title: input.title.trim(),
       description: input.description?.trim() ?? "",
       acceptanceCriteria: input.acceptanceCriteria?.trim() ?? "",
@@ -291,7 +293,7 @@ export class WorkItemStore {
     await this.flush();
   }
 
-  async addFeedback(id: string, text: string): Promise<WorkItemFeedback> {
+  async addFeedback(id: string, text: string, imageIds?: string[]): Promise<WorkItemFeedback> {
     const item = this.get(id);
     if (!item) throw new Error("找不到这个目标");
     if (workItemIsClosed(item.state)) throw new Error("这个目标已经结束，请先重新打开。");
@@ -302,6 +304,7 @@ export class WorkItemStore {
       objectiveId: id,
       runId: null,
       text: trimmed,
+      imageIds,
       createdAt: new Date().toISOString(),
       deliveredAt: null,
     });
@@ -324,6 +327,7 @@ export class WorkItemStore {
     taskId: string;
     kind: WorkRunKind;
     instruction: string;
+    imageIds?: string[];
     status?: WorkRunStatus;
   }): Promise<WorkRun> {
     const item = this.get(input.objectiveId);
@@ -339,6 +343,7 @@ export class WorkItemStore {
       taskId: input.taskId,
       kind: input.kind,
       instruction: input.instruction.trim(),
+      imageIds: input.imageIds,
       status,
       resultSummary: null,
       resultMessageId: null,
@@ -359,6 +364,8 @@ export class WorkItemStore {
     const index = this.state.runs.findIndex((run) => run.id === id);
     if (index < 0) throw new Error("找不到这次执行");
     const current = this.state.runs[index]!;
+    // Late prompt acknowledgements / approval events cannot reopen a settled round.
+    if (["succeeded", "failed", "aborted"].includes(current.status) && patch.status && patch.status !== current.status) return { ...current };
     const now = new Date().toISOString();
     const terminal = patch.status && ["succeeded", "failed", "aborted"].includes(patch.status);
     const next = workRunSchema.parse({

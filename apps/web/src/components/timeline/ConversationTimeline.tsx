@@ -19,6 +19,8 @@ import {
 import { useAgentStore } from "../../stores/agent-store";
 
 type Props = {
+  contained?: boolean;
+  taskId?: string | null;
   messages: TimelineMessage[];
   tools: ToolExecution[];
   canRewrite?: boolean;
@@ -120,6 +122,8 @@ function UserMessage({
   const [draft, setDraft] = useState(stripModePrefix(message.text));
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const visible = stripModePrefix(message.text);
+  const structured = visible.startsWith("请完成下面这个工作目标。") || visible.includes("这是工作台补充要求后的新一轮：");
+  const goal = structured ? (visible.split("标题：")[1] ?? visible.split("本轮补充要求：")[1] ?? visible).trim() : visible;
   return (
     <article
       id={conversationMessageDomId(message.id)}
@@ -154,7 +158,7 @@ function UserMessage({
       ) : (
         <>
           {message.images?.length ? <MessageImages images={message.images} /> : null}
-          {visible ? <p className="whitespace-pre-wrap">{visible}</p> : null}
+          {visible ? structured ? <><p className="text-xs text-mute mb-2">已确认的需求执行</p><p className="whitespace-pre-wrap">{goal}</p><details className="mt-2 text-xs text-mute"><summary>查看完整执行指令</summary><p className="whitespace-pre-wrap mt-2">{visible}</p></details></> : <p className="whitespace-pre-wrap">{visible}</p> : null}
           {!visible && message.images?.length ? (
             <p className="text-[12px] text-mute">附 {message.images.length} 张图</p>
           ) : null}
@@ -255,6 +259,8 @@ const AssistantMessage = memo(function AssistantMessage({
 });
 
 export function ConversationTimeline({
+  contained = false,
+  taskId: conversationTaskId,
   messages,
   tools,
   canRewrite,
@@ -265,12 +271,14 @@ export function ConversationTimeline({
   onUndoFile,
   onStarter,
 }: Props) {
-  const taskId = useAgentStore((state) => state.activeTaskId);
+  const activeTaskId = useAgentStore((state) => state.activeTaskId);
+  const taskId = conversationTaskId ?? activeTaskId;
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pinnedRef = useRef(true);
   const userCountRef = useRef(0);
   const scrollRafRef = useRef<number | null>(null);
+  const restoreReading = useRef<{ top: number; following: boolean } | null>(null);
   const [following, setFollowing] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -284,13 +292,23 @@ export function ConversationTimeline({
   const activeMessageId = hits[safeIndex];
 
   useLayoutEffect(() => {
-    const scroller = document.getElementById("main-content") ?? findScrollParent(rootRef.current);
+    const scroller = findScrollParent(rootRef.current) ?? document.getElementById("main-content");
     if (!scroller) return;
 
+    const key = `qingzhou:reading:${taskId ?? ""}`;
+    try {
+      const value = JSON.parse(sessionStorage.getItem(key) || "null") as { top: number; following: boolean; count: number } | null;
+      if (value && Number.isFinite(value.top)) { restoreReading.current = value; pinnedRef.current = value.following; userCountRef.current = value.count || 0; setFollowing(value.following); }
+      else { pinnedRef.current = true; userCountRef.current = 0; setFollowing(true); }
+    } catch { pinnedRef.current = true; }
+    const saveReading = () => {
+      if (userCountRef.current) try { sessionStorage.setItem(key, JSON.stringify({ top: scroller.scrollTop, following: pinnedRef.current, count: userCountRef.current })); } catch { /* Optional reading position. */ }
+    };
     const syncPin = () => {
       const pinned = isNearBottom(scroller);
       pinnedRef.current = pinned;
       setFollowing(pinned);
+      saveReading();
     };
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) {
@@ -301,10 +319,11 @@ export function ConversationTimeline({
     scroller.addEventListener("scroll", syncPin, { passive: true });
     scroller.addEventListener("wheel", onWheel, { passive: true, capture: true });
     return () => {
+      saveReading();
       scroller.removeEventListener("scroll", syncPin);
       scroller.removeEventListener("wheel", onWheel, true);
     };
-  }, []);
+  }, [taskId]);
 
   useLayoutEffect(() => {
     if (searchOpen) {
@@ -312,26 +331,32 @@ export function ConversationTimeline({
       setFollowing(false);
       return;
     }
-    const scroller = document.getElementById("main-content") ?? findScrollParent(rootRef.current);
+    const scroller = findScrollParent(rootRef.current) ?? document.getElementById("main-content");
     if (!scroller) return;
+    if (restoreReading.current && messages.length) {
+      const saved = restoreReading.current; restoreReading.current = null;
+      scroller.scrollTop = saved.top;
+      pinnedRef.current = saved.following; setFollowing(saved.following);
+      userCountRef.current = messages.filter((message) => message.role === "user").length;
+      if (!saved.following) return;
+    }
     const userCount = messages.reduce((count, message) => count + (message.role === "user" ? 1 : 0), 0);
     if (userCount > userCountRef.current) {
       pinnedRef.current = true;
       setFollowing(true);
-    } else if (!isNearBottom(scroller)) {
-      pinnedRef.current = false;
-      setFollowing(false);
     }
+    // Content can grow by more than the bottom threshold in one render. Only
+    // scroll/wheel events change the reading position; growth must not unpin it.
     userCountRef.current = userCount;
     if (!pinnedRef.current) return;
     if (scrollRafRef.current != null) return;
     scrollRafRef.current = window.requestAnimationFrame(() => {
       scrollRafRef.current = null;
       if (!pinnedRef.current) return;
-      const node = document.getElementById("main-content") ?? findScrollParent(rootRef.current);
+      const node = findScrollParent(rootRef.current) ?? document.getElementById("main-content");
       if (node) node.scrollTop = node.scrollHeight;
     });
-  }, [messages, tools, searchOpen]);
+  }, [messages, tools, searchOpen, taskId]);
 
   useEffect(() => {
     return () => {
@@ -455,14 +480,14 @@ export function ConversationTimeline({
   }
 
   function jumpToLatest() {
-    const scroller = document.getElementById("main-content") ?? findScrollParent(rootRef.current);
+    const scroller = findScrollParent(rootRef.current) ?? document.getElementById("main-content");
     pinnedRef.current = true;
     setFollowing(true);
     setSearchOpen(false);
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 
-  return (
+  const log = (
     <div
       ref={rootRef}
       className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-4 py-5 sm:px-6"
@@ -516,7 +541,7 @@ export function ConversationTimeline({
         </div>
       ) : null}
       {renderTimelineRows()}
-      {!following && messages.length > 0 ? (
+      {!contained && !following && messages.length > 0 ? (
         <button type="button" className="jump-latest pressable" onClick={jumpToLatest}>
           回到最新
         </button>
@@ -532,4 +557,9 @@ export function ConversationTimeline({
       ) : null}
     </div>
   );
+  if (!contained) return log;
+  return <div className="timeline-contained">
+    <div className="timeline-contained-scroll">{log}</div>
+    {!following && messages.length > 0 ? <button type="button" className="jump-latest pressable" onClick={jumpToLatest}>回到最新</button> : null}
+  </div>;
 }

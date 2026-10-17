@@ -170,3 +170,6 @@ export {
   type SkillUpdateCheckResult,
   type SkillUpdateApplyResult,
 } from "./skill-updates.js";
+export * from "./workflow.js";
+
+export * from "./design.js";

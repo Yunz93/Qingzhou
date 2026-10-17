@@ -376,9 +376,9 @@ describe("conversation UI contracts", () => {
     expect(layout).toContain("const hasTurns = useAgentStore");
     expect(layout).toContain("isEditableTarget(event.target)");
     expect(layout).toContain("reportRequestError");
-    expect(layout).toContain('writeComposerDraft(taskId, text)');
+    expect(layout).toContain("setDraft((current) => current || text)");
     expect(layout).not.toMatch(/setDraft\(""\);\s*writeComposerDraft\(task\.id, ""\)/);
-    expect(layout).toContain("readComposerDraft");
+    expect(layout).toContain("useConversationDraft");
     expect(layout).toContain('role="alert"');
     expect(layout).toContain("clearRequestError");
     expect(timeline).toContain("回到最新");

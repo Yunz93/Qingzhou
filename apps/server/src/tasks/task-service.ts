@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { copyFile, mkdir } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   applyModePrefix,
@@ -57,6 +57,7 @@ import { UploadStore } from "./upload-store.js";
 import { WorkItemStore } from "./work-item-store.js";
 import { TermController } from "./term-controller.js";
 import { WorkItemController } from "./work-item-controller.js";
+import { WorkflowService } from "./workflow-service.js";
 
 export type SetupHints = {
   authConfigured: boolean;
@@ -94,6 +95,7 @@ export class TaskService {
   private readonly shells = new TaskShells();
   private readonly terms: TermController;
   private readonly work: WorkItemController;
+  private readonly workflow: WorkflowService;
 
   private readonly workItems: WorkItemStore;
   private defaultModel: ModelRef | null = null;
@@ -126,7 +128,35 @@ export class TaskService {
       requireTask: (taskId) => this.requireTask(taskId),
       emit: (taskId, type, payload) => this.emit(taskId, type as ServerEvent["type"], payload),
     });
+    this.workflow = new WorkflowService({
+      dataDir: config.dataDir,
+      items: this.workItems,
+      emit: () => this.emitWorkItems(),
+      release: async (id) => {
+        const item = this.workItems.get(id);
+        const task = item?.taskId ? this.store.get(item.taskId) : undefined;
+        if (!task) return;
+        this.shells.dispose(task.id);
+        await this.supervisor.stop(task.id);
+        const stopped = await this.store.upsert({ ...task, status: "stopped", updatedAt: new Date().toISOString() });
+        this.emit(task.id, "task.updated", { task: stopped });
+        await this.drainQueue();
+      },
+      launch: async (id, cwd, kind, instruction, imageIds) => {
+        this.adoptAllowedRoot(cwd);
+        const item = this.workItems.get(id);
+        const task = item?.taskId ? this.store.get(item.taskId) : undefined;
+        if (task && task.cwd !== cwd) {
+          if (this.supervisor.has(task.id)) await this.supervisor.stop(task.id);
+          this.shells.dispose(task.id);
+          const moved = await this.store.upsert({ ...task, cwd, status: "stopped", archivedAt: null, errorMessage: null, updatedAt: new Date().toISOString() });
+          this.emit(task.id, "task.updated", { task: moved });
+        }
+        await this.work.launchWorkItem(id, kind, instruction, cwd, imageIds);
+      },
+    });
     this.work = new WorkItemController({
+      workflow: this.workflow,
       store: this.store,
       workItems: this.workItems,
       supervisor: this.supervisor,
@@ -190,8 +220,16 @@ export class TaskService {
   }
 
   dispose(): void {
+    this.workflow.dispose();
     for (const taskId of [...this.abortFallback.keys()]) this.clearAbortFallback(taskId);
     this.shells.disposeAll();
+  }
+
+  async shutdown(): Promise<void> {
+    this.dispose();
+    await Promise.allSettled(this.store.getSnapshot().map((task) => this.supervisor.stop(task.id)));
+    await this.workflow.idle();
+    await this.flushPersist();
   }
 
   addSocket(socket: SocketLike): void {
@@ -210,14 +248,33 @@ export class TaskService {
 
   /** Durably flush coalesced task/work-item stores (shutdown). */
   async flushPersist(): Promise<void> {
-    await Promise.all([this.store.flushSync(), this.workItems.flushSync()]);
+    await Promise.all([this.store.flushSync(), this.workItems.flushSync(), this.workflow.flush()]);
   }
 
   storeUpload(id: string, mimeType: string, data: Buffer): boolean {
     return this.uploads.add(id, mimeType, data);
   }
 
+  private async retainWorkImages(ids: string[] = []): Promise<void> {
+    if (!ids.length) return;
+    const directory = path.join(this.config.dataDir, "work-attachments");
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    for (const id of ids) {
+      const file = path.join(directory, `${createHash("sha256").update(id).digest("hex")}.json`);
+      const current = this.uploads.peek([id])[0];
+      if (current) await writeFile(file, JSON.stringify({ mimeType: current.mimeType, data: current.data.toString("base64") }), { mode: 0o600 });
+      else {
+        let saved: { mimeType: string; data: string };
+        try { saved = JSON.parse(await readFile(file, "utf8")) as typeof saved; }
+        catch { throw new Error("图片附件已过期，请重新上传后发送。"); }
+        if (!this.uploads.add(id, saved.mimeType, Buffer.from(saved.data, "base64"))) throw new Error("附件缓存已满，请稍后重试。");
+      }
+    }
+  }
+
   async handleCommand(command: ClientCommand): Promise<unknown> {
+    if (command.type.startsWith("workflow.")) return this.workflow.handle(command);
+    if (command.type.startsWith("workItem.") || command.type.startsWith("workProject.")) await this.workflow.ready;
     switch (command.type) {
       case "task.create":
         return this.createTask(command.payload.cwd, command.payload.title);
@@ -263,6 +320,7 @@ export class TaskService {
           command.payload.cwd,
           command.payload.projectId,
           command.payload.start,
+          command.payload.source,
         );
       case "workItem.update":
         return this.updateWorkItem(
@@ -272,9 +330,13 @@ export class TaskService {
           command.payload.acceptanceCriteria,
         );
       case "workItem.start":
-        return this.startWorkItem(command.payload.id, "initial");
+        return this.startWorkItem(command.payload.id, "initial", undefined, command.operationId);
       case "workItem.feedback":
-        return this.feedbackWorkItem(command.payload.id, command.payload.text);
+        if (command.payload.imageIds?.length) await this.retainWorkImages(command.payload.imageIds);
+        return this.feedbackWorkItem(command.payload.id, command.payload.text, command.operationId, command.payload.imageIds, command.payload.expectedDeliveryId);
+      case "workItem.discuss":
+        if (command.payload.imageIds?.length) await this.retainWorkImages(command.payload.imageIds);
+        return this.work.discussWorkItem(command.payload.id, command.payload.text, command.operationId, command.payload.imageIds);
       case "workItem.stop":
         return this.stopWorkItem(command.payload.id);
       case "workItem.accept":
@@ -290,7 +352,7 @@ export class TaskService {
       case "workItem.details":
         return this.workItemDetails(command.payload.id);
       case "workItem.append":
-        return this.feedbackWorkItem(command.payload.id, command.payload.text);
+        return this.feedbackWorkItem(command.payload.id, command.payload.text, command.operationId);
       case "workItem.move":
         return this.legacyMoveWorkItem(command.payload.id, command.payload.column, command.payload.beforeId);
       case "task.activate": {
@@ -300,6 +362,7 @@ export class TaskService {
       case "task.rename":
         return this.rename(command.taskId, command.payload.title);
       case "task.archive":
+        if (this.workItems.findByTaskId(command.taskId).length) throw new Error("这是需求对话。整理列表请使用隐藏；归档需求请在工作台操作。");
         return this.archive(command.taskId);
       case "task.listArchived":
         return { tasks: this.store.getSnapshot().filter((task) => task.archivedAt).sort((a, b) => b.archivedAt!.localeCompare(a.archivedAt!)) };
@@ -567,6 +630,10 @@ export class TaskService {
   }
 
   private async archive(taskId: string): Promise<{ ok: true }> {
+    await this.workflow.ready;
+    for (const item of this.workItems.findByTaskId(taskId)) {
+      if (this.workflow.enabled(item.projectId)) this.workflow.assertEditable(item.id);
+    }
     const task = this.requireTask(taskId);
     // Persist archive first so an in-flight boot cannot resurrect the session.
     const next = await this.store.upsert({
@@ -853,7 +920,9 @@ export class TaskService {
       throw new Error("AI 还没启动");
     }
 
+    if (options?.recordedRun && imageIds?.length) await this.retainWorkImages(imageIds);
     const uploaded = this.uploads.peek(imageIds ?? []);
+    if (uploaded.length !== (imageIds?.length ?? 0)) throw new Error("图片附件已过期，请重新上传后发送。");
     const images = uploaded.map((item) => ({
       type: "image",
       data: item.data.toString("base64"),
@@ -1102,6 +1171,7 @@ export class TaskService {
     approvalPolicy: TaskRecord["approvalPolicy"],
   ): Promise<{ task: TaskRecord }> {
     const task = this.requireTask(taskId);
+    if (mode === "agent" && this.workItems.activeRunForTask(taskId)?.kind === "discussion") throw new Error("本轮是只读讨论，请结束讨论后开始实施。");
     const next = await this.store.upsert({
       ...task,
       mode,
@@ -1740,9 +1810,13 @@ export class TaskService {
           errorMessage: next.errorMessage ?? "执行失败",
         });
         this.emitWorkItems();
+        const snapshot = this.supervisor.snapshot(taskId);
+        await this.workflow.captureTranscript(run.objectiveId, run.id, snapshot?.messages ?? [], snapshot?.tools ?? []);
+        await this.workflow.settled(run.objectiveId, false);
       }
     } else if (event === "abort_confirmed") {
       await this.syncActiveWorkRun(taskId, "aborted");
+      for (const item of this.workItems.findByTaskId(taskId)) await this.workflow.settled(item.id, false);
     }
     if (event === "agent_settled") {
       void this.refreshStats(taskId);
@@ -1752,7 +1826,9 @@ export class TaskService {
       ) {
         this.emit(taskId, "notification.shown", { message: "回复完成", notifyType: "info" });
       }
-      void this.onWorkItemSettled(taskId);
+      void this.onWorkItemSettled(taskId).catch((error) => {
+        this.emit(taskId, "server.error", { code: "workItem.settle", message: humanizeUserFacingError(error) });
+      });
     }
     if (next.status === "error" && next.errorMessage) {
       // Banner + toast: server.error sticks in the workbench; notification is OS/toast.
@@ -1805,8 +1881,9 @@ export class TaskService {
     cwd: string | undefined,
     projectId?: string,
     start = false,
+    source?: WorkItem["source"],
   ): Promise<{ item: WorkItem }> {
-    return this.work.createWorkItem(title, description, acceptanceCriteria, cwd, projectId, start);
+    return this.work.createWorkItem(title, description, acceptanceCriteria, cwd, projectId, start, source);
   }
 
   private async updateWorkItem(
@@ -1822,16 +1899,17 @@ export class TaskService {
     return this.work.workItemDetails(id);
   }
 
-  private async feedbackWorkItem(id: string, text: string): Promise<{ item: WorkItem }> {
-    return this.work.feedbackWorkItem(id, text);
+  private async feedbackWorkItem(id: string, text: string, requestId?: string, imageIds?: string[], expectedDeliveryId?: string): Promise<{ item: WorkItem }> {
+    return this.work.feedbackWorkItem(id, text, requestId, imageIds, expectedDeliveryId);
   }
 
   private async startWorkItem(
     id: string,
     kind: WorkRunKind,
     explicitInstruction?: string,
+    requestId?: string,
   ): Promise<{ item: WorkItem }> {
-    return this.work.startWorkItem(id, kind, explicitInstruction);
+    return this.work.startWorkItem(id, kind, explicitInstruction, requestId);
   }
 
   private async stopWorkItem(id: string): Promise<{ item: WorkItem }> {

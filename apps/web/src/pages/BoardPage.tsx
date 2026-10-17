@@ -3,11 +3,13 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { Settings } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary } from "@qingzhou/protocol";
 import { WorkDashboard, type WorkFilter } from "../components/board/WorkDashboard";
+import { RequirementWorkroom } from "../components/board/RequirementWorkroom";
 import { WorkObjectivePanel } from "../components/board/WorkObjectivePanel";
 import { WorkConversationDrawer, ensureWorkConversationTranscript } from "../components/board/WorkConversationDrawer";
 import { NewWorkItemDialog } from "../components/board/NewWorkItemDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import { WorkProjectPicker } from "../components/board/WorkProjectPicker";
+import { ProjectWorkflow, WorkflowDashboard, useProjectWorkflow } from "../components/board/ProjectWorkflow";
 import { ModeSwitcher } from "../components/app/ModeSwitcher";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { ThemeToggle } from "../components/status/ThemeToggle";
@@ -50,13 +52,12 @@ export function BoardPage() {
     () => (project ? items.filter((item) => item.projectId === project.id) : []),
     [items, project],
   );
-  const workTaskIds = useMemo(
-    () => new Set(projectItems.map((item) => item.taskId).filter((id): id is string => Boolean(id))),
-    [projectItems],
-  );
-  const approval = pendingApprovals.find((entry) => workTaskIds.has(entry.taskId)) ?? null;
-  const interaction = pendingInteractions.find((entry) => workTaskIds.has(entry.taskId)) ?? null;
   const selectedSummary = focusItemId ? items.find((item) => item.id === focusItemId) : undefined;
+  const activeRequestTaskId = selectedSummary?.taskId ?? conversationItem?.taskId;
+  const approval = pendingApprovals.find((entry) => entry.taskId === activeRequestTaskId) ?? null;
+  const interaction = pendingInteractions.find((entry) => entry.taskId === activeRequestTaskId) ?? null;
+  const workflow = useProjectWorkflow(project?.id);
+  const selectedProjectId = selectedSummary?.projectId;
 
   useEffect(() => {
     if (connection === "open") void socketClient.send("workItem.list").catch(() => undefined);
@@ -78,27 +79,37 @@ export function BoardPage() {
         if (!current) return;
         setNotice({ text: clientErrorMessage(error, "读取任务详情失败"), kind: "error" });
         setDetails(null);
-        setSearchParams((previous) => { previous.delete("item"); return previous; });
+        setSearchParams((previous) => { previous.delete("item"); previous.delete("panel"); return previous; });
       });
     return () => {
       current = false;
     };
   }, [connection, focusItemId, selectedSummary?.updatedAt, selectedSummary?.runCount, selectedSummary?.feedbackCount, setSearchParams]);
 
+  useEffect(() => {
+    if (connection === "open" && selectedProjectId && selectedProjectId !== project?.id) {
+      void socketClient.send("workProject.select", { id: selectedProjectId }).catch((error: unknown) => {
+        setNotice({ text: clientErrorMessage(error, "读取需求所属项目失败"), kind: "error" });
+      });
+    }
+  }, [connection, selectedProjectId, project?.id]);
+
   function showError(error: unknown, fallback: string) {
+    useAgentStore.getState().clearRequestError();
     setNotice({ text: clientErrorMessage(error, fallback), kind: "error" });
   }
 
-  function openDetails(item: WorkItemSummary) {
-    setDetails(null);
-    setSearchParams((previous) => { previous.set("item", item.id); return previous; });
+  function openDetails(item: WorkItemSummary, panel?: string) {
+    setNotice(null);
+    setSearchParams((previous) => { previous.set("item", item.id); if (panel) previous.set("panel", panel); else previous.delete("panel"); return previous; });
   }
 
   function closeDetails() {
-    setSearchParams((previous) => { previous.delete("item"); return previous; });
+    setSearchParams((previous) => { previous.delete("item"); previous.delete("panel"); return previous; });
   }
 
   function openConversation(item: WorkItemSummary) {
+    if (workflow.state?.configs.length) { try { sessionStorage.setItem(`qingzhou:workroom-focus:${item.id}`, JSON.stringify("conversation")); } catch { /* Optional layout preference. */ } openDetails(item); return; }
     closeDetails();
     const taskId = item.taskId;
     if (taskId) {
@@ -120,12 +131,16 @@ export function BoardPage() {
 
   function startItem(id: string) {
     setNotice(null);
-    void socketClient.send("workItem.start", { id }).catch((error: unknown) => showError(error, "开始执行失败"));
+    return socketClient.send("workItem.start", { id }).then(() => undefined).catch((error: unknown) => {
+      const text = clientErrorMessage(error, "开始执行失败");
+      if (text.includes("完善目标说明与验收标准")) setSearchParams((previous) => { previous.set("item", id); previous.set("panel", "scope"); return previous; });
+      showError(error, "开始执行失败");
+    });
   }
 
   function stopItem(id: string) {
     setNotice(null);
-    void socketClient.send("workItem.stop", { id }).catch((error: unknown) => showError(error, "停止执行失败"));
+    return socketClient.send("workItem.stop", { id }).then(() => undefined).catch((error: unknown) => showError(error, "停止执行失败"));
   }
 
   function acceptItem(id: string) {
@@ -135,7 +150,7 @@ export function BoardPage() {
 
   function reopenItem(id: string) {
     setNotice(null);
-    void socketClient.send("workItem.reopen", { id }).catch((error: unknown) => showError(error, "重新打开失败"));
+    return socketClient.send("workItem.reopen", { id }).then(() => undefined).catch((error: unknown) => showError(error, "重新打开失败"));
   }
 
   function archiveItem(id: string) {
@@ -185,7 +200,7 @@ export function BoardPage() {
           </Link>
         </div>
       </header>
-      {notice ? (
+      {notice && !(focusItemId && workflow.state?.configs.length) ? (
         <div
           className={`banner-note flex items-center justify-between gap-3 ${notice.kind === "error" ? "text-danger" : "text-ink"}`}
           role={notice.kind === "error" ? "alert" : "status"}
@@ -198,9 +213,13 @@ export function BoardPage() {
       ) : null}
       <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
         {project ? (
-          <div className="mx-auto w-full max-w-[1040px] px-4 pb-12 pt-4">
+          <div className={`mx-auto w-full px-4 pb-12 pt-4 ${workflow.state?.configs.length ? "workflow-project-container" : "max-w-[1040px]"}`}>
             <h1 className="sr-only">{project.name}</h1>
-            <WorkDashboard
+            {workflow.error ? <p className="mb-3 text-sm text-danger" role="alert">{workflow.error}</p> : null}
+            {workflow.state ? <ProjectWorkflow key={`overview:${project.id}`} projectId={project.id} state={workflow.state} items={projectItems} onRefresh={workflow.refresh} onSelect={openDetails}>
+              <WorkflowDashboard key={`requirements:${project.id}`} state={workflow.state} items={projectItems} onSelect={openDetails} onCreate={() => setCreating(true)} onStart={startItem} onStop={stopItem} onConversation={openConversation} onArchive={archiveItem} onRefresh={workflow.refresh} />
+            </ProjectWorkflow> : null}
+            {!workflow.state?.configs.length ? <WorkDashboard
               items={projectItems}
               tasks={tasks}
               pendingApprovals={pendingApprovals}
@@ -217,7 +236,7 @@ export function BoardPage() {
               onReopen={reopenItem}
               onArchive={archiveItem}
               onOpenConversation={openConversation}
-            />
+            /> : null}
           </div>
         ) : (
           <div className="mx-auto flex h-full max-w-[440px] flex-col items-center justify-center px-6 pb-16 text-center">
@@ -246,17 +265,19 @@ export function BoardPage() {
       {creating && project ? (
         <NewWorkItemDialog
           projectName={project.name}
+          requirementMode={!!workflow.state?.configs.length}
           onCancel={() => setCreating(false)}
           onCreate={async (input) => {
-            await socketClient.send("workItem.create", { ...input, projectId: project.id });
+            const created = await socketClient.send<{ item: WorkItemDetails["item"] }>("workItem.create", { ...input, projectId: project.id });
             setCreating(false);
             setQuery("");
             if (input.start) {
-              setFilter("working");
+              if (workflow.state?.configs.length) setSearchParams((previous) => { previous.set("item", created.item.id); return previous; });
+              else setFilter("working");
               setNotice(null);
             } else {
               setFilter("ready");
-              setNotice({ text: "已保存到计划，可在「准备开始」里启动。", kind: "ok" });
+              setNotice(workflow.state?.configs.length ? null : { text: "已保存到计划，可在「准备开始」里启动。", kind: "ok" });
             }
           }}
         />
@@ -268,9 +289,15 @@ export function BoardPage() {
           onOpenFull={() => openConversationFull(conversationItem)}
         />
       ) : null}
-      {focusItemId && details ? (
+      {focusItemId && details && workflow.state && details.item.id === focusItemId && details.item.projectId === project?.id ? workflow.state?.configs.length && project ? (
+        <RequirementWorkroom key={details.item.id} details={details} state={workflow.state} items={projectItems} projectName={project.name}
+          error={notice?.kind === "error" ? notice.text : undefined} onClose={closeDetails} onSelect={openDetails} onRefresh={workflow.refresh} onStart={startItem} onStop={stopItem} onReopen={reopenItem} onOpenFull={openConversationFull}
+          onSave={(input) => socketClient.send("workItem.update", { id: details.item.id, ...input }).then(() => { setNotice(null); })} />
+      ) : (
         <WorkObjectivePanel
+          key={details.item.id}
           details={details}
+          hideConversation={workflow.state?.workspaces.some((entry) => entry.itemId === details.item.id && !!entry.removedAt)}
           onClose={closeDetails}
           onSave={(input) => {
             return socketClient.send("workItem.update", { id: focusItemId, ...input }).then(() => undefined);
@@ -295,6 +322,7 @@ export function BoardPage() {
       {approval ? (
         <div className="dialog-scrim z-[60]" role="presentation">
           <ApprovalSheet
+            context={`${project?.name ?? "项目"} / ${selectedSummary?.title ?? conversationItem?.title ?? "需求"}`}
             approval={approval}
             onRespond={(allow, remember) =>
               void socketClient.send(
@@ -309,6 +337,7 @@ export function BoardPage() {
       {interaction ? (
         <div className="dialog-scrim z-[60]" role="presentation">
           <InteractionSheet
+            context={`${project?.name ?? "项目"} / ${selectedSummary?.title ?? conversationItem?.title ?? "需求"}`}
             interaction={interaction}
             onRespond={(payload) =>
               void socketClient.send(

@@ -1,5 +1,6 @@
 @import "@fontsource/commit-mono";
 @import "tailwindcss";
+@import "./workflow.css";
 
 @theme {
   --color-canvas: oklch(0.96 0.005 264);
@@ -2627,3 +2628,5 @@ html.desktop[data-platform="darwin"] .traffic-inline {
 .composer-image-preview { pointer-events: none; }
 .thinking-group-body { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .sidebar-project svg { transition: none; } }
+
+/* Project iteration: implementation, acceptance and integration remain separate. */

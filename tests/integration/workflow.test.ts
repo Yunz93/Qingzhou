@@ -1,0 +1,559 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as gitModule from "../../apps/server/src/tasks/workflow-git.ts";
+import { clientCommandSchema, verificationIsValid, type WorkItem, type WorkflowCheck } from "@qingzhou/protocol";
+import { WorkItemStore } from "../../apps/server/src/tasks/work-item-store.ts";
+import { WorkflowService } from "../../apps/server/src/tasks/workflow-service.ts";
+import { workflowGit as git } from "../../apps/server/src/tasks/workflow-git.ts";
+
+const services: WorkflowService[] = [];
+afterEach(async () => { for (const service of services.splice(0)) { service.dispose(); await service.idle(); await service.flush(); } });
+const base = Array.from({ length: 24 }, (_, index) => `line ${index}`).join("\n") + "\n";
+const defaultChecks: WorkflowCheck[] = [{ id: "regression", name: "回归", command: `node -e "process.exit(0)"`, required: true, timeoutMs: 10000, resource: "" }];
+
+async function fixture(concurrency = 2, checks = defaultChecks) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-workflow-"));
+  const repository = path.join(root, "repo"); const dataDir = path.join(root, "data");
+  await mkdir(repository); await mkdir(dataDir);
+  await git(repository, ["init", "-b", "develop"]);
+  await writeFile(path.join(repository, "shared.txt"), base);
+  await git(repository, ["add", "."]); await git(repository, ["commit", "-m", "initial"]);
+  const baseline = await git(repository, ["rev-parse", "HEAD"]);
+  const items = new WorkItemStore(dataDir); await items.load();
+  const project = await items.createProject({ name: "project", cwd: repository });
+  const launched: Array<{ id: string; cwd: string; taskId: string; runId: string }> = [];
+  const createService = () => {
+    const service = new WorkflowService({ dataDir, items, emit: () => {}, launch: async (id, cwd, kind, instruction) => {
+      const item = items.get(id)!;
+      const taskId = item.taskId ?? randomUUID();
+      const run = await items.createRun({ objectiveId: id, taskId, kind, instruction });
+      await items.updateRun(run.id, { status: "running" });
+      launched.push({ id, cwd, taskId, runId: run.id });
+    } });
+    services.push(service); return service;
+  };
+  const service = createService(); await service.ready;
+  const command = async (type: string, payload: object, id = randomUUID()) => service.handle(clientCommandSchema.parse({ id, operationId: randomUUID(), type, payload }));
+  await command("workflow.configure", { projectId: project.id, targetBranch: "develop", concurrency, checks });
+  const create = async (title: string) => items.create({ title, description: `implement ${title}`, acceptanceCriteria: "结果可用", cwd: repository, projectId: project.id });
+  const start = async (item: WorkItem) => { await service.enqueue(item.id, "initial"); await service.idle(); return launched.findLast((entry) => entry.id === item.id)!; };
+  const finish = async (item: WorkItem) => {
+    const launch = launched.findLast((entry) => entry.id === item.id)!;
+    await items.updateRun(launch.runId, { status: "succeeded", resultSummary: "implemented" });
+    await service.settled(item.id, true); await service.idle();
+  };
+  const deliver = async (item: WorkItem) => {
+    const changes = await service.changes(item.id);
+    const { delivery } = await service.seal(item.id, changes.paths, "交付", randomUUID()); await service.idle();
+    return delivery;
+  };
+  const integrate = async (deliveryId: string) => {
+    await service.accept(deliveryId, "accepted");
+    const result = await service.integrate(deliveryId, randomUUID()); await service.idle();
+    return service.store.state.integrations.find((entry) => entry.id === result.attempt.id)!;
+  };
+  return { root, repository, dataDir, baseline, items, project, service, launched, createService, command, create, start, finish, deliver, integrate };
+}
+
+describe("project requirement workflow with real Git", () => {
+  it("isolates parallel requirements and supports B merging before A on a non-default branch", async () => {
+    const f = await fixture();
+    const a = await f.create("A"); const b = await f.create("B");
+    const [wa, wb] = await Promise.all([f.start(a), f.start(b)]);
+    expect(wa.cwd).not.toBe(wb.cwd);
+    await writeFile(path.join(wa.cwd, "shared.txt"), base.replace("line 2\n", "A 2\n"));
+    await writeFile(path.join(wb.cwd, "shared.txt"), base.replace("line 20\n", "B 20\n"));
+    await f.finish(a); const da = await f.deliver(a);
+    await f.finish(b); const db = await f.deliver(b);
+    expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(f.baseline);
+    const ib = await f.integrate(db.id); expect(ib.status).toBe("ready");
+    await f.service.merge(ib.id);
+    const ia = await f.integrate(da.id); expect(ia.baseline).toBe(ib.mergedCommit); expect(ia.status).toBe("ready");
+    await f.service.merge(ia.id);
+    const content = await readFile(path.join(f.repository, "shared.txt"), "utf8");
+    expect(content).toContain("A 2"); expect(content).toContain("B 20");
+    expect(await git(f.repository, ["status", "--porcelain"])).toBe("");
+    expect((await f.service.state(f.project.id)).mainVerification?.status).toBe("passed");
+    expect(f.service.store.state.events.filter((entry) => entry.type === "main.merged").map((entry) => entry.itemId)).toEqual([b.id, a.id]);
+    expect(new Set(ia.includedItemIds)).toEqual(new Set([a.id, b.id]));
+  });
+
+  it("keeps conflicts in an integration workspace and freezes event-time history", async () => {
+    const f = await fixture(); const a = await f.create("A"); const b = await f.create("B");
+    const wa = await f.start(a); const wb = await f.start(b);
+    await writeFile(path.join(wa.cwd, "shared.txt"), "A\n"); await writeFile(path.join(wb.cwd, "shared.txt"), "B\n");
+    await f.finish(a); const da = await f.deliver(a); await f.finish(b); const db = await f.deliver(b);
+    const ib = await f.integrate(db.id); await f.service.merge(ib.id);
+    const ia = await f.integrate(da.id); expect(ia.status).toBe("conflicts"); expect(ia.conflicts).toEqual(["shared.txt"]);
+    const event = f.service.store.state.events.find((entry) => entry.type === "integration.conflicts")!;
+    await expect(f.service.enqueue(a.id, "feedback")).rejects.toThrow(/正在集成/);
+    expect(await readFile(path.join(f.repository, "shared.txt"), "utf8")).toBe("B\n");
+    await writeFile(path.join(ia.workspace!, "shared.txt"), "A and B\n"); await git(ia.workspace!, ["add", "shared.txt"]);
+    await f.service.recheck(ia.id); await f.service.idle(); expect(ia.status).toBe("ready");
+    expect(await git(wa.cwd, ["rev-parse", "HEAD"])).toBe(da.commit);
+    await f.service.merge(ia.id);
+    expect(await readFile(path.join(f.repository, "shared.txt"), "utf8")).toBe("A and B\n");
+    expect(event.facts?.integration?.status).toBe("conflicts");
+    expect(event.facts?.integration?.mergedCommit).toBeNull();
+  });
+
+  it("rejects behavioral conflicts even without textual conflicts", async () => {
+    const check = `node -e "const f=require('fs');process.exit(f.existsSync('a.txt')&&f.existsSync('b.txt')?1:0)"`;
+    const f = await fixture(2, [{ ...defaultChecks[0]!, command: check }]);
+    const a = await f.create("A"); const b = await f.create("B");
+    const wa = await f.start(a); const wb = await f.start(b);
+    await writeFile(path.join(wa.cwd, "a.txt"), "A"); await writeFile(path.join(wb.cwd, "b.txt"), "B");
+    await f.finish(a); const da = await f.deliver(a); await f.finish(b); const db = await f.deliver(b);
+    const ib = await f.integrate(db.id); await f.service.merge(ib.id);
+    const ia = await f.integrate(da.id); expect(ia.conflicts).toEqual([]); expect(ia.status).toBe("failed");
+    expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(ib.mergedCommit);
+    await expect(f.service.merge(ia.id)).rejects.toThrow(/尚未/);
+  });
+
+  it("blocks a verified candidate after an external main update", async () => {
+    const f = await fixture(); const a = await f.create("A"); const wa = await f.start(a);
+    await writeFile(path.join(wa.cwd, "a.txt"), "A"); await f.finish(a); const da = await f.deliver(a);
+    const ia = await f.integrate(da.id);
+    await writeFile(path.join(f.repository, "external.txt"), "external"); await git(f.repository, ["add", "."]); await git(f.repository, ["commit", "-m", "external"]);
+    const external = await git(f.repository, ["rev-parse", "HEAD"]);
+    await expect(f.service.merge(ia.id)).rejects.toThrow(/主线已变化/);
+    expect(ia.status).toBe("stale"); expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(external);
+    const replacement = await f.service.integrate(da.id, randomUUID()); await f.service.idle();
+    expect(f.service.store.state.integrations.find((entry) => entry.id === replacement.attempt.id)?.baseline).toBe(external);
+  });
+
+  it("never copies, stages or clears changes in the original directory", async () => {
+    const f = await fixture(); await writeFile(path.join(f.repository, "shared.txt"), "private local work\n");
+    await writeFile(path.join(f.repository, ".env"), "TOKEN=private");
+    const a = await f.create("A"); const wa = await f.start(a);
+    expect(await readFile(path.join(wa.cwd, "shared.txt"), "utf8")).toBe(base);
+    await expect(readFile(path.join(wa.cwd, ".env"))).rejects.toThrow();
+    await writeFile(path.join(wa.cwd, "a.txt"), "A"); await f.finish(a); const da = await f.deliver(a);
+    const ia = await f.integrate(da.id); await expect(f.service.merge(ia.id)).rejects.toThrow(/未提交改动/);
+    expect(await readFile(path.join(f.repository, "shared.txt"), "utf8")).toBe("private local work\n");
+    expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(f.baseline);
+  });
+
+  it("uses stable priority, project slots and merged prerequisites", async () => {
+    const f = await fixture(1); const a = await f.create("A"); const b = await f.create("B"); const c = await f.create("C");
+    await f.service.dependencies(b.id, [a.id]);
+    await expect(f.service.dependencies(a.id, [b.id])).rejects.toThrow(/循环/);
+    await f.service.enqueue(b.id, "initial"); await f.service.enqueue(a.id, "initial"); await f.service.enqueue(c.id, "initial"); await f.service.idle();
+    expect(f.launched.map((entry) => entry.id)).toEqual([a.id]);
+    await f.finish(a); expect(f.launched.map((entry) => entry.id)).toEqual([a.id, c.id]);
+    expect(f.service.store.state.tickets.find((entry) => entry.itemId === b.id)?.status).toBe("queued");
+    // Stop C to release the slot before A verification, without losing C's files.
+    await f.items.updateRun(f.launched.at(-1)!.runId, { status: "aborted" }); await f.service.stop(c.id); await f.service.idle();
+    const da = await f.deliver(a); const ia = await f.integrate(da.id); await f.service.merge(ia.id); await f.service.idle();
+    expect(f.launched.at(-1)?.id).toBe(b.id);
+    expect(f.items.list().map((entry) => entry.id)).toEqual([a.id, b.id, c.id]);
+  });
+
+  it("does not count an agent success or absent checks as proof", async () => {
+    const f = await fixture(1, []); const a = await f.create("A"); await f.start(a); await f.finish(a);
+    expect(f.service.store.state.deliveries).toHaveLength(0);
+    const da = await f.deliver(a);
+    expect(f.service.store.state.verifications.find((entry) => entry.id === da.verificationId)?.status).toBe("unverified");
+    await expect(f.service.accept(da.id, "accepted")).rejects.toThrow(/必需检查/);
+  });
+
+  it("retains old acceptance but requires acceptance for a new delivery and scope", async () => {
+    const f = await fixture(); const a = await f.create("A"); await f.start(a); await f.finish(a);
+    const d1 = await f.deliver(a); await f.service.accept(d1.id, "accepted");
+    await f.start(a); await f.finish(a); const d2 = await f.deliver(a);
+    expect(f.service.store.state.acceptances[0]?.deliveryId).toBe(d1.id);
+    await expect(f.service.integrate(d2.id, randomUUID())).rejects.toThrow(/先验收/);
+    await f.service.accept(d2.id, "accepted");
+    await f.items.update(a.id, { acceptanceCriteria: "new standard" }); await f.service.syncScope(f.items.get(a.id)!);
+    await expect(f.service.integrate(d2.id, randomUUID())).rejects.toThrow(/范围已变化/);
+    expect(f.service.store.state.scopes.filter((entry) => entry.itemId === a.id)).toHaveLength(2);
+  });
+
+  it("invalidates evidence when checks modify tracked code", async () => {
+    const f = await fixture(1, [{ ...defaultChecks[0]!, command: `node -e "require('fs').writeFileSync('shared.txt','changed by check')"` }]);
+    const a = await f.create("A"); await f.start(a); await f.finish(a); const da = await f.deliver(a);
+    const result = f.service.store.state.verifications.find((entry) => entry.id === da.verificationId)!;
+    expect(result.status).toBe("failed"); expect(result.error).toContain("检查期间");
+    await expect(f.service.accept(da.id, "accepted")).rejects.toThrow();
+  });
+
+  it("records optional failures without concealing them and invalidates changed configuration", async () => {
+    const f = await fixture(1, [...defaultChecks, { ...defaultChecks[0]!, id: "optional", required: false, command: `node -e "process.exit(1)"` }]);
+    const a = await f.create("A"); await f.start(a); await f.finish(a); const da = await f.deliver(a);
+    const result = f.service.store.state.verifications.find((entry) => entry.id === da.verificationId)!;
+    expect(verificationIsValid(result, f.service.store.state.configs[0]!, da.tree)).toBe(true);
+    expect(result.checks[1]?.status).toBe("failed");
+    await f.command("workflow.configure", { projectId: f.project.id, targetBranch: "develop", concurrency: 1, checks: [{ ...defaultChecks[0]!, command: `node -e "console.log('new check')"` }] });
+    await expect(f.service.accept(da.id, "accepted")).rejects.toThrow(/必需检查/);
+  });
+
+  it("shares the integration channel across duplicate project entries", async () => {
+    const f = await fixture(); const p2 = await f.items.createProject({ name: "same repo", cwd: f.repository });
+    await f.command("workflow.configure", { projectId: p2.id, targetBranch: "develop", concurrency: 1, checks: defaultChecks });
+    const a = await f.create("A"); const b = await f.items.create({ title: "B", description: "implement B", acceptanceCriteria: "结果可用", cwd: f.repository, projectId: p2.id });
+    await f.start(a); await f.start(b); await f.finish(a); await f.finish(b);
+    const da = await f.deliver(a); const db = await f.deliver(b);
+    const ia = await f.integrate(da.id); const ib = await f.integrate(db.id);
+    expect(ia.status).toBe("ready"); expect(ib.status).toBe("queued"); expect(ia.repositoryKey).toBe(ib.repositoryKey);
+    await f.service.merge(ia.id); await f.service.idle(); expect(ib.status).toBe("ready"); expect(ib.baseline).toBe(ia.mergedCommit);
+  });
+
+  it("keeps one logical task when integration repair continues the conversation", async () => {
+    const f = await fixture(); const a = await f.create("A"); const wa = await f.start(a); await f.finish(a); const da = await f.deliver(a);
+    const ia = await f.integrate(da.id); await f.service.repair(ia.id, "keep behavior"); await f.service.idle();
+    const repair = f.launched.at(-1)!; expect(repair.taskId).toBe(wa.taskId); expect(repair.cwd).toBe(ia.workspace);
+    expect(f.service.store.state.tickets.at(-1)?.phase).toBe("integration");
+    await f.finish(a); expect(ia.status).toBe("ready");
+  });
+
+  it("reconciles a crash after CAS without replaying a merge", async () => {
+    const f = await fixture(); const a = await f.create("A"); const wa = await f.start(a);
+    await writeFile(path.join(wa.cwd, "new.txt"), "new"); await f.finish(a); const da = await f.deliver(a); const ia = await f.integrate(da.id);
+    ia.status = "merging"; await f.service.store.save();
+    await git(f.repository, ["update-ref", "refs/heads/develop", ia.candidate!, ia.baseline!]);
+    const restored = f.createService(); await restored.ready;
+    expect(restored.store.state.integrations[0]?.status).toBe("merged");
+    expect(await readFile(path.join(f.repository, "new.txt"), "utf8")).toBe("new");
+    const head = await git(f.repository, ["rev-parse", "HEAD"]); await restored.merge(ia.id);
+    expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(head);
+  });
+
+  it("deduplicates requests, preserves archive history, and protects unmerged workspaces", async () => {
+    const f = await fixture(); const a = await f.create("A"); const wa = await f.start(a); await f.finish(a);
+    await writeFile(path.join(wa.cwd, "a.txt"), "A");
+    const requestId = randomUUID(); const changes = await f.service.changes(a.id);
+    const d1 = await f.service.seal(a.id, changes.paths, "A", requestId); await f.service.idle();
+    const d2 = await f.service.seal(a.id, changes.paths, "A", requestId); expect(d1.delivery.id).toBe(d2.delivery.id);
+    await expect(f.service.cleanup(a.id)).rejects.toThrow(/未合入/);
+    await f.items.setState(a.id, "archived"); expect(f.service.store.state.deliveries).toHaveLength(1);
+    await f.items.setState(a.id, "open"); const ia = await f.integrate(d1.delivery.id); await f.service.merge(ia.id);
+    await f.service.cleanup(a.id); expect(f.service.store.state.workspaces[0]?.removedAt).toBeTruthy();
+    expect(f.service.store.state.deliveries[0]?.patch).toContain("+A");
+  });
+
+  it("recovers interrupted runs without automatically executing them", async () => {
+    const f = await fixture(); const a = await f.create("A"); await f.start(a);
+    const launched = f.launched.length; const restored = f.createService(); await restored.ready;
+    expect(restored.store.state.tickets[0]?.status).toBe("interrupted"); expect(f.launched).toHaveLength(launched);
+    expect(restored.store.state.scopes[0]?.itemId).toBe(a.id);
+  });
+
+  it("queues verification behind active implementation slots", async () => {
+    const f = await fixture(1); const a = await f.create("A"); await f.start(a);
+    const { verification } = await f.service.verifyMain(f.project.id);
+    expect(f.service.store.state.verifications.find((entry) => entry.id === verification.id)?.status).toBe("queued");
+    await f.finish(a);
+    expect(f.service.store.state.verifications.find((entry) => entry.id === verification.id)?.status).toBe("passed");
+  });
+
+  it("exposes a failed latest main regression without erasing merged requirements", async () => {
+    const f = await fixture(); const a = await f.create("A"); await f.start(a); await f.finish(a);
+    const da = await f.deliver(a); const ia = await f.integrate(da.id); await f.service.merge(ia.id);
+    await f.command("workflow.configure", { projectId: f.project.id, targetBranch: "develop", concurrency: 2, checks: [{ ...defaultChecks[0]!, command: `node -e "process.exit(1)"` }] });
+    await f.service.verifyMain(f.project.id); await f.service.idle();
+    expect((await f.service.state(f.project.id)).mainVerification?.status).toBe("failed");
+    expect(ia.status).toBe("merged"); expect(f.service.store.state.acceptances[0]?.decision).toBe("accepted");
+  });
+
+  it("creates a reversible new requirement without resetting subsequent main history", async () => {
+    const f = await fixture(); const a = await f.create("A"); const wa = await f.start(a);
+    await writeFile(path.join(wa.cwd, "a.txt"), "A"); await f.finish(a); const da = await f.deliver(a); const ia = await f.integrate(da.id); await f.service.merge(ia.id);
+    await writeFile(path.join(f.repository, "later.txt"), "later"); await git(f.repository, ["add", "."]); await git(f.repository, ["commit", "-m", "later main"]);
+    const head = await git(f.repository, ["rev-parse", "HEAD"]);
+    const { item } = await f.service.revert(ia.id, "revert-request");
+    expect((await f.service.revert(ia.id, "revert-request")).item.id).toBe(item.id);
+    const wr = f.service.store.state.workspaces.find((entry) => entry.itemId === item.id)!;
+    await expect(readFile(path.join(wr.path, "a.txt"))).rejects.toThrow();
+    expect(await readFile(path.join(wr.path, "later.txt"), "utf8")).toBe("later");
+    expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(head);
+    await f.start(item); await f.finish(item); const dr = await f.deliver(item); const ir = await f.integrate(dr.id); await f.service.merge(ir.id);
+    expect(await readFile(path.join(f.repository, "later.txt"), "utf8")).toBe("later");
+    await expect(readFile(path.join(f.repository, "a.txt"))).rejects.toThrow();
+    await git(f.repository, ["merge-base", "--is-ancestor", head, "HEAD"]);
+  });
+
+  it("saves conversation snapshots for read-only replay after workspace cleanup", async () => {
+    const f = await fixture(); const a = await f.create("A"); const wa = await f.start(a); await f.finish(a);
+    await f.service.captureTranscript(a.id, wa.runId, [{ id: "message", role: "assistant", text: "token=private-value", createdAt: new Date().toISOString() }], []);
+    const launched = f.launched.length;
+    const replay = await f.command("workflow.transcript", { runId: wa.runId }) as { messages: Array<{ text: string }> };
+    expect(replay.messages[0]?.text).toBe("token=[已隐藏]"); expect(f.launched).toHaveLength(launched);
+    const da = await f.deliver(a); const ia = await f.integrate(da.id); await f.service.merge(ia.id); await f.service.cleanup(a.id);
+    expect(await f.command("workflow.transcript", { runId: wa.runId })).toEqual(replay);
+  });
+
+  it("uses Git CAS when an external writer moves main after preflight", async () => {
+    const f = await fixture(); const a = await f.create("A"); await f.start(a); await f.finish(a); const da = await f.deliver(a); const ia = await f.integrate(da.id);
+    const originalGit = gitModule.workflowGit;
+    let external = "";
+    const spy = vi.spyOn(gitModule, "workflowGit").mockImplementation(async (cwd, args, input) => {
+      if (!external && args[0] === "update-ref" && args.includes("--stdin")) {
+        await writeFile(path.join(f.repository, "external.txt"), "external"); await originalGit(f.repository, ["add", "."]); await originalGit(f.repository, ["commit", "-m", "external during merge"]);
+        external = await originalGit(f.repository, ["rev-parse", "HEAD"]);
+      }
+      return originalGit(cwd, args, input);
+    });
+    try { await expect(f.service.merge(ia.id)).rejects.toThrow(); }
+    finally { spy.mockRestore(); }
+    expect(external).not.toBe(""); expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(external); expect(ia.status).toBe("stale");
+  });
+
+  it("serializes checks sharing an exclusive environment resource", async () => {
+    const f = await fixture(2); const lockPath = path.join(f.root, "exclusive.lock");
+    const script = `const f=require('fs');const p=${JSON.stringify(lockPath)};const fd=f.openSync(p,'wx');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,120);f.closeSync(fd);f.unlinkSync(p)`;
+    const command = `node -e "eval(Buffer.from('${Buffer.from(script).toString("base64")}','base64').toString())"`;
+    await f.command("workflow.configure", { projectId: f.project.id, targetBranch: "develop", concurrency: 2, checks: [{ ...defaultChecks[0]!, command, resource: "shared-database" }] });
+    const a = await f.create("A"); const b = await f.create("B"); await f.start(a); await f.start(b); await f.finish(a); await f.finish(b);
+    const [da, db] = await Promise.all([f.deliver(a), f.deliver(b)]);
+    expect(f.service.store.state.verifications.filter((entry) => [da.verificationId, db.verificationId].includes(entry.id)).map((entry) => entry.status)).toEqual(["passed", "passed"]);
+  });
+
+  it("terminates timed-out checks and never records them as passed", async () => {
+    const f = await fixture(1, [{ ...defaultChecks[0]!, command: `node -e "setTimeout(()=>{},60000)"`, timeoutMs: 100 }]);
+    const a = await f.create("A"); await f.start(a); await f.finish(a); const da = await f.deliver(a);
+    const result = f.service.store.state.verifications.find((entry) => entry.id === da.verificationId)!;
+    expect(result.status).toBe("failed"); expect(result.checks[0]?.exitCode).toBeNull(); expect(result.checks[0]?.output).toContain("超时");
+  });
+
+  it("backs up legacy records and does not promote historical success to verification or merge", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-workflow-migration-"));
+    const items = new WorkItemStore(root); await items.load();
+    const item = await items.create({ title: "legacy", cwd: root });
+    const run = await items.createRun({ objectiveId: item.id, taskId: randomUUID(), kind: "initial", instruction: "old instruction" });
+    await items.updateRun(run.id, { status: "succeeded", resultSummary: "done" }); await items.setState(item.id, "completed");
+    const service = new WorkflowService({ dataDir: root, items, emit: () => {}, launch: async () => { throw new Error("migration must not launch"); } }); services.push(service); await service.ready;
+    expect(JSON.parse(await readFile(path.join(root, "work-items.pre-workflow.backup.json"), "utf8")).items[0].id).toBe(item.id);
+    expect(service.store.state.scopes[0]?.itemId).toBe(item.id); expect(items.getDetails(item.id)?.runs[0]?.status).toBe("succeeded");
+    expect(service.store.state.events.some((entry) => entry.type === "requirement.imported" && entry.itemId === item.id)).toBe(true);
+    expect(service.store.state.verifications).toEqual([]); expect(service.store.state.integrations).toEqual([]); expect(service.store.state.acceptances).toEqual([]);
+  });
+
+  it("does not start dependents when an external Git rewrite removed the prerequisite", async () => {
+    const f = await fixture(1); const a = await f.create("A"); const b = await f.create("B");
+    await f.service.dependencies(b.id, [a.id]); await f.start(a); await f.finish(a); const da = await f.deliver(a); const ia = await f.integrate(da.id); await f.service.merge(ia.id);
+    await git(f.repository, ["switch", "--detach", f.baseline]); await git(f.repository, ["branch", "-f", "develop", f.baseline]); await git(f.repository, ["switch", "develop"]);
+    await f.service.enqueue(b.id, "initial"); await f.service.idle();
+    const ticket = f.service.store.state.tickets.find((entry) => entry.itemId === b.id)!;
+    expect(ticket.status).toBe("queued"); expect(ticket.error).toContain("不包含前置需求"); expect(f.launched.some((entry) => entry.id === b.id)).toBe(false);
+  });
+
+  it("does not restore stale scope contents when concurrent saves finish", async () => {
+    const f = await fixture(); const a = await f.create("A");
+    const stale = await f.items.update(a.id, { description: "earlier save" });
+    await f.items.update(a.id, { description: "latest save" });
+    await f.service.syncScope(stale);
+    expect(f.service.store.state.scopes.filter((entry) => entry.itemId === a.id).at(-1)?.description).toBe("latest save");
+  });
+
+  it("pins feedback instructions to the current scope when a brief changes before queuing", async () => {
+    const f = await fixture(); const a = await f.create("A");
+    let entered!: () => void; let release!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const original = f.items.addFeedback.bind(f.items);
+    const spy = vi.spyOn(f.items, "addFeedback").mockImplementation(async (id, text) => {
+      const feedback = await original(id, text); entered(); await gate; return feedback;
+    });
+    const queued = f.service.feedback(a.id, "additional requirement", randomUUID());
+    await enteredPromise;
+    await f.items.update(a.id, { description: "latest brief" }); await f.service.syncScope(f.items.get(a.id)!);
+    release(); await queued; spy.mockRestore(); await f.service.idle();
+    const ticket = f.service.store.state.tickets.at(-1)!;
+    expect(ticket.instruction).toContain("latest brief"); expect(ticket.instruction).toContain("additional requirement");
+    expect(f.service.store.state.scopes.find((entry) => entry.id === ticket.scopeId)?.description).toBe("latest brief");
+  });
+});
+
+it("binds acceptance evidence and artifact previews to the sealed delivery, including after live edits", async () => {
+  const f = await fixture(); const a = await f.create("产物审阅"); const workspace = await f.start(a);
+  await writeFile(path.join(workspace.cwd, "report.txt"), "sealed evidence\n"); await f.finish(a);
+  const changes = await f.service.changes(a.id);
+  const { delivery } = await f.service.seal(a.id, changes.paths, "报告可用", randomUUID(), { behaviors: "提供审阅报告", unresolved: "人工核对文案", artifactPaths: ["report.txt"] });
+  await f.service.idle();
+  const evidence = [{ criterion: "结果可用", note: "人工已核对报告内容", checkIds: ["regression"], artifactPaths: ["report.txt"] }];
+  await expect(f.service.accept(delivery.id, "accepted", "逐条验收", [{ ...evidence[0]!, checkIds: ["foreign-check"] }])).rejects.toThrow("本交付之外");
+  await f.service.accept(delivery.id, "accepted", "逐条验收", evidence);
+  expect(f.service.store.state.acceptances.at(-1)?.evidence).toEqual(evidence);
+  expect(await f.command("workflow.artifact", { deliveryId: delivery.id, path: "report.txt" })).toEqual({ mimeType: "text/plain", text: "sealed evidence\n" });
+  await writeFile(path.join(workspace.cwd, "report.txt"), "live change");
+  expect(await f.command("workflow.artifact", { deliveryId: delivery.id, path: "report.txt" })).toMatchObject({ text: "sealed evidence\n" });
+  await expect(f.command("workflow.artifact", { deliveryId: delivery.id, path: "../report.txt" })).rejects.toThrow("未登记");
+  await expect(f.service.feedback(a.id, "按旧版本返工", randomUUID(), [], randomUUID())).rejects.toThrow("交付已变化");
+  expect(f.items.listFeedback(a.id)).toHaveLength(0);
+});
+
+it("compares recorded main versions and retains the link from a withdrawal to its original integration", async () => {
+  const f = await fixture(); const a = await f.create("版本 A"); const workspace = await f.start(a);
+  await writeFile(path.join(workspace.cwd, "a.txt"), "version A"); await f.finish(a); const delivery = await f.deliver(a);
+  const attempt = await f.integrate(delivery.id); await f.service.merge(attempt.id);
+  const comparison = await f.command("workflow.compare", { projectId: f.project.id, from: f.baseline, to: attempt.mergedCommit }) as { files: string[]; patch: string };
+  expect(comparison.files).toContain("a.txt"); expect(comparison.patch).toContain("+version A");
+  await expect(f.command("workflow.compare", { projectId: f.project.id, from: "--help", to: attempt.mergedCommit })).rejects.toThrow("只能比较");
+  const { item } = await f.service.revert(attempt.id, randomUUID());
+  expect(item.source?.integrationId).toBe(attempt.id);
+});
+
+it("explains waits on archived dependencies and lets users stop, remove the dependency and resume", async () => {
+  const f = await fixture(1); const a = await f.create("等待者"); const b = await f.create("已归档的前置");
+  await f.service.dependencies(a.id, [b.id]); await f.items.setState(b.id, "archived");
+  await f.service.enqueue(a.id, "initial"); await f.service.idle();
+  const state = await f.service.state(f.project.id);
+  expect(state.queue).toMatchObject({ used: 0, limit: 1 });
+  expect(state.queue?.reasons[a.id]).toContain("已归档的前置"); expect(state.dependencies[a.id]).toEqual([b.id]);
+  await f.service.stop(a.id, true); await f.service.dependencies(a.id, []); await f.service.enqueue(a.id, "initial"); await f.service.idle();
+  expect(f.launched.some((entry) => entry.id === a.id)).toBe(true);
+});
+
+
+it("requires an explicit goal and acceptance criteria before any implementation entry, while allowing preparation discussion", async () => {
+  const f = await fixture();
+  const draft = await f.items.create({ projectId: f.project.id, cwd: f.repository, title: "尚待讨论" });
+  await expect(f.service.enqueue(draft.id, "initial")).rejects.toThrow("完善目标说明与验收标准");
+  const complete = await f.items.create({ projectId: f.project.id, cwd: f.repository, title: "可实施需求", description: "完成目标", acceptanceCriteria: "结果正确", source: { excerpt: "用户已确认保留现有逻辑" } });
+  await expect(f.command("workflow.enqueue", { ids: [complete.id, draft.id] })).rejects.toThrow("完善目标说明与验收标准");
+  expect(f.service.store.state.tickets).toHaveLength(0);
+  await f.service.enqueue(draft.id, "discussion", "先讨论验收标准"); await f.service.idle();
+  expect(f.service.store.state.tickets[0]?.phase).toBe("discussion");
+  await f.service.enqueue(complete.id, "initial"); await f.service.idle();
+  expect(f.service.store.state.tickets.find((ticket) => ticket.itemId === complete.id)?.instruction).toContain("用户已确认保留现有逻辑");
+});
+
+it("binds implementation and delivery to the confirmed PRD, then freezes it and publishes module design on final acceptance", async () => {
+  const f = await fixture(); const item = await f.create("PRD 生命周期");
+  const { module, revision } = f.service.design.createModule(f.project.id, "会话模块", "当前会话设计");
+  await f.command("workflow.plan.begin", { id: item.id });
+  await expect(f.start(item)).rejects.toThrow("确认当前需求范围");
+  const scope = f.service.store.scope(item);
+  await expect(f.command("workflow.scope.confirm", { id: item.id, scopeId: randomUUID() })).rejects.toThrow("范围已变化");
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  await expect(f.start(item)).rejects.toThrow("确认当前 PRD");
+  const save = async (content: string, expectedPrdId: string | null, reason: string) => f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId, content, reason,
+    moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "新的会话完整设计" }] }).prd;
+  const first = await save("第一版方案", null, "初始设计");
+  await expect(f.start(item)).rejects.toThrow("确认当前 PRD");
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: first.id });
+  const launch = await f.start(item);
+  expect(f.service.store.state.tickets.at(-1)?.instruction).toContain("第一版方案");
+  expect(f.service.store.state.tickets.at(-1)?.instruction).toContain("新的会话完整设计");
+  expect(f.service.store.state.tickets.at(-1)?.prdId).toBe(first.id);
+  await writeFile(path.join(launch.cwd, "prd-result.txt"), "implementation"); await f.finish(item);
+  const oldDelivery = await f.deliver(item); expect(oldDelivery.prdId).toBe(first.id);
+  const next = await save("调整后的方案", first.id, "实施后调整交互");
+  await expect(f.service.accept(oldDelivery.id, "accepted")).rejects.toThrow("PRD 已变化");
+  await expect(f.service.seal(item.id, [], "不能封存未确认设计", randomUUID())).rejects.toThrow("确认当前 PRD");
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: next.id });
+  await expect(f.service.seal(item.id, [], "不能沿用上一轮实现", randomUUID())).rejects.toThrow("PRD 已调整");
+  await f.start(item); await f.finish(item); const delivery = await f.deliver(item);
+  await f.service.accept(delivery.id, "accepted");
+  expect(f.service.design.prd(item.id)).toMatchObject({ id: next.id, deliveryId: delivery.id, content: "调整后的方案", frozenAt: expect.any(String) });
+  expect(first).toMatchObject({ content: "第一版方案", frozenAt: null });
+  expect(f.service.store.state.moduleRevisions?.at(-1)).toMatchObject({ moduleId: module.id, version: 2, previousId: revision.id, sourcePrdId: next.id, deliveryId: delivery.id, content: "新的会话完整设计" });
+  await f.service.accept(delivery.id, "accepted"); // Idempotent retry does not create a module version.
+  expect(f.service.store.state.moduleRevisions).toHaveLength(2);
+  await expect(f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: next.id, content: "篡改", reason: "不应允许", moduleChanges: [] })).rejects.toThrow("已固化");
+  await expect(f.service.feedback(item.id, "继续改设计")).rejects.toThrow("已固化");
+  expect(() => f.service.assertDesignEditable(item.id)).toThrow("已固化");
+  await f.service.flush(); const restored = f.createService(); await restored.ready;
+  expect(restored.design.prd(item.id)?.frozenAt).toBe(next.frozenAt);
+  expect(restored.store.state.moduleRevisions?.at(-1)?.sourcePrdId).toBe(next.id);
+  const attempt = await f.service.integrate(delivery.id, randomUUID()); await f.service.idle();
+  expect(f.service.store.state.integrations.find((entry) => entry.id === attempt.attempt.id)?.status).toBe("ready");
+});
+
+it("rejects a concurrent module overwrite atomically and requires the rebased PRD to be implemented and delivered again", async () => {
+  const f = await fixture(); const a = await f.create("设计 A"); const b = await f.create("设计 B");
+  const shared = f.service.design.createModule(f.project.id, "共享模块", "基线");
+  const other = f.service.design.createModule(f.project.id, "其他模块", "其他基线");
+  const plan = async (item: WorkItem, changes: Array<{ moduleId: string; baseRevisionId: string | null; content: string }>) => {
+    await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+    await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+    const prd = f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId: f.service.design.prd(item.id)?.id ?? null, content: `设计 ${item.title}`, reason: "设计确认", moduleChanges: changes }).prd;
+    await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id }); return prd;
+  };
+  const pa = await plan(a, [{ moduleId: other.module.id, baseRevisionId: other.revision.id, content: "其他 A" }, { moduleId: shared.module.id, baseRevisionId: shared.revision.id, content: "共享 A" }]);
+  await plan(b, [{ moduleId: shared.module.id, baseRevisionId: shared.revision.id, content: "共享 B" }]);
+  const wa = await f.start(a); const wb = await f.start(b);
+  await writeFile(path.join(wa.cwd, "a.txt"), "A"); await writeFile(path.join(wb.cwd, "b.txt"), "B");
+  await f.finish(a); await f.finish(b); const da = await f.deliver(a); const db = await f.deliver(b);
+  await f.service.accept(db.id, "accepted");
+  await expect(f.service.accept(da.id, "accepted")).rejects.toThrow("已有新设计");
+  expect(f.service.store.state.acceptances.filter((entry) => entry.deliveryId === da.id)).toHaveLength(0);
+  expect(f.service.design.prd(a.id)?.frozenAt).toBeNull();
+  expect(f.service.store.state.moduleRevisions?.filter((entry) => entry.moduleId === other.module.id)).toHaveLength(1);
+  const current = f.service.store.state.moduleRevisions!.at(-1)!;
+  const revised = await plan(a, [{ moduleId: other.module.id, baseRevisionId: other.revision.id, content: "其他 A" }, { moduleId: shared.module.id, baseRevisionId: current.id, content: "共享 A+B 合并设计" }]);
+  expect(pa.frozenAt).toBeNull(); expect(revised.previousId).toBe(pa.id);
+  await expect(f.service.accept(da.id, "accepted")).rejects.toThrow("PRD 已变化");
+  await f.start(a); await f.finish(a); const nextDelivery = await f.deliver(a);
+  await f.service.accept(nextDelivery.id, "accepted");
+  expect(f.service.store.state.moduleRevisions?.filter((entry) => entry.moduleId === shared.module.id).at(-1)).toMatchObject({ version: 3, content: "共享 A+B 合并设计", previousId: current.id, sourcePrdId: revised.id });
+});
+
+it("uses optimistic PRD revision checks, isolates projects, and invalidates confirmation when scope changes", async () => {
+  const f = await fixture(); const item = await f.create("版本确认"); await f.service.beginPlanning(item.id);
+  let scope = f.service.store.scope(item); await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const payload = { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "方案", reason: "初稿", moduleChanges: [] };
+  await f.command("workflow.prd.save", payload); const first = f.service.design.prd(item.id)!;
+  await expect(f.command("workflow.prd.save", payload)).rejects.toThrow("已有新版本");
+  await expect(f.command("workflow.prd.confirm", { id: item.id, prdId: randomUUID() })).rejects.toThrow("版本已变化");
+  const foreign = await f.items.createProject({ name: "其他项目", cwd: f.repository });
+  const module = f.service.design.createModule(foreign.id, "不应泄露", "私有设计");
+  await expect(f.command("workflow.prd.save", { ...payload, expectedPrdId: first.id, moduleChanges: [{ moduleId: module.module.id, baseRevisionId: module.revision.id, content: "越界关联" }] })).rejects.toThrow("不属于当前项目");
+  const state = await f.service.state(f.project.id);
+  expect(state.modules?.some((entry) => entry.id === module.module.id)).toBe(false);
+  expect(state.moduleRevisions?.some((entry) => entry.id === module.revision.id)).toBe(false);
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: first.id });
+  const updated = await f.items.update(item.id, { description: "新边界" }); await f.service.syncScope(updated); scope = f.service.store.scope(updated);
+  await expect(f.start(updated)).rejects.toThrow("确认当前需求范围");
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  await expect(f.start(updated)).rejects.toThrow("确认当前 PRD");
+  await expect(f.command("workflow.prd.confirm", { id: item.id, prdId: first.id })).rejects.toThrow("更新 PRD");
+  expect(first.content).toBe("方案");
+});
+
+it("reads Agent design-file edits back into a new unconfirmed PRD and seals the exact reconfirmed design with code", async () => {
+  const f = await fixture(); const item = await f.create("设计文件同步"); await f.service.beginPlanning(item.id);
+  const scope = f.service.store.scope(item); await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const original = f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId: null, content: "初始设计", reason: "初稿", moduleChanges: [] }).prd;
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: original.id });
+  const launch = await f.start(item);
+  const relative = `docs/qingzhou/requirements/${item.id}.json`; const file = path.join(launch.cwd, relative);
+  const document = JSON.parse(await readFile(file, "utf8"));
+  expect(document).toMatchObject({ prdId: original.id, content: "初始设计" });
+  await writeFile(file, JSON.stringify({ ...document, content: "Agent 调整后的交互设计" }));
+  await writeFile(path.join(launch.cwd, "result.txt"), "实现同步调整");
+  await f.finish(item);
+  const updated = f.service.design.prd(item.id)!;
+  expect(updated).toMatchObject({ version: 2, previousId: original.id, content: "Agent 调整后的交互设计", confirmedAt: null, reason: "从实施工作区同步设计调整" });
+  expect(original.content).toBe("初始设计");
+  await expect(f.deliver(item)).rejects.toThrow("确认当前 PRD");
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: updated.id });
+  await expect(f.deliver(item)).rejects.toThrow("PRD 已调整");
+  await f.start(item); await f.finish(item);
+  expect(JSON.parse(await readFile(file, "utf8")).prdId).toBe(updated.id);
+  await writeFile(file, "{invalid json");
+  await expect(f.deliver(item)).rejects.toThrow("不是有效 JSON");
+  await writeFile(file, JSON.stringify({ ...document, prdId: updated.id, content: updated.content }));
+  const delivery = await f.deliver(item);
+  expect(delivery.files).toContain(relative);
+  expect(JSON.parse(await git(launch.cwd, ["show", `${delivery.commit}:${relative}`]))).toMatchObject({ prdId: updated.id, content: updated.content });
+  await f.service.accept(delivery.id, "accepted"); expect(updated.frozenAt).toBeTruthy();
+});
+
+it("rechecks module design when a queued implementation actually starts", async () => {
+  const f = await fixture(); const item = await f.create("排队设计");
+  const { module, revision } = f.service.design.createModule(f.project.id, "并行模块", "初始设计");
+  await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const prd = f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId: null, content: "旧基线方案", reason: "初稿", moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "模块调整" }] }).prd;
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  await f.command("workflow.pause", { projectId: f.project.id, paused: true }); await f.service.enqueue(item.id, "initial"); await f.service.idle();
+  expect(f.service.store.state.tickets.at(-1)?.status).toBe("queued");
+  f.service.store.state.moduleRevisions!.push({ ...revision, id: randomUUID(), version: 2, previousId: revision.id, content: "其他需求已经发布的新设计" });
+  await f.command("workflow.pause", { projectId: f.project.id, paused: false }); await f.service.idle();
+  expect(f.launched).toHaveLength(0);
+  expect(f.service.store.state.tickets.at(-1)).toMatchObject({ status: "failed", error: expect.stringContaining("已有新设计") });
+});

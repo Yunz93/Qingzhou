@@ -58,7 +58,7 @@ describe("agent-native work mode", () => {
     expect(drawer).toMatch(/ensureWorkConversationTranscript/);
     expect(drawer).toMatch(/work-panel-head app-drag/);
     expect(drawer).toMatch(/app-no-drag flex shrink-0/);
-    expect(drawer).toMatch(/messagesByTask\[taskId\] \?\? \[\]/);
+    expect(drawer).toMatch(/messagesByTask\[taskId\] \?\? EMPTY_MESSAGES/);
     expect(drawer).not.toMatch(/messagesByTask\[taskId\] \?\? state\.messages/);
     expect(styles).toMatch(/html\.desktop\[data-platform="darwin"\] \.work-panel-head/);
     expect(dashboard).not.toMatch(/<select/);
@@ -69,12 +69,12 @@ describe("agent-native work mode", () => {
     const sidebar = readFileSync(path.resolve("apps/web/src/components/tasks/TaskSidebar.tsx"), "utf8");
     const board = readFileSync(path.resolve("apps/web/src/pages/BoardPage.tsx"), "utf8");
 
-    expect(layout).toMatch(/tasks=\{tasks\}/);
+    expect(layout).toContain("tasks.filter((entry) => !hiddenConversations.includes(entry.id))");
     expect(layout).toMatch(/workTaskIds=\{workTaskIds\}/);
-    expect(layout).not.toMatch(/!workTaskIds\.has/);
+    expect(layout).not.toMatch(/tasks\.filter\([^)]*!workTaskIds\.has/);
     expect(layout).not.toMatch(/conversationTasks/);
     expect(sidebar).toMatch(/workTaskIds\.has\(task\.id\)/);
-    expect(sidebar).toMatch(/>任务</);
+    expect(sidebar).toMatch(/>需求对话</);
     expect(sidebar).toMatch(/打开工作台/);
     expect(sidebar).toMatch(/source-item group flex items-center/);
     expect(sidebar).toMatch(/MoreHorizontal[\s\S]*className="block"/);
@@ -101,7 +101,7 @@ describe("agent-native work mode", () => {
     const drawer = readFileSync(path.resolve("apps/web/src/components/board/WorkConversationDrawer.tsx"), "utf8");
 
     expect(board).toMatch(/await socketClient\.send\("workProject\.create"/);
-    expect(board).toMatch(/await socketClient\.send\("workItem\.create"/);
+    expect(board).toMatch(/await socketClient\.send(?:<[^;\n]+>)?\("workItem\.create"/);
     expect(board).not.toMatch(/setCreating\(false\);\s*void socketClient/);
     expect(itemDialog).toMatch(/setBusy\(start \? "start" : "plan"\)/);
     expect(itemDialog).toMatch(/正在保存/);

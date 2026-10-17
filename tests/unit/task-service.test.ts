@@ -454,7 +454,7 @@ describe("task / work-item archive linkage", () => {
     };
   }
 
-  it("archives the linked work item when the work session is archived", async () => {
+  it("rejects conversation archive without changing the linked requirement lifecycle", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-archive-link-task-"));
     const store = new TaskStore(root);
     await store.load();
@@ -475,10 +475,10 @@ describe("task / work-item archive linkage", () => {
     vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
     vi.spyOn(service.supervisor, "has").mockReturnValue(false);
 
-    await service.handleCommand({ id: "arch", type: "task.archive", taskId, payload: {} });
-    expect(store.get(taskId)?.archivedAt).toBeTruthy();
-    expect(workItems.get(item.id)?.state).toBe("archived");
-    expect(workItems.get(item.id)?.archivedAt).toBeTruthy();
+    await expect(service.handleCommand({ id: "arch", type: "task.archive", taskId, payload: {} })).rejects.toThrow("整理列表请使用隐藏");
+    expect(store.get(taskId)?.archivedAt).toBeNull();
+    expect(workItems.get(item.id)?.state).toBe("open");
+    expect(workItems.get(item.id)?.archivedAt).toBeNull();
     service.dispose();
   });
 
@@ -531,7 +531,7 @@ describe("task / work-item archive linkage", () => {
     vi.spyOn(service.supervisor, "stop").mockResolvedValue(undefined);
     vi.spyOn(service.supervisor, "has").mockReturnValue(false);
 
-    await service.handleCommand({ id: "arch", type: "task.archive", taskId, payload: {} });
+    await service.handleCommand({ id: "arch", type: "workItem.archive", payload: { id: item.id } });
     expect(workItems.get(item.id)?.state).toBe("archived");
 
     await service.handleCommand({ id: "restore", type: "task.restore", taskId, payload: {} });

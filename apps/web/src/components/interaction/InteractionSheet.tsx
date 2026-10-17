@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import type { InteractionRequest } from "@qingzhou/protocol";
 
 type Props = {
+  context?: string;
   interaction: InteractionRequest;
   onRespond: (payload: { cancelled?: boolean; value?: string }) => void;
 };
 
-export function InteractionSheet({ interaction, onRespond }: Props) {
+export function InteractionSheet({ interaction, onRespond, context }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   useDialogLayer(panelRef, () => onRespond({ cancelled: true }));
   const [value, setValue] = useState("");
@@ -33,6 +34,7 @@ export function InteractionSheet({ interaction, onRespond }: Props) {
     >
       <div className="dialog-head">
         <div className="dialog-head-text">
+          {context ? <p className="dialog-copy font-medium mb-2">{context}</p> : null}
           <h2 id="interaction-title" className="dialog-title">
             {title}
           </h2>

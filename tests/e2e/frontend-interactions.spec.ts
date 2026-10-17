@@ -357,3 +357,31 @@ test("a rejected objective save keeps the draft available for retry", async ({ p
   await page.reload();
   await expect(page.getByLabel("目标说明")).toHaveValue("newer unsaved revision");
 });
+
+
+test("a pending send keeps typing available and disables duplicate submission until acknowledged", async ({ page }) => {
+  let release: (() => void) | undefined;
+  let held = false;
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    server.onMessage((message) => route.send(message));
+    route.onMessage((message) => {
+      const command = JSON.parse(String(message));
+      if (!held && command.type === "prompt.send") {
+        held = true;
+        release = () => server.send(message);
+      } else server.send(message);
+    });
+  });
+  await createConversation(page, "Pending send feedback");
+  await page.getByLabel("输入消息").fill("request held for acknowledgment");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect.poll(() => Boolean(release)).toBe(true);
+  await page.getByLabel("输入消息").fill("keep typing while send pending");
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toHaveAttribute("aria-busy", "true");
+  release!();
+  await expect(page.getByText("Echo: request held for acknowledgment", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("输入消息")).toHaveValue("keep typing while send pending");
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeEnabled();
+});

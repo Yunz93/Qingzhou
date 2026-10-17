@@ -22,14 +22,16 @@ import { NewTaskDialog } from "../components/tasks/NewTaskDialog";
 import { GoWorkDialog } from "../components/board/GoWorkDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import type { ApprovalPolicy, InteractionMode, PiPackageCatalogResult, ThinkingLevel } from "@qingzhou/protocol";
-import { stripModePrefix, workItemIsClosed } from "@qingzhou/protocol";
+import { stripModePrefix, workItemIsClosed, workRunIsActive } from "@qingzhou/protocol";
 import { headerSubtitle, STARTER_PROMPTS } from "../copy";
 import { abnormalStopNotice } from "../lib/run-status";
 import { tasksInSidebarOrder } from "../lib/task-list";
 import { OPEN_CONVERSATION_SEARCH_EVENT } from "../lib/conversation-search";
 import { showOsNotification } from "../lib/notify";
 import { isEditableTarget } from "../lib/hotkeys";
-import { readComposerDraft, writeComposerDraft } from "../lib/composer-drafts";
+import { useConversationDraft } from "../lib/conversation-draft";
+import { ChatToRequirementDialog } from "../components/board/ChatToRequirementDialog";
+import { useViewPreference } from "../hooks/useViewPreference";
 import { clientErrorMessage, reportRequestError } from "../lib/client-error";
 import { getDesktop } from "../desktop-bridge";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -115,15 +117,15 @@ export function WorkbenchLayout() {
   const toast = useAgentStore((state) => state.toast);
   const devSelfWorkspace = useAgentStore((state) => state.devSelfWorkspace);
 
-  const [draft, setDraft] = useState("");
-  const draftTaskRef = useRef<string | null>(null);
+  const [converting, setConverting] = useState(false);
+  const [hiddenConversations, setHiddenConversations] = useViewPreference<string[]>("qingzhou:hidden-conversations", []);
   const [query, setQuery] = useState("");
   const [cwd, setCwd] = useState(workspaceRoot ?? allowedRoots[0] ?? "");
   const [creating, setCreating] = useState(false);
   const [goingWork, setGoingWork] = useState(false);
   const [creatingWorkProject, setCreatingWorkProject] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
+
   const [taskOpen, setTaskOpen] = useState(false);
   const [leftPinned, setLeftPinned] = useState(() => readUiFlag(LEFT_PINNED_KEY, true));
   const [rightPinned, setRightPinned] = useState(() => readUiFlag(RIGHT_PINNED_KEY, false));
@@ -145,21 +147,14 @@ export function WorkbenchLayout() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const skipTitleCommitRef = useRef(false);
-  const composerImagesRef = useRef(composerImages);
-  composerImagesRef.current = composerImages;
-  const [retryPrompt, setRetryPrompt] = useState<string | null>(null);
+
+  const [retryPrompt, setRetryPrompt] = useState<{ taskId: string; text: string; images: ComposerImage[] } | null>(null);
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
   const [promptSending, setPromptSending] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const reconnectingRef = useRef(false);
   const sendingRef = useRef(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    return () => {
-      for (const item of composerImagesRef.current) URL.revokeObjectURL(item.previewUrl);
-    };
-  }, []);
 
   useEffect(() => {
     const preferred = workspaceRoot ?? allowedRoots[0];
@@ -186,11 +181,17 @@ export function WorkbenchLayout() {
     () => (task ? workItems.find((item) => item.taskId === task.id) : undefined),
     [task, workItems],
   );
+  const sharedDraft = useConversationDraft(activeTaskId, linkedWorkItem?.id);
+  const draft = sharedDraft.text;
+  const setDraft = sharedDraft.setText;
+  const composerImages = sharedDraft.images;
+  const setComposerImages = sharedDraft.setImages;
   const workTaskIds = useMemo(
     () => new Set(workItems.map((item) => item.taskId).filter((id): id is string => Boolean(id))),
     [workItems],
   );
-  const status = task?.status ?? "stopped";
+  const runtimeStatus = task?.status ?? "stopped";
+  const status = ["idle", "stopped"].includes(runtimeStatus) && linkedWorkItem?.latestRun && workRunIsActive(linkedWorkItem.latestRun.status) ? "queued" : runtimeStatus;
   const reconnect = async () => {
     if (reconnectingRef.current) return;
     reconnectingRef.current = true;
@@ -210,15 +211,15 @@ export function WorkbenchLayout() {
       setReconnecting(false);
     }
   };
-  const otherApproval = pendingApprovals.find((item) => item.taskId !== activeTaskId);
+  const otherApproval = pendingApprovals.find((item) => item.taskId !== activeTaskId && !workTaskIds.has(item.taskId));
   const interaction = pendingInteractions.find((item) => item.taskId === activeTaskId) ?? null;
-  const sidebarTasks = useMemo(() => tasksInSidebarOrder(tasks), [tasks]);
+  const sidebarTasks = useMemo(() => tasksInSidebarOrder(tasks.filter((entry) => !hiddenConversations.includes(entry.id))), [tasks, hiddenConversations]);
 
   const abortRun = useCallback(() => {
     if (!task) return;
     const lastUser = [...useAgentStore.getState().messages].reverse().find((item) => item.role === "user");
     const text = lastUser ? stripModePrefix(lastUser.text).trim() : draft.trim();
-    if (text) setRetryPrompt(text);
+    if (text) setRetryPrompt({ taskId: task.id, text, images: (lastUser?.images ?? []).filter((image) => image.dataUrl?.startsWith("data:image/")).map((image, index) => ({ id: "", name: image.name || `图片 ${index + 1}`, previewUrl: image.dataUrl! })) });
     void socketClient.send("agent.abort", {}, task.id).catch((error: unknown) => {
       reportRequestError(error, "停止失败");
     });
@@ -252,29 +253,10 @@ export function WorkbenchLayout() {
   }, [inspectorWidth]);
 
   useEffect(() => {
-    const prev = draftTaskRef.current;
-    if (prev && prev !== activeTaskId) {
-      writeComposerDraft(prev, draft);
-    }
-    draftTaskRef.current = activeTaskId;
-    if (pendingDraft) return;
-    setDraft(readComposerDraft(activeTaskId));
-    // Switching sessions should restore that session's draft, not keep the previous text.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- draft is persisted before the id changes
-  }, [activeTaskId]);
-
-  useEffect(() => {
-    if (!activeTaskId) return;
-    const timer = window.setTimeout(() => writeComposerDraft(activeTaskId, draft), 200);
-    return () => window.clearTimeout(timer);
-  }, [activeTaskId, draft]);
-
-  useEffect(() => {
     if (!pendingDraft || !task) return;
     setDraft(pendingDraft);
-    writeComposerDraft(task.id, pendingDraft);
     setPendingDraft(null);
-  }, [pendingDraft, task]);
+  }, [pendingDraft, task, setDraft]);
 
   useEffect(() => {
     if (!approval) return;
@@ -437,21 +419,16 @@ export function WorkbenchLayout() {
     if (optimistic) {
       useAgentStore.getState().appendOptimisticUserMessage(taskId, optimistic);
     }
-    writeComposerDraft(taskId, "");
     setDraft("");
     setComposerImages([]);
-    for (const item of images) {
-      // Keep object URLs alive while the optimistic bubble references them.
-      if (!optimistic) URL.revokeObjectURL(item.previewUrl);
-    }
     sendingRef.current = true;
     setPromptSending(true);
     setRetryPrompt(null);
     useAgentStore.getState().clearRequestError();
 
     try {
-      if (type === "prompt.send" && linkedWorkItem) {
-        await socketClient.send("workItem.feedback", { id: linkedWorkItem.id, text });
+      if (linkedWorkItem && !["running", "waiting_approval", "aborting"].includes(task.status)) {
+        await socketClient.send(task.mode === "ask" || task.mode === "plan" || task.mode === "review" ? "workItem.discuss" : "workItem.feedback", { id: linkedWorkItem.id, text: text || "请根据附图继续当前需求。", imageIds: images.map((item) => item.id) });
       } else {
         if (type === "prompt.send" && (task.status === "stopped" || task.status === "error" || task.status === "booting")) {
           // activate is safe while booting — it awaits the shared boot Promise.
@@ -477,9 +454,10 @@ export function WorkbenchLayout() {
     } catch (error) {
       if (optimistic) {
         useAgentStore.getState().markMessageFailed(taskId, clientMessageId);
-        setRetryPrompt(text);
+        setRetryPrompt({ taskId, text, images });
+        setDraft((current) => current || text);
+        setComposerImages((current) => current.length ? current : images);
       } else {
-        writeComposerDraft(taskId, text);
         if (useAgentStore.getState().activeTaskId === taskId) {
           setDraft((current) => current || text);
           setComposerImages((current) => (current.length > 0 ? current : images));
@@ -496,8 +474,9 @@ export function WorkbenchLayout() {
   const sendFollowUp = () => submitPrompt("prompt.followUp");
 
   async function retryLastPrompt() {
-    if (sendingRef.current || !task || !retryPrompt) return;
-    const text = retryPrompt;
+    if (sendingRef.current || !task || !retryPrompt || retryPrompt.taskId !== task.id) return;
+    const text = retryPrompt.text;
+    let images = retryPrompt.images;
     const clientMessageId = crypto.randomUUID();
     // Drop previous failed optimistic bubble(s) with the same text before retrying.
     const failed = useAgentStore
@@ -510,19 +489,32 @@ export function WorkbenchLayout() {
       id: clientMessageId,
       role: "user",
       text,
+      images: images.map((image) => ({ mimeType: "image/*", name: image.name, dataUrl: image.previewUrl })),
       createdAt: new Date().toISOString(),
     });
     sendingRef.current = true;
     setPromptSending(true);
     try {
+      images = await Promise.all(images.map(async (image) => {
+        if (image.id) return image;
+        const blob = await fetch(image.previewUrl).then((response) => response.blob());
+        const body = new FormData(); body.append("file", blob, image.name);
+        const response = await fetch("/uploads", { method: "POST", credentials: "same-origin", body });
+        if (!response.ok) throw new Error("重试图片上传失败，请重新添加图片。");
+        const uploaded = await response.json() as { id: string };
+        return { ...image, id: uploaded.id };
+      }));
       if (task.status === "stopped" || task.status === "error") {
         await socketClient.send("task.activate", {}, task.id);
       }
-      await socketClient.send("prompt.send", { message: text, clientMessageId }, task.id);
+      await socketClient.send("prompt.send", { message: text, imageIds: images.map((image) => image.id), clientMessageId }, task.id);
       setRetryPrompt(null);
+      setDraft((current) => current === text ? "" : current);
+      setComposerImages((current) => current.filter((image) => !images.some((sent) => sent.id === image.id)));
+      setTimeout(() => { for (const image of images) URL.revokeObjectURL(image.previewUrl); }, 4000);
     } catch (error) {
       useAgentStore.getState().markMessageFailed(task.id, clientMessageId);
-      setRetryPrompt(text);
+      setRetryPrompt({ taskId: task.id, text, images });
       reportRequestError(error);
     } finally {
       sendingRef.current = false;
@@ -594,12 +586,13 @@ export function WorkbenchLayout() {
   function renderSidebar(onClose?: () => void) {
     return (
       <TaskSidebar
-        tasks={tasks}
+        tasks={tasks.filter((entry) => !hiddenConversations.includes(entry.id))}
         activeTaskId={activeTaskId}
         query={query}
         onQuery={setQuery}
         onSelect={(id) => void selectTask(id)}
         onArchive={(id) => {
+          if (workTaskIds.has(id)) { setHiddenConversations([...hiddenConversations, id]); setNotice("已从最近对话隐藏，需求及执行记录保留。"); return; }
           const archived = tasks.find((entry) => entry.id === id);
           useAgentStore.getState().removeTaskOptimistic(id);
           void socketClient.send("task.archive", {}, id).then(() => {
@@ -611,6 +604,7 @@ export function WorkbenchLayout() {
           });
         }}
         onShowArchived={() => setArchivedOpen(true)}
+        onShowHidden={hiddenConversations.length ? () => { setHiddenConversations([]); setNotice("已恢复隐藏的需求对话。"); } : undefined}
         onRename={(id, title) => void renameTask(id, title)}
         pinned={leftPinned}
         onPinToggle={isMd ? toggleLeftPinned : undefined}
@@ -815,7 +809,7 @@ export function WorkbenchLayout() {
                       className="pressable titlebar-work-link"
                       title={linkedWorkItem.title}
                     >
-                      <span>查看任务</span>
+                      <span>返回需求</span>
                       <ArrowUpRight size={12} aria-hidden="true" />
                     </Link>
                   ) : null}
@@ -826,6 +820,7 @@ export function WorkbenchLayout() {
             )}
           </div>
           <div className="app-no-drag flex shrink-0 items-center gap-0.5">
+            {task && !linkedWorkItem ? <button className="btn btn-secondary" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}>整理为需求</button> : null}
             {task ? (
               <div className="hidden sm:block">
                 <ContextMeter
@@ -929,7 +924,7 @@ export function WorkbenchLayout() {
             </button>
           </div>
         ) : null}
-        {retryPrompt && (status === "idle" || status === "error" || status === "stopped") ? (
+        {retryPrompt?.taskId === task?.id && retryPrompt && (status === "idle" || status === "error" || status === "stopped") ? (
           <div className="banner-note text-ink" role="status">
             发送失败。
             <button type="button" className="pressable app-no-drag text-accent" onClick={() => void retryLastPrompt()}>
@@ -1032,7 +1027,8 @@ export function WorkbenchLayout() {
         {approval ? (
           <div className="mx-auto w-full max-w-[720px] px-4 pb-2">
             <ApprovalSheet
-              approval={approval}
+              context={linkedWorkItem ? `${workProjects.find((entry) => entry.id === linkedWorkItem.projectId)?.name ?? "项目"} / ${linkedWorkItem.title}` : task?.title}
+            approval={approval}
               onRespond={(allow, remember) =>
                 void socketClient.send(
                   "approval.respond",
@@ -1046,7 +1042,8 @@ export function WorkbenchLayout() {
         {interaction ? (
           <div className="dialog-scrim z-[60]" role="presentation">
             <InteractionSheet
-              interaction={interaction}
+              context={linkedWorkItem ? `${workProjects.find((entry) => entry.id === linkedWorkItem.projectId)?.name ?? "项目"} / ${linkedWorkItem.title}` : task?.title}
+            interaction={interaction}
               onRespond={(payload) =>
                 void socketClient.send(
                   "interaction.respond",
@@ -1059,6 +1056,8 @@ export function WorkbenchLayout() {
         ) : null}
         {task ? (
           <PromptComposer
+            recorded={Boolean(linkedWorkItem)}
+            sending={promptSending}
             status={status}
             disabled={
               connection !== "open" ||
@@ -1219,6 +1218,7 @@ export function WorkbenchLayout() {
           }}
         />
       ) : null}
+      {converting && task && !linkedWorkItem ? <ChatToRequirementDialog task={task} messages={useAgentStore.getState().messages} projects={workProjects} onClose={() => setConverting(false)} onCreated={(id) => { setConverting(false); navigate(`/board?item=${id}`); }} /> : null}
       {goingWork && !creatingWorkProject ? (
         <GoWorkDialog
           projects={workProjects}

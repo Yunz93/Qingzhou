@@ -181,6 +181,7 @@ export async function createApp(env: NodeJS.ProcessEnv = process.env) {
       redact: ["req.headers.cookie", "req.headers.authorization", "req.body.apiKey"],
     },
   });
+  app.addHook("onClose", async () => { await service.shutdown(); });
 
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });

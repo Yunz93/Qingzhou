@@ -101,7 +101,7 @@ export function WorkDashboard({
 }: Props) {
   const presented = items
     .slice()
-    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .sort((a, b) => a.rank - b.rank)
     .filter((item) => {
       const q = query.trim().toLowerCase();
       if (!q) return true;

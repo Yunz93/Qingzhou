@@ -5,6 +5,8 @@ import { ArrowUpRight, Check, RotateCcw, Send, Trash2, X } from "lucide-react";
 import type { WorkItemDetails, WorkRun } from "@qingzhou/protocol";
 
 type Props = {
+  embedded?: boolean;
+  hideConversation?: boolean;
   details: WorkItemDetails;
   onClose: () => void;
   onSave: (input: { title: string; description: string; acceptanceCriteria: string }) => void | Promise<void>;
@@ -26,6 +28,7 @@ const RUN_STATUS: Record<WorkRun["status"], string> = {
 };
 
 const RUN_KIND: Record<WorkRun["kind"], string> = {
+  discussion: "只读讨论",
   initial: "首次执行",
   feedback: "补充后继续",
   retry: "重试",
@@ -33,6 +36,8 @@ const RUN_KIND: Record<WorkRun["kind"], string> = {
 };
 
 export function WorkObjectivePanel({
+  embedded = false,
+  hideConversation,
   details,
   onClose,
   onSave,
@@ -52,7 +57,7 @@ export function WorkObjectivePanel({
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
   const panelRef = useRef<HTMLElement>(null);
-  useDialogLayer(panelRef, onClose);
+  useDialogLayer(panelRef, onClose, !embedded);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -71,10 +76,10 @@ export function WorkObjectivePanel({
   );
 
   return (
-    <div className="work-panel-layer" role="presentation">
-      <button type="button" className="work-panel-scrim" aria-label="关闭目标详情" onClick={onClose} />
-      <aside ref={panelRef} tabIndex={-1} className="work-panel" role="dialog" aria-modal="true" aria-labelledby="work-panel-title">
-        <header className="work-panel-head">
+    <div className={embedded ? "workflow-objective" : "work-panel-layer"} role="presentation">
+      {!embedded ? <button type="button" className="work-panel-scrim" aria-label="关闭目标详情" onClick={onClose} /> : null}
+      <aside ref={panelRef} tabIndex={-1} className={embedded ? "" : "work-panel"} role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : true} aria-labelledby={embedded ? undefined : "work-panel-title"}>
+        {!embedded ? <header className="work-panel-head">
           <div>
             <p className="work-panel-kicker">任务</p>
             <h2 id="work-panel-title">{item.title}</h2>
@@ -82,7 +87,7 @@ export function WorkObjectivePanel({
           <button type="button" className="pressable icon-btn" aria-label="关闭" onClick={onClose}>
             <X size={16} />
           </button>
-        </header>
+        </header> : null}
 
         <div className="work-panel-body">
           <section className="work-panel-section" aria-labelledby="work-goal-heading">
@@ -145,7 +150,7 @@ export function WorkObjectivePanel({
             />
           </section>
 
-          {item.state === "open" && !activeRun ? (
+          {!embedded && item.state === "open" && !activeRun ? (
             <section className="work-panel-section" aria-labelledby="work-feedback-heading">
               <div className="work-panel-section-head">
                 <div>
@@ -182,7 +187,8 @@ export function WorkObjectivePanel({
             </section>
           ) : null}
 
-          <section className="work-panel-section" aria-labelledby="work-history-heading">
+          {!embedded && !item.taskId && item.state === "open" ? <button className="btn btn-secondary" onClick={onOpenConversation}>先讨论这个需求</button> : null}
+          {!embedded ? <section className="work-panel-section" aria-labelledby="work-history-heading">
             <div className="work-panel-section-head">
               <div>
                 <h3 id="work-history-heading">执行记录</h3>
@@ -190,7 +196,7 @@ export function WorkObjectivePanel({
                   {runs.length} 轮执行，{feedback.length} 条补充要求
                 </p>
               </div>
-              {item.taskId ? (
+              {item.taskId && !hideConversation ? (
                 <button type="button" className="pressable btn btn-ghost" onClick={onOpenConversation}>
                   打开对话
                   <ArrowUpRight size={13} />
@@ -214,10 +220,10 @@ export function WorkObjectivePanel({
             ) : (
               <p className="work-panel-empty">还没有执行记录。</p>
             )}
-          </section>
+          </section> : null}
         </div>
 
-        <footer className="work-panel-foot">
+        {!embedded ? <footer className="work-panel-foot">
           <div className="work-panel-foot-start">
             {confirmDelete ? (
               <>
@@ -268,7 +274,7 @@ export function WorkObjectivePanel({
               </button>
             ) : null}
           </div>
-        </footer>
+        </footer> : null}
       </aside>
     </div>
   );

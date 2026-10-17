@@ -7,6 +7,7 @@ import { approvalRiskLabel, approvalRiskLevel, splitDangerousCommand } from "../
 import { DiffView } from "../diff/DiffView";
 
 type Props = {
+  context?: string;
   approval: ApprovalRequest;
   onRespond: (allow: boolean, remember: boolean) => void;
 };
@@ -17,7 +18,7 @@ function heading(toolName: string): string {
   return `允许${toolNameLabel(toolName)}吗？`;
 }
 
-export function ApprovalSheet({ approval, onRespond }: Props) {
+export function ApprovalSheet({ approval, onRespond, context }: Props) {
   const [remember, setRemember] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useDialogLayer(panelRef, () => onRespond(false, false));
@@ -53,6 +54,7 @@ export function ApprovalSheet({ approval, onRespond }: Props) {
     >
       <div className="dialog-head">
         <div className="dialog-head-text">
+          {context ? <p className="dialog-copy font-medium mb-2">{context}</p> : null}
           <h2 id="approval-title" className="dialog-title">
             {heading(approval.toolName)}
           </h2>

@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { approvalPolicySchema, interactionModeSchema, thinkingLevelSchema } from "./task-schema.js";
+import { workSourceSchema } from "./work-items.js";
+import { moduleChangeSchema } from "./design.js";
+import { workflowCheckSchema, deliveryReviewSchema, criterionEvidenceSchema } from "./workflow.js";
 
 export const PROMPT_MESSAGE_MAX = 100_000;
 
 const commandBase = {
   id: z.string().min(1),
+  /** Durable intent identity, separate from the per-connection RPC counter. */
+  operationId: z.string().uuid().optional(),
   taskId: z.string().optional(),
 };
 
@@ -22,6 +27,39 @@ const promptPayloadSchema = z
   });
 
 export const clientCommandSchema = z.discriminatedUnion("type", [
+  z.object({ ...commandBase, type: z.literal("workflow.plan.begin"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.scope.confirm"), payload: z.object({ id: z.string().uuid(), scopeId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.prd.save"), payload: z.object({
+    id: z.string().uuid(), scopeId: z.string().uuid(), expectedPrdId: z.string().uuid().nullable(),
+    content: z.string().max(16000), reason: z.string().min(1).max(2000), moduleChanges: z.array(moduleChangeSchema).max(8),
+  }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.prd.import"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.prd.confirm"), payload: z.object({ id: z.string().uuid(), prdId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.module.create"), payload: z.object({ projectId: z.string().uuid(), name: z.string().min(1).max(200), content: z.string().max(12000) }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.inspect"), payload: z.object({ projectId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.state"), payload: z.object({ projectId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.configure"), payload: z.object({
+    projectId: z.string().uuid(), targetBranch: z.string().min(1).max(200),
+    concurrency: z.number().int().min(1).max(16), checks: z.array(workflowCheckSchema).max(30),
+  }) }),
+  z.object({ ...commandBase, operationId: z.string().uuid(), type: z.literal("workflow.enqueue"), payload: z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.pause"), payload: z.object({ projectId: z.string().uuid(), paused: z.boolean() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.dependencies"), payload: z.object({ id: z.string().uuid(), dependencies: z.array(z.string().uuid()).max(100) }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.changes"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, operationId: z.string().uuid(), type: z.literal("workflow.seal"), payload: z.object({ id: z.string().uuid(), paths: z.array(z.string()).max(10000), summary: z.string().max(2000).default(""), review: deliveryReviewSchema.optional() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.accept"), payload: z.object({ deliveryId: z.string().uuid(), decision: z.enum(["accepted", "rejected"]), note: z.string().max(10000).default(""), evidence: z.array(criterionEvidenceSchema).max(100).optional() }) }),
+  z.object({ ...commandBase, operationId: z.string().uuid(), type: z.literal("workflow.integrate"), payload: z.object({ deliveryId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.integration.recheck"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.integration.repair"), payload: z.object({ id: z.string().uuid(), instruction: z.string().max(20000).default("") }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.integration.merge"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.integration.cancel"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.integration.reorder"), payload: z.object({ id: z.string().uuid(), beforeId: z.string().uuid().nullable() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.verifyMain"), payload: z.object({ projectId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.cleanup"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, operationId: z.string().uuid(), type: z.literal("workflow.revert"), payload: z.object({ integrationId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.compare"), payload: z.object({ projectId: z.string().uuid(), from: z.string(), to: z.string() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.artifact"), payload: z.object({ deliveryId: z.string().uuid(), path: z.string().min(1).max(1000) }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.transcript"), payload: z.object({ runId: z.string().uuid() }) }),
   z.object({
     ...commandBase,
     type: z.literal("task.create"),
@@ -472,6 +510,7 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
         description: z.string().max(20_000).optional(),
         acceptanceCriteria: z.string().max(10_000).optional(),
         start: z.boolean().optional(),
+        source: workSourceSchema.optional(),
         cwd: z.string().min(1).optional(),
         projectId: z.string().uuid().optional(),
       })
@@ -501,9 +540,12 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
     type: z.literal("workItem.feedback"),
     payload: z.object({
       id: z.string().uuid(),
-      text: z.string().min(1).max(20_000),
-    }),
+      text: z.string().max(20_000),
+      expectedDeliveryId: z.string().uuid().optional(),
+      imageIds: z.array(z.string().min(1)).max(20).optional(),
+    }).refine((value) => !!value.text.trim() || !!value.imageIds?.length, "需要文字或图片"),
   }),
+  z.object({ ...commandBase, type: z.literal("workItem.discuss"), payload: z.object({ id: z.string().uuid(), text: z.string().min(1).max(20000), imageIds: z.array(z.string()).max(20).optional() }) }),
   z.object({
     ...commandBase,
     type: z.literal("workItem.stop"),

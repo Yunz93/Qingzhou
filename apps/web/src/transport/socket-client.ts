@@ -120,7 +120,7 @@ export class SocketClient {
     timeoutMs: number = SOCKET_RPC_TIMEOUT_MS,
   ): Promise<T> {
     const id = `c${++this.requestId}`;
-    const body: { id: string; type: ClientCommand["type"]; taskId?: string; payload?: unknown } = { id, type };
+    const body: { id: string; operationId: string; type: ClientCommand["type"]; taskId?: string; payload?: unknown } = { id, operationId: crypto.randomUUID(), type };
     if (taskId) body.taskId = taskId;
     if (payload !== undefined) body.payload = payload;
     return new Promise<T>((resolve, reject) => {

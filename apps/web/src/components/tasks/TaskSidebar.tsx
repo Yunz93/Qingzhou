@@ -16,6 +16,7 @@ type Props = {
   onRename?: (taskId: string, title: string) => void;
   onNew?: () => void;
   onShowArchived?: () => void;
+  onShowHidden?: () => void;
   onClose?: () => void;
   pinned?: boolean;
   onPinToggle?: () => void;
@@ -36,6 +37,7 @@ export function TaskSidebar({
   onRename,
   onNew,
   onShowArchived,
+  onShowHidden,
   onClose,
   pinned = true,
   onPinToggle,
@@ -219,7 +221,7 @@ export function TaskSidebar({
                               <span className="flex min-w-0 items-center gap-1.5">
                                 <span className="block min-w-0 truncate text-[12.5px] font-medium leading-snug text-ink">{task.title}</span>
                                 {workTaskIds.has(task.id) ? (
-                                  <span className="shrink-0 text-[10px] font-medium text-mute">任务</span>
+                                  <span className="shrink-0 text-[10px] font-medium text-mute">需求对话</span>
                                 ) : null}
                               </span>
                               <span className="block truncate text-[11px] text-mute">
@@ -239,7 +241,7 @@ export function TaskSidebar({
                           </button>
                           {menuId === task.id ? <div className="sidebar-row-menu" role="menu" aria-label="会话操作">
                             {onRename ? <button type="button" role="menuitem" className="pressable hover-fill" onClick={() => { setMenuId(null); startRename(task); }}><Pencil size={12} />重命名</button> : null}
-                            <button type="button" role="menuitem" className="pressable hover-fill" aria-label={`归档 ${task.title}`} onClick={() => { setMenuId(null); onArchive(task.id); }}><Archive size={12} />归档</button>
+                            <button type="button" role="menuitem" className="pressable hover-fill" aria-label={`${workTaskIds.has(task.id) ? "隐藏" : "归档"} ${task.title}`} onClick={() => { setMenuId(null); onArchive(task.id); }}><Archive size={12} />{workTaskIds.has(task.id) ? "从最近对话隐藏" : "归档"}</button>
                           </div> : null}
                         </div>
                       </div>
@@ -251,6 +253,7 @@ export function TaskSidebar({
           ))
         )}
       </div>
+      {onShowHidden ? <button className="btn btn-ghost" onClick={onShowHidden}>显示隐藏的需求对话</button> : null}
       {onOpenBoard && workTaskIds.size > 0 ? (
         <div className="border-t border-line px-3 py-2">
           <button

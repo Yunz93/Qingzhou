@@ -55,7 +55,9 @@ describe("agent-native work item contracts", () => {
   });
 
   it("builds a continuation prompt that preserves existing progress", () => {
-    const prompt = workItemFeedbackPrompt({ title: "fix login" }, "also handle 403");
+    const prompt = workItemFeedbackPrompt({ title: "fix login", description: "current login scope", acceptanceCriteria: "current acceptance" }, "also handle 403");
+    expect(prompt).toContain("current login scope");
+    expect(prompt).toContain("current acceptance");
     expect(prompt).toContain("fix login");
     expect(prompt).toContain("不要重复已经完成的操作");
     expect(prompt).toContain("also handle 403");

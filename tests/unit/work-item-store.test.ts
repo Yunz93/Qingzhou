@@ -46,6 +46,8 @@ describe("WorkItemStore", () => {
     await store.markFeedbackDelivered([feedback.id], run.id);
     await store.updateRun(run.id, { status: "running" });
     await store.updateRun(run.id, { status: "succeeded", resultSummary: "tests pass" });
+    await store.updateRun(run.id, { status: "running" });
+    await store.updateRun(run.id, { status: "waiting_approval" });
 
     const details = store.getDetails(item.id);
     expect(details?.feedback[0]).toMatchObject({ text: "also handle 403", runId: run.id });

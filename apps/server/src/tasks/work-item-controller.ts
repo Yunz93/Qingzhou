@@ -1,4 +1,5 @@
 import path from "node:path";
+import { workItemContext } from "./work-item-context.js";
 import {
   workItemFeedbackPrompt,
   workItemIsClosed,
@@ -18,8 +19,10 @@ import { humanizeUserFacingError } from "../setup/pi-agent-dir.js";
 import type { ProcessSupervisor } from "../pi/process-supervisor.js";
 import type { TaskStore } from "./task-store.js";
 import type { WorkItemStore } from "./work-item-store.js";
+import type { WorkflowService } from "./workflow-service.js";
 
 export type WorkItemControllerHost = {
+  workflow?: WorkflowService;
   store: TaskStore;
   workItems: WorkItemStore;
   supervisor: ProcessSupervisor;
@@ -45,6 +48,8 @@ export type WorkItemControllerHost = {
 };
 
 export class WorkItemController {
+  private readonly settling = new Map<string, Promise<void>>();
+  private readonly feedbackOperations = new Set<string>();
   constructor(private readonly host: WorkItemControllerHost) {}
 
   assertWorkLinkedPrompt(
@@ -101,7 +106,9 @@ export class WorkItemController {
     cwd: string | undefined,
     projectId?: string,
     start = false,
+    source?: WorkItem["source"],
   ): Promise<{ item: WorkItem }> {
+    if (source?.taskId && !this.host.store.get(source.taskId)) throw new Error("来源对话已不存在，请重新选择讨论依据");
     let project = projectId ? this.host.workItems.getProject(projectId) : undefined;
     if (projectId && !project) throw new Error("找不到这个项目");
     if (!project && cwd) {
@@ -118,13 +125,22 @@ export class WorkItemController {
     if (!project) throw new Error("请先启动一个项目");
     const resolved = await assertAllowedCwd(project.cwd, this.host.cwdRoots());
     this.host.adoptAllowedRoot(resolved);
+    if (start && this.host.workflow?.enabled(project.id)) throw new Error("请先保存需求、确认范围与 PRD，再开始实施");
+    if (source?.moduleIds?.some((id) => !this.host.workflow?.store.state.modules?.some((module) => module.id === id && module.projectId === project.id))) throw new Error("来源模块必须属于当前项目");
+    if (source?.prdId) {
+      const prd = this.host.workflow?.store.state.prds?.find((entry) => entry.id === source.prdId && entry.frozenAt);
+      if (!prd || this.host.workItems.get(prd.itemId)?.projectId !== project.id) throw new Error("来源 PRD 必须是当前项目已固化的需求");
+    }
     const item = await this.host.workItems.create({
       title,
+      source,
       description,
       acceptanceCriteria,
       cwd: resolved,
       projectId: project.id,
     });
+    await this.host.workflow?.syncScope(item);
+    if (this.host.workflow?.enabled(project.id)) await this.host.workflow.beginPlanning(item.id);
     this.emitWorkItems();
     if (start) return this.startWorkItem(item.id, "initial");
     return { item: this.host.workItems.get(item.id) ?? item };
@@ -136,7 +152,9 @@ export class WorkItemController {
     description?: string,
     acceptanceCriteria?: string,
   ): Promise<{ item: WorkItem }> {
-    const item = await this.host.workItems.update(id, { title, description, acceptanceCriteria });
+    const item = this.host.workflow
+      ? await this.host.workflow.updateScope(id, { title, description, acceptanceCriteria })
+      : await this.host.workItems.update(id, { title, description, acceptanceCriteria });
     this.emitWorkItems();
     return { item };
   }
@@ -147,23 +165,51 @@ export class WorkItemController {
     return details;
   }
 
-  async feedbackWorkItem(id: string, text: string): Promise<{ item: WorkItem }> {
+  async feedbackWorkItem(id: string, text: string, requestId?: string, imageIds?: string[], expectedDeliveryId?: string): Promise<{ item: WorkItem }> {
     const item = this.host.workItems.get(id);
     if (!item) throw new Error("找不到这个目标");
+    if (item.taskId) await this.settling.get(item.taskId);
+    const instructionText = text.trim() || "请根据附图继续完成当前需求。";
+    if (this.host.workflow?.enabled(item.projectId)) return this.host.workflow.feedback(id, instructionText, requestId, imageIds, expectedDeliveryId);
+    if (requestId && this.host.workflow?.hasRequest(id, requestId)) return { item };
+    if (this.feedbackOperations.has(id)) throw new Error("正在提交这条需求的补充，请稍后重试");
+    this.feedbackOperations.add(id);
+    try {
     if (workItemIsClosed(item.state)) throw new Error("这个目标已经结束，请先重新打开。");
     if (item.taskId && this.host.workItems.activeRunForTask(item.taskId)) {
       throw new Error("这个目标正在执行，请在完整对话中直接补充。");
     }
-    await this.host.workItems.addFeedback(id, text);
+    await this.host.workItems.addFeedback(id, instructionText, imageIds);
     this.emitWorkItems();
-    return this.startWorkItem(id, "feedback", workItemFeedbackPrompt(item, text));
+    return await this.startWorkItem(id, "feedback", workItemFeedbackPrompt({ ...item, description: workItemContext(item) }, instructionText), requestId, imageIds);
+    } finally { this.feedbackOperations.delete(id); }
+  }
+
+  async discussWorkItem(id: string, text: string, requestId?: string, imageIds?: string[]): Promise<{ item: WorkItem }> {
+    const item = this.host.workItems.get(id);
+    if (!item) throw new Error("找不到这个需求");
+    const instruction = `请讨论并完善需求「${item.title}」的目标、边界和验收标准。当前为只读讨论，不实施、不修改文件。\n当前目标：${workItemContext(item)}\n验收标准：${item.acceptanceCriteria}\n用户问题：${text}`;
+    return this.startWorkItem(id, "discussion", instruction, requestId, imageIds);
   }
 
   async startWorkItem(
     id: string,
     kind: WorkRunKind,
     explicitInstruction?: string,
+    requestId?: string,
+    imageIds?: string[],
   ): Promise<{ item: WorkItem }> {
+    const item = this.host.workItems.get(id);
+    if (item?.taskId) await this.settling.get(item.taskId);
+    if (item && this.host.workflow?.enabled(item.projectId)) return this.host.workflow.enqueue(id, kind, explicitInstruction, requestId, imageIds);
+    // Legacy shared directories remain serial, including duplicate project entries.
+    if (item && this.host.workItems.list().some((other) => other.id !== id && other.cwd === item.cwd && other.taskId && this.host.workItems.activeRunForTask(other.taskId))) {
+      throw new Error("原工作目录有其他需求正在执行，请等待结束或配置独立工作区");
+    }
+    return this.launchWorkItem(id, kind, explicitInstruction, undefined, imageIds);
+  }
+
+  async launchWorkItem(id: string, kind: WorkRunKind, explicitInstruction?: string, cwd?: string, imageIds?: string[]): Promise<{ item: WorkItem }> {
     const item = this.host.workItems.get(id);
     if (!item) throw new Error("找不到这个目标");
     if (workItemIsClosed(item.state)) throw new Error("这个目标已经结束，请先重新打开。");
@@ -173,7 +219,10 @@ export class WorkItemController {
     let taskId = item.taskId;
     let activateError: string | null = null;
     if (!taskId || !this.host.store.get(taskId) || this.host.store.get(taskId)?.archivedAt) {
-      taskId = (await this.host.createTask(item.cwd, item.title)).task.id;
+      if (taskId && this.host.store.get(taskId)?.archivedAt && cwd) {
+        await this.host.restoreTask(taskId);
+        await this.host.activate(taskId);
+      } else taskId = (await this.host.createTask(cwd ?? item.cwd, item.title)).task.id;
     } else {
       try {
         await this.host.activate(taskId);
@@ -187,11 +236,16 @@ export class WorkItemController {
       explicitInstruction ??
       workItemPrompt({
         title: item.title,
-        description: item.description,
+        description: workItemContext(item),
         acceptanceCriteria: item.acceptanceCriteria,
         feedback,
       });
-    const run = await this.host.workItems.createRun({ objectiveId: id, taskId, kind, instruction });
+    const policyTask = this.host.store.get(taskId);
+    if (policyTask) {
+      const next = await this.host.store.upsert({ ...policyTask, mode: kind === "discussion" ? "ask" : "agent", approvalPolicy: kind !== "discussion" && policyTask.mode !== "agent" && policyTask.approvalPolicy === "read_only" ? "ask" : policyTask.approvalPolicy, updatedAt: new Date().toISOString() });
+      this.host.emit(taskId, "task.updated", { task: next });
+    }
+    const run = await this.host.workItems.createRun({ objectiveId: id, taskId, kind, instruction, imageIds: [...new Set([...(imageIds ?? []), ...feedback.flatMap((entry) => entry.imageIds ?? [])])] });
     this.emitWorkItems();
     const task = this.host.store.get(taskId);
     const failMessage =
@@ -213,6 +267,7 @@ export class WorkItemController {
   async stopWorkItem(id: string): Promise<{ item: WorkItem }> {
     const item = this.host.workItems.get(id);
     if (!item) throw new Error("找不到这个目标");
+    await this.host.workflow?.stop(id, true);
     if (!item.taskId) return { item };
     const task = this.host.store.get(item.taskId);
     if (task?.status === "queued") {
@@ -220,6 +275,8 @@ export class WorkItemController {
       await this.host.apply(item.taskId, "dequeue");
     } else if (task && (isBusyStatus(task.status) || task.status === "booting")) {
       await this.host.abort(item.taskId);
+    } else {
+      await this.host.workflow?.stop(id);
     }
     const run = this.host.workItems.activeRunForTask(item.taskId);
     if (run) await this.host.workItems.updateRun(run.id, { status: "aborted" });
@@ -230,11 +287,18 @@ export class WorkItemController {
   async setWorkItemState(id: string, state: "open" | "completed" | "archived"): Promise<{ item: WorkItem }> {
     const item = this.host.workItems.get(id);
     if (!item) throw new Error("找不到这个目标");
+    if (this.host.workflow?.enabled(item.projectId) && state === "completed") {
+      throw new Error("请在交付记录中验收具体版本；验收与合入分别记录");
+    }
     if (state === "completed" && item.taskId && this.host.workItems.activeRunForTask(item.taskId)) {
       throw new Error("Agent 还在执行，请先停止或等待本轮结束。");
     }
     if (state === "archived" && item.taskId && this.host.workItems.activeRunForTask(item.taskId)) {
       await this.stopWorkItem(id);
+    }
+    if (state === "archived") {
+      await this.host.workflow?.stop(id, true);
+      this.host.workflow?.assertEditable(id);
     }
     const next = await this.host.workItems.setState(id, state);
     this.emitWorkItems();
@@ -251,6 +315,7 @@ export class WorkItemController {
   async deleteWorkItem(id: string): Promise<{ ok: true }> {
     const item = this.host.workItems.get(id);
     if (!item) throw new Error("找不到这个目标");
+    if (this.host.workflow?.enabled(item.projectId)) throw new Error("启用编排的需求保留历史，请使用归档；工作区可在合入后单独清理");
     if (item.taskId && this.host.workItems.activeRunForTask(item.taskId)) {
       await this.stopWorkItem(id);
     }
@@ -289,8 +354,8 @@ export class WorkItemController {
     const run = this.host.workItems.activeRunForTask(taskId);
     if (!run || run.status !== "queued") return;
     try {
-      await this.host.prompt(taskId, run.instruction, undefined, "prompt", { recordedRun: true });
       await this.host.workItems.updateRun(run.id, { status: "running" });
+      await this.host.prompt(taskId, run.instruction, run.imageIds, "prompt", { recordedRun: true });
       const feedbackIds = this.host.workItems
         .listFeedback(run.objectiveId)
         .filter((entry) => !entry.deliveredAt)
@@ -308,6 +373,14 @@ export class WorkItemController {
   }
 
   async onWorkItemSettled(taskId: string): Promise<void> {
+    const existing = this.settling.get(taskId);
+    if (existing) return existing;
+    const pending = this.settleWorkItem(taskId);
+    this.settling.set(taskId, pending);
+    try { await pending; } finally { if (this.settling.get(taskId) === pending) this.settling.delete(taskId); }
+  }
+
+  private async settleWorkItem(taskId: string): Promise<void> {
     const task = this.host.store.get(taskId);
     if (!task || task.status === "error") return;
     const run = this.host.workItems.activeRunForTask(taskId);
@@ -321,8 +394,11 @@ export class WorkItemController {
       });
       this.emitWorkItems();
       const item = this.host.workItems.get(run.objectiveId);
+      const snapshot = this.host.supervisor.snapshot(taskId);
+      await this.host.workflow?.captureTranscript(run.objectiveId, run.id, messages, snapshot?.tools ?? []);
+      await this.host.workflow?.settled(run.objectiveId, true);
       this.host.emit(taskId, "notification.shown", {
-        message: item ? `“${item.title}”已完成一轮执行，等待你验收。` : "工作目标等待验收。",
+        message: run.kind === "discussion" ? `“${item?.title ?? "需求"}”讨论已结束，可完善范围后开始实施。` : item && this.host.workflow?.enabled(item.projectId) ? `“${item.title}”本轮执行结束，待封存验证。` : item ? `“${item.title}”已完成一轮执行，等待你验收。` : "工作目标等待验收。",
         notifyType: "info",
       });
     }

@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { X } from "lucide-react";
 
 type Props = {
+  requirementMode?: boolean;
   projectName: string;
   onCancel: () => void;
   onCreate: (input: {
@@ -13,7 +14,7 @@ type Props = {
   }) => void | Promise<void>;
 };
 
-export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
+export function NewWorkItemDialog({ projectName, onCancel, onCreate, requirementMode = false }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [acceptanceCriteria, setAcceptanceCriteria] = useState("");
@@ -26,6 +27,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
       setError("请填写任务标题。");
       return;
     }
+    if (start && requirementMode && (!description.trim() || !acceptanceCriteria.trim())) { setError("开始实施前请填写目标说明与验收标准；也可先保存，再讨论完善。"); return; }
     setBusy(start ? "start" : "plan");
     setError("");
     try {
@@ -56,13 +58,13 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
         aria-labelledby="new-work-item-title"
         onSubmit={(event) => {
           event.preventDefault();
-          void submit(true);
+          void submit(!requirementMode);
         }}
       >
         <div className="dialog-head">
           <div className="dialog-head-text">
             <h2 id="new-work-item-title" className="dialog-title">
-              新建任务
+              {requirementMode ? "新建需求" : "新建任务"}
             </h2>
             <p className="dialog-copy">{projectName}</p>
           </div>
@@ -110,7 +112,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
               onChange={(event) => setAcceptanceCriteria(event.target.value)}
               className="field mt-1 w-full text-sm"
               rows={3}
-              placeholder="可选。怎样才算完成，例如测试通过、页面可用、没有改动无关文件。"
+              placeholder="逐条填写可判断的完成条件。保存后先沟通需求、确认 PRD，再开始实施。"
             />
           </div>
           {error ? (
@@ -131,9 +133,9 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate }: Props) {
           >
             {busy === "plan" ? "正在保存…" : "保存到计划"}
           </button>
-          <button type="submit" className="pressable btn btn-primary" disabled={busy !== null}>
+          {!requirementMode ? <button type="submit" className="pressable btn btn-primary" disabled={busy !== null}>
             {busy === "start" ? "正在创建…" : "创建并开始"}
-          </button>
+          </button> : null}
         </div>
       </form>
     </div>

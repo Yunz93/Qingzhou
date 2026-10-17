@@ -344,7 +344,7 @@ async function createTask(page: import("@playwright/test").Page, title: string):
     const item = list.first();
     await item.hover();
     await item.getByRole("button", { name: /^会话操作 / }).click();
-    await item.getByRole("menuitem", { name: /^归档 / }).click();
+    await item.getByRole("menuitem", { name: /^(归档|隐藏) / }).click();
     await expect(list).toHaveCount(count - 1);
   }
   await page.getByRole("button", { name: "新对话" }).click();
@@ -744,5 +744,5 @@ test("work mode creates an objective and starts an agent run", async ({ page }) 
   await page.getByRole("button", { name: "创建对话" }).click();
   await expect(page.getByRole("banner").getByText("Chat after work")).toBeVisible();
   await expect(sessions.getByText("Board e2e job", { exact: true })).toBeVisible();
-  await expect(sessions.getByText("任务", { exact: true })).toBeVisible();
+  await expect(sessions.locator("li").filter({ hasText: "Board e2e job" }).getByText("需求对话", { exact: true })).toBeVisible();
 });
