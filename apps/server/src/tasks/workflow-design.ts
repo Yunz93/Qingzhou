@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { requirementDesignPath, workItemPrompt, type ClientCommand, type Delivery, type RequirementPrd, type WorkItem } from "@qingzhou/protocol";
+import { requirementFiles, requirementDesignPath, workItemPrompt, type ClientCommand, type Delivery, type RequirementPrd, type WorkItem } from "@qingzhou/protocol";
 import type { WorkflowStore } from "./workflow-store.js";
 import { readWorkspaceDesign, writeWorkspaceDesign } from "./workflow-design-file.js";
+import { initializeProjectStandard } from "./project-standard.js";
+import { readWorkspaceText } from "./workspace-files.js";
+import { workflowGit } from "./workflow-git.js";
+import { materializeRequirementDocuments, readDesignMarkdown, requirementDocuments } from "./workflow-design-docs.js";
 import type { WorkItemStore } from "./work-item-store.js";
 
 type SavePrd = Extract<ClientCommand, { type: "workflow.prd.save" }>["payload"];
@@ -130,22 +134,32 @@ export class WorkflowDesign {
   private matches(document: { content: string; moduleChanges: RequirementPrd["moduleChanges"] }, prd: RequirementPrd): boolean {
     return document.content === prd.content && JSON.stringify(document.moduleChanges) === JSON.stringify(prd.moduleChanges);
   }
+  private async readDocument(id: string, cwd: string) {
+    const document = await readWorkspaceDesign(cwd, id);
+    if (!document) return null;
+    const base = this.store.state.prds?.find((entry) => entry.id === document.prdId && entry.itemId === id);
+    if (!base) throw new Error("工作区设计文件的 PRD 依据不属于当前需求");
+    return readDesignMarkdown(cwd, id, document, base);
+  }
   async materialize(id: string, cwd: string): Promise<void> {
     const prd = this.prd(id);
     if (!prd?.confirmedAt || prd.frozenAt) return;
-    const existing = await readWorkspaceDesign(cwd, id);
+    const existing = await this.readDocument(id, cwd);
     if (existing) {
       const recorded = this.store.state.prds?.find((entry) => entry.id === existing.prdId && entry.itemId === id);
       const imported = this.store.state.prds?.some((entry) => entry.itemId === id && entry.previousId === existing.prdId && this.matches(existing, entry));
       if (!recorded || (!this.matches(existing, recorded) && !imported)) throw new Error("工作区设计文件有未同步调整，请先在设计面板同步 PRD，再确认并实施");
     }
-    await writeWorkspaceDesign(cwd, id, { schemaVersion: 1, prdId: prd.id, content: prd.content, moduleChanges: prd.moduleChanges });
+    const item = this.item(id);
+    await initializeProjectStandard(cwd, this.items.getProject(item.projectId)?.name ?? "项目");
+    await materializeRequirementDocuments(cwd, item, prd, this.store.state);
+    await writeWorkspaceDesign(cwd, id, { schemaVersion: 1, documentationVersion: 1, prdId: prd.id, content: prd.content, moduleChanges: prd.moduleChanges });
   }
   async importFile(id: string, cwd: string): Promise<{ prd: RequirementPrd; changed: boolean }> {
     const prd = this.prd(id);
     if (!prd) throw new Error("请先建立 PRD");
     this.assertMutable(id);
-    const document = await readWorkspaceDesign(cwd, id);
+    const document = await this.readDocument(id, cwd);
     if (!document) throw new Error("工作区尚无设计文档；确认 PRD 后首次实施会自动建立");
     if (this.matches(document, prd)) return { prd, changed: false };
     if (document.prdId !== prd.id) throw new Error("工作区设计文件依据的 PRD 已过期，请先合并设计面板与文件中的修改，避免覆盖新版本");
@@ -156,8 +170,19 @@ export class WorkflowDesign {
   async assertFileCurrent(id: string, cwd: string): Promise<void> {
     const prd = this.prd(id);
     if (!prd) return;
-    const document = await readWorkspaceDesign(cwd, id);
+    const document = await this.readDocument(id, cwd);
     if (!document || document.prdId !== prd.id || !this.matches(document, prd)) throw new Error("工作区 PRD 与确认版本不一致，请先同步设计、确认并实施后重新封存");
+  }
+  async assertSnapshot(id: string, cwd: string, commit?: string, requiredVersion?: 1): Promise<void> {
+    const prd = this.prd(id);
+    if (!prd) return;
+    const document = await readWorkspaceDesign(cwd, id);
+    if (requiredVersion && document?.documentationVersion !== requiredVersion) throw new Error("需求文档版本标记缺失，请恢复确认的工作区设计后重试");
+    if (!requiredVersion && !document?.documentationVersion && await readWorkspaceText(cwd, requirementFiles(id).context) === null) return; // Legacy JSON-only workspaces remain compatible.
+    for (const [file, expected] of Object.entries(requirementDocuments(this.item(id), prd, this.store.state))) {
+      const actual = commit ? await workflowGit(cwd, ["show", `${commit}:${file}`]).catch(() => null) : await readWorkspaceText(cwd, file);
+      if (actual === null || (commit ? actual !== expected.trimEnd() : actual !== expected)) throw new Error("需求文档快照与确认设计不一致，请检查 PRD、模块提案、CONTEXT.md 与基线快照后重试");
+    }
   }
   context(id: string): string {
     const prd = this.prd(id);
@@ -166,6 +191,6 @@ export class WorkflowDesign {
       const name = this.store.state.modules?.find((entry) => entry.id === change.moduleId)?.name ?? change.moduleId;
       return `### 模块：${name}\n${change.content}`;
     }).join("\n\n");
-    return `\n\n## ${prd.confirmedAt ? "已确认" : "待确认"}的 PRD v${prd.version}（${prd.id}）\n${prd.content}\n\n## 本需求完成后的模块设计\n${modules || "未关联模块"}\n\n实施时，确认的设计保存在 ${requirementDesignPath(id)}，与代码一起交付。若设计需调整，请同步修改该 JSON 的 content 与 moduleChanges，保留 prdId 与 schemaVersion；本轮结束后系统会读回为待确认的新 PRD。请说明差异，与用户重新确认后继续对应实现。执行结束不代表 PRD 已固化。`;
+    return `\n\n## ${prd.confirmedAt ? "已确认" : "待确认"}的 PRD v${prd.version}（${prd.id}）\n${prd.content}\n\n## 本需求完成后的模块设计\n${modules || "未关联模块"}\n\n实施时先读 ${requirementFiles(id).context} 与 ${requirementFiles(id).agents}。设计 JSON 为 ${requirementDesignPath(id)}，可直接编辑 ${requirementFiles(id).prd} 和同目录 modules/<模块 ID>.md，并维护 IMPLEMENTATION.md、VERIFICATION.md。Markdown 与 JSON 若同时修改需保持一致，不改写确认 ID 或模块基线；本轮结束后系统会读回为待确认的新 PRD。请说明差异，与用户重新确认后继续对应实现。执行结束不代表 PRD 已固化。`;
   }
 }

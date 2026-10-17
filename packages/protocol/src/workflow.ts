@@ -42,7 +42,7 @@ export const requirementWorkspaceSchema = z.object({
 export type RequirementWorkspace = z.infer<typeof requirementWorkspaceSchema>;
 
 export const workflowTicketSchema = z.object({
-  id, requestId: z.string(), itemId: id, projectId: id, scopeId: id, prdId: id.optional(),
+  id, requestId: z.string(), itemId: id, projectId: id, scopeId: id, prdId: id.optional(), documentationVersion: z.literal(1).optional(),
   kind: z.enum(["initial", "feedback", "retry", "migrated", "discussion"]), instruction: z.string(),
   imageIds: z.array(z.string()).max(20).optional(),
   phase: z.enum(["implementation", "integration", "discussion"]),

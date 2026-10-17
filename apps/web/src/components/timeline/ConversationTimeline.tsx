@@ -1,3 +1,4 @@
+import { workPromptSummary } from "../../lib/work-prompt-summary";
 import { groupThinkingMessages } from "../../lib/thinking-groups";
 import { hasDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type ReactNode } from "react";
@@ -122,8 +123,7 @@ function UserMessage({
   const [draft, setDraft] = useState(stripModePrefix(message.text));
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const visible = stripModePrefix(message.text);
-  const structured = visible.startsWith("请完成下面这个工作目标。") || visible.includes("这是工作台补充要求后的新一轮：");
-  const goal = structured ? (visible.split("标题：")[1] ?? visible.split("本轮补充要求：")[1] ?? visible).trim() : visible;
+  const { structured, goal } = workPromptSummary(visible);
   return (
     <article
       id={conversationMessageDomId(message.id)}

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as gitModule from "../../apps/server/src/tasks/workflow-git.ts";
-import { clientCommandSchema, verificationIsValid, type WorkItem, type WorkflowCheck } from "@qingzhou/protocol";
+import { clientCommandSchema, requirementDesignPath, requirementFiles, verificationIsValid, type WorkItem, type WorkflowCheck } from "@qingzhou/protocol";
 import { WorkItemStore } from "../../apps/server/src/tasks/work-item-store.ts";
 import { WorkflowService } from "../../apps/server/src/tasks/workflow-service.ts";
 import { workflowGit as git } from "../../apps/server/src/tasks/workflow-git.ts";
@@ -556,4 +556,53 @@ it("rechecks module design when a queued implementation actually starts", async 
   await f.command("workflow.pause", { projectId: f.project.id, paused: false }); await f.service.idle();
   expect(f.launched).toHaveLength(0);
   expect(f.service.store.state.tickets.at(-1)).toMatchObject({ status: "failed", error: expect.stringContaining("已有新设计") });
+});
+
+it("previews and initializes project standards without overwriting instructions or committing mainline changes", async () => {
+  const f = await fixture(); const custom = "项目既有 Agent 约定\n"; await writeFile(path.join(f.repository, "AGENTS.md"), custom);
+  const before = await f.command("workflow.standard.inspect", { projectId: f.project.id }) as { ready: boolean; files: Array<{ path: string; status: string; preview?: string }> };
+  expect(before.ready).toBe(false); expect(before.files.find((entry) => entry.path === "AGENTS.md")?.status).toBe("present");
+  expect(before.files.find((entry) => entry.path === "docs/agents/workflow.md")?.preview).toContain("由用户确认具体版本");
+  const result = await f.command("workflow.standard.initialize", { projectId: f.project.id }) as { created: string[]; preserved: string[] };
+  expect(result.preserved).toContain("AGENTS.md"); expect(result.created).toContain("docs/qingzhou/project.json");
+  expect(await readFile(path.join(f.repository, "AGENTS.md"), "utf8")).toBe(custom);
+  expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(f.baseline);
+  expect((await f.command("workflow.standard.initialize", { projectId: f.project.id }) as { created: string[] }).created).toEqual([]);
+  const item = await f.create("正在运行"); await f.start(item);
+  await expect(f.command("workflow.standard.initialize", { projectId: f.project.id })).rejects.toThrow("先结束项目执行");
+});
+
+it("roundtrips Markdown design edits with exact scope and module snapshots, and seals them alongside code", async () => {
+  const f = await fixture(); const item = await f.create("标准化实施");
+  const { module, revision } = f.service.design.createModule(f.project.id, "测试模块", "当前确认设计");
+  await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const first = f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId: null, content: "首次实施方案", reason: "确认方案", moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "模块首次提案" }] }).prd;
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: first.id });
+  const launch = await f.start(item); const files = requirementFiles(item.id);
+  const context = await readFile(path.join(launch.cwd, files.context), "utf8");
+  expect(f.service.store.state.tickets.at(-1)?.instruction).toContain(files.context);
+  expect(f.service.store.state.tickets.at(-1)?.instruction).not.toContain("本轮以本说明为准");
+  expect(context).toContain(scope.id); expect(context).toContain(first.id); expect(context).toContain(revision.id);
+  expect(await readFile(path.join(launch.cwd, files.agents), "utf8")).toContain("人工验收");
+  expect(await readFile(path.join(launch.cwd, files.verification), "utf8")).toContain("待验证");
+  await writeFile(path.join(launch.cwd, files.prd), "Markdown 实施后调整");
+  await writeFile(path.join(launch.cwd, files.module(module.id)), "Markdown 模块完整新设计");
+  await writeFile(path.join(launch.cwd, "result.txt"), "实现结果"); await f.finish(item);
+  const revised = f.service.design.prd(item.id)!;
+  expect(revised).toMatchObject({ version: 2, confirmedAt: null, content: "Markdown 实施后调整", moduleChanges: [{ content: "Markdown 模块完整新设计" }] });
+  await expect(f.deliver(item)).rejects.toThrow("确认当前 PRD");
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: revised.id }); await f.start(item); await f.finish(item);
+  const currentContext = await readFile(path.join(launch.cwd, files.context), "utf8");
+  await unlink(path.join(launch.cwd, files.context)); await expect(f.deliver(item)).rejects.toThrow("文档快照与确认设计不一致");
+  await writeFile(path.join(launch.cwd, files.context), currentContext);
+  const baselineFile = path.join(launch.cwd, files.baseline(module.id, revision.id)); const baseline = await readFile(baselineFile, "utf8");
+  await writeFile(baselineFile, "伪造模块已合入"); await expect(f.deliver(item)).rejects.toThrow("文档快照与确认设计不一致"); await writeFile(baselineFile, baseline);
+  const jsonFile = path.join(launch.cwd, requirementDesignPath(item.id)); const json = await readFile(jsonFile, "utf8");
+  await writeFile(jsonFile, JSON.stringify({ ...JSON.parse(json), documentationVersion: undefined })); await expect(f.deliver(item)).rejects.toThrow("文档版本标记缺失"); await writeFile(jsonFile, json);
+  const delivery = await f.deliver(item);
+  expect(delivery.files).toContain(files.prd); expect(delivery.files).toContain(files.context);
+  expect(await git(launch.cwd, ["show", `${delivery.commit}:${files.prd}`])).toBe(revised.content);
+  await f.service.accept(delivery.id, "accepted"); expect(revised.frozenAt).toBeTruthy();
+  expect(f.service.store.state.moduleRevisions?.at(-1)?.content).toBe("Markdown 模块完整新设计");
 });

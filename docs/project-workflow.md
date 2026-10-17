@@ -126,3 +126,17 @@ Agent 在独立工作区同步修改 `docs/qingzhou/requirements/<需求 ID>.jso
 | 同一模块并行设计易互相覆盖 | 版本前置检查与多模块统一发布 | `workflow-design.ts`、`tests/integration/workflow.test.ts` |
 
 本轮最终验证（需求设计与模块文档，2026-10-17）：`pnpm lint`、`pnpm typecheck` 通过；Playwright 启动前的完整 `pnpm build` 通过；单元测试 434 项、集成测试 58 项、Chromium E2E 44 项全部通过（包含视口检查）。4 项 Windows 安装限定用例在 Linux 环境跳过。新增回归覆盖确认过期、PRD 与交付绑定、实施文件读回、固化后不可改写、并行模块版本冲突、排队后设计过期、未保存草稿的验收保护、子需求来源、模块回溯与移动端布局。E2E 使用 fake Pi；Git、设计文件和验证命令操作真实临时工作区。
+
+## 项目标准文件与 Agent 规范
+
+已按 [项目标准结构](standards/project-layout.md) 改造轻舟：根 AGENTS.md 关联项目概览、架构、验证和阶段职责；模块文档指向源码、测试及历史 PRD；需求、ADR 与模板拥有独立入口。目录标准不搬动既有源码，也不改写历史 PRD 的确认事实。
+
+| 改前 | 改后 | 实现 |
+| --- | --- | --- |
+| 项目说明分散，Agent 入口没有长期业务导航 | 项目 / 模块 / 需求 / 决策分层，模板与阶段规范明确编辑权和状态权责 | `AGENTS.md`、`docs/README.md`、`docs/standards/project-layout.md` |
+| 需求设计只有 JSON | 可编辑 PRD 与模块 Markdown、只读上下文和版本基线、实施与验证记录；冲突不静默覆盖 | `workflow-design-docs.ts`、`workflow-design.ts` |
+| 项目缺少统一初始化 | 预览具体缺失文件，只补缺失项，保留现有规则和目录，不自动提交 | `project-standard.ts`、`ProjectStandard.tsx` |
+| 上下文无文档快照校验 | 文档版本绑定执行记录，工作区与 Git 对象共同核对，删除或篡改快照会阻止封存 | `project-standard.ts` 协议、`workflow-service.ts`、`workspace-files.ts` |
+| 追加 Agent 规范后聊天正文过长 | 目标和验收标准保留正文，完整规范与上下文在执行指令中展开 | `work-prompt-summary.ts`、`ConversationTimeline.tsx` |
+
+本轮验证：lint、类型检查、生产构建通过；445 项单测、60 项集成测试、45 个 Chromium 场景通过，4 项 Windows 限定用例在 Linux 跳过。标准 16 项入口齐备，28 份 Markdown 和清单路径无断链。具体范围、证据与限制见 [需求验证记录](requirements/project-standards/VERIFICATION.md)。

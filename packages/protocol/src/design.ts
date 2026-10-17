@@ -27,7 +27,7 @@ export const moduleRevisionSchema = z.object({
 export type ModuleRevision = z.infer<typeof moduleRevisionSchema>;
 
 export const workspaceDesignSchema = z.object({
-  schemaVersion: z.literal(1), prdId: id, content: z.string().max(16000),
+  schemaVersion: z.literal(1), documentationVersion: z.literal(1).optional(), prdId: id, content: z.string().max(16000),
   moduleChanges: z.array(moduleChangeSchema).max(8),
 });
 export type WorkspaceDesign = z.infer<typeof workspaceDesignSchema>;

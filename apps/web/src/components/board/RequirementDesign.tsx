@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { requirementDesignPath, type RequirementPrd, type WorkflowProjectState, type WorkItemSummary } from "@qingzhou/protocol";
+import { requirementFiles, requirementDesignPath, type RequirementPrd, type WorkflowProjectState, type WorkItemSummary } from "@qingzhou/protocol";
 import { socketClient } from "../../transport/socket-client";
 import { useAgentStore } from "../../stores/agent-store";
 import { useConversationDraft } from "../../lib/conversation-draft";
@@ -102,7 +102,7 @@ function PrdEditor({ state, item, prd, scopeConfirmed, active, onRefresh, onConv
     {!scopeConfirmed ? <p className="workflow-design-note">先确认需求范围。PRD 草稿可以继续编辑。</p> : null}
     {active ? <p className="workflow-design-note">本轮进行中，草稿会保留；结束本轮后可保存并确认设计调整。</p> : null}
     {stale ? <p role="alert" className="workflow-design-note">PRD 已有新版本。你的草稿已保留，请先查看下方版本记录并合并，再<button className="btn btn-ghost" onClick={() => patch({ expectedPrdId: prd?.id ?? null })}>保留草稿并采用新版依据</button><button className="btn btn-ghost" onClick={() => setDraft(initial())}>放弃草稿，载入最新 PRD</button></p> : null}
-    {state.workspaces.some((entry) => entry.itemId === item.id && !entry.removedAt) ? <div className="workflow-design-note"><p>实施时，Agent 可同步修改工作区设计文件；本轮结束后读回为待确认的新版本，与代码一起封存。</p><code className="break-all">{requirementDesignPath(item.id)}</code><button className="btn btn-secondary mt-2" disabled={busy || active || !prd} onClick={() => {
+    {state.workspaces.some((entry) => entry.itemId === item.id && !entry.removedAt) ? <div className="workflow-design-note"><p>Agent 可直接编辑 PRD.md 和模块 Markdown 提案；本轮结束后读回为待确认的新版本，与代码一起封存。</p><code className="block break-all">{requirementFiles(item.id).prd}</code><details><summary>设计 JSON 与执行上下文</summary><code className="block break-all">{requirementDesignPath(item.id)}</code><code className="block break-all">{requirementFiles(item.id).context}</code><p>实施、验证记录在同目录；模块提案位于 modules/，只读基线位于 baselines/。JSON 与 Markdown 同时修改且内容不同，需要先合并。</p></details><button className="btn btn-secondary mt-2" disabled={busy || active || !prd} onClick={() => {
       setBusy(true); setError(""); void socketClient.send("workflow.prd.import", { id: item.id }).then(onRefresh).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
     }}>从工作区同步 PRD</button></div> : null}
     <label className="block">PRD 正文<textarea aria-label="PRD 正文" className="field workflow-prd-editor" rows={14} maxLength={16000} value={draft.content} onChange={(event) => patch({ content: event.target.value })} /></label>

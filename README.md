@@ -45,6 +45,10 @@ git push origin v0.1.21
 
 合入前可手动运行 Release 工作流并勾选 `verify_only`，只执行三个平台的安装、lint、类型检查、单测和集成测试，不打包或发布。macOS 正式打包后还会检查内置 fd / rg 的目标架构，避免交叉编译时混入宿主架构的工具。
 
+## 项目与 Agent 协作
+
+业务和技术文档从 [docs/README.md](docs/README.md) 开始；目录标准见 [项目标准结构](docs/standards/project-layout.md)，Agent 规则见 [AGENTS.md](AGENTS.md)。需求按范围确认、PRD 确认、实施迭代、验收固化推进，模块文档关联各次子需求。
+
 ## 开发者
 
 从仓库本地安装：

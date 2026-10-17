@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "standard": "qingzhou-project",
+  "paths": {
+    "index": "docs/README.md",
+    "overview": "docs/project/overview.md",
+    "architecture": "docs/project/architecture.md",
+    "verification": "docs/project/verification.md",
+    "workflow": "docs/agents/workflow.md",
+    "roles": "docs/agents/roles.md",
+    "modules": "docs/modules/README.md",
+    "requirements": "docs/requirements/README.md",
+    "decisions": "docs/decisions/README.md",
+    "layout": "docs/standards/project-layout.md"
+  }
+}

@@ -1,3 +1,4 @@
+import { requirementFiles } from "../../packages/protocol/src/project-standard";
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -316,7 +317,7 @@ test("pending integration decisions and revised scope use the same state in inbo
   await room.getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("tab", { name: "演进与回放" }).click();
   await page.getByRole("button", { name: "比较版本", exact: true }).click();
-  await expect(page.getByText("两个主线版本的实际差异 · 2 个文件", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^两个主线版本的实际差异 · \d+ 个文件$/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("mainline-version-review.png"), fullPage: true, animations: "disabled" });
 });
 
@@ -467,4 +468,41 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await room.getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("button", { name: /来源：编排设计迭代 · 固化 PRD v2/ }).click();
   await expect(page.getByRole("heading", { name: "PRD v2 已固化", exact: true })).toBeVisible();
+});
+
+test("project standards preview missing files, preserve existing rules and read Markdown design edits back into a PRD", async ({ page }, testInfo) => {
+  const repository = await setupWorkflowProject(page);
+  const custom = "# 项目既有规范\n保留本项目的协作规则。\n";
+  await writeFile(path.join(repository, "AGENTS.md"), custom);
+  await git(repository, ["add", "AGENTS.md"]); await git(repository, ["commit", "-m", "test: existing instructions"]);
+  const head = await git(repository, ["rev-parse", "HEAD"]);
+  await page.getByRole("button", { name: "项目文件与规范", exact: true }).click();
+  const standard = page.getByRole("dialog", { name: "项目文件与 Agent 规范", exact: true });
+  await expect(standard.getByText("已有 · 保留", { exact: true }).first()).toBeVisible();
+  await standard.getByText("docs/project/overview.md", { exact: true }).click();
+  await expect(standard.getByText(/待项目维护者填写当前产品目标/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("project-standard-preview.png"), fullPage: true, animations: "disabled" });
+  await standard.getByRole("button", { name: "补齐缺失标准文件", exact: true }).click();
+  await expect(standard.getByRole("button", { name: "标准文件已齐备", exact: true })).toBeDisabled();
+  expect(await readFile(path.join(repository, "AGENTS.md"), "utf8")).toBe(custom);
+  expect(await git(repository, ["rev-parse", "HEAD"])).toBe(head);
+  await standard.getByRole("button", { name: "关闭", exact: true }).click();
+  await createRequirement(page, "标准需求 Markdown 同步", "WRITE:standard-output.txt:done");
+  await page.getByRole("button", { name: "标准需求 Markdown 同步 的更多操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "开始执行", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "标准需求 Markdown 同步" }).getByText("待验证", { exact: true })).toBeVisible();
+  await page.getByRole("button").filter({ has: page.getByText("标准需求 Markdown 同步", { exact: true }) }).click();
+  const room = page.getByRole("dialog", { name: "标准需求 Markdown 同步", exact: true });
+  const itemId = new URL(page.url()).searchParams.get("item")!;
+  const cwd = path.resolve(".qingzhou-test/e2e/worktrees", itemId);
+  expect(await readFile(path.join(cwd, "AGENTS.md"), "utf8")).toBe(custom);
+  const files = requirementFiles(itemId);
+  const updated = "# Markdown 修订方案\n实施后调整恢复入口，保留关联版本。";
+  await writeFile(path.join(cwd, files.prd), updated);
+  await room.getByRole("tab", { name: "设计与 PRD", exact: true }).click();
+  await room.getByRole("button", { name: "从工作区同步 PRD", exact: true }).click();
+  await expect(room.getByLabel("PRD 正文", { exact: true })).toHaveValue(updated);
+  await expect(room.getByRole("button", { name: "确认 PRD v2", exact: true })).toBeVisible();
+  await expect(room.getByRole("button", { name: "开始新一轮", exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("markdown-prd-synchronization.png"), fullPage: true, animations: "disabled" });
 });

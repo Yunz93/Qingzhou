@@ -9,6 +9,7 @@ import { WorkflowMenu, WorkflowModal, WorkflowTabs } from "./WorkflowTabs";
 import { AttentionInbox, useAttentionItems } from "./AttentionInbox";
 import { DeliveryReview } from "./DeliveryReview";
 import { hasPrdDraftChanges } from "../../lib/prd-draft";
+import { ProjectStandard } from "./ProjectStandard";
 import { ModuleDocuments } from "./ModuleDocuments";
 import { planningReady, prdFor } from "./RequirementDesign";
 import { MainlineHistory } from "./MainlineHistory";
@@ -53,6 +54,7 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
   onRefresh: () => Promise<void>; onSelect: (item: WorkItemSummary, panel?: string) => void; children?: ReactNode;
 }) {
   const [settings, setSettings] = useState(false);
+  const [standard, setStandard] = useState(false);
   const [params, setParams] = useSearchParams();
   const [savedView, saveView] = useViewPreference(`qingzhou:project-view:${projectId}`, "requirements");
   const view = params.get("projectView") || savedView;
@@ -76,7 +78,7 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
       <div className="workflow-project-heading">
         <div><h2>项目总览</h2>
           <p className="mt-1 text-sm text-mute">{config ? "独立实施，逐项验收，按需合入。所有进展都在这里。" : "配置工作模式，让需求拥有独立工作区、验证证据和合入记录。"}</p></div>
-        <button className="btn btn-secondary" onClick={() => setSettings(true)}><Settings2 size={14} />{config ? "编排设置" : "配置工作模式"}</button>
+        <div className="flex flex-wrap gap-2">{config ? <button className="btn btn-secondary" onClick={() => setStandard(true)}>项目文件与规范</button> : null}<button className="btn btn-secondary" onClick={() => setSettings(true)}><Settings2 size={14} />{config ? "编排设置" : "配置工作模式"}</button></div>
       </div>
       {config ? <>
         <div className="workflow-project-metrics" aria-label="项目进度">
@@ -111,6 +113,7 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
       <div role="tabpanel" id="project-panel-modules" aria-labelledby="project-tab-modules" hidden={view !== "modules"}><ModuleDocuments state={state} items={items} projectId={projectId} onRefresh={onRefresh} onSelect={onSelect} /></div>
       <div role="tabpanel" id="project-panel-history" aria-labelledby="project-tab-history" hidden={view !== "history"}><WorkflowHistory state={state} items={items} onSelect={onSelect} onRefresh={onRefresh} expanded /></div>
     </> : null}
+    {standard ? <ProjectStandard projectId={projectId} onClose={() => setStandard(false)} onRefresh={onRefresh} /> : null}
     {settings ? <WorkflowModal title={config ? "项目编排设置" : "配置工作模式"} onClose={() => setSettings(false)}><WorkflowSettings key={projectId} projectId={projectId} state={state} onSaved={async () => { await onRefresh(); setSettings(false); }} /></WorkflowModal> : null}
   </section>;
 }

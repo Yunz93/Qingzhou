@@ -4,12 +4,13 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import {
-  ACTIVE_INTEGRATIONS, requirementDesignPath, workspaceDesignSchema, verificationIsValid, workItemPrompt, workItemFeedbackPrompt,
+  ACTIVE_INTEGRATIONS, AGENT_CONTEXT_MARKER, projectAgentContext, requirementDesignPath, workspaceDesignSchema, verificationIsValid, workItemPrompt, workItemFeedbackPrompt,
   type ClientCommand, type Delivery, type DeliveryAcceptance, type IntegrationAttempt, type Verification,
   type WorkItem, type WorkRunKind, type WorkflowConfig, type WorkflowCheck,
   type WorkflowProjectState, type WorkflowTicket, type TimelineMessage, type ToolExecution,
 } from "@qingzhou/protocol";
 import { workItemContext } from "./work-item-context.js";
+import { initializeProjectStandard, inspectProjectStandard } from "./project-standard.js";
 import { WorkflowDesign } from "./workflow-design.js";
 import { WorkflowStore } from "./workflow-store.js";
 import { changedPaths, workflowArtifact, redactWorkflowLog, repositoryInfo, safeWorkflowPath, workflowGit as git } from "./workflow-git.js";
@@ -128,7 +129,7 @@ export class WorkflowService {
     });
   }
   private instructionWithDesign(id: string, instruction: string): string {
-    const full = instruction + this.design.context(id);
+    const full = instruction + AGENT_CONTEXT_MARKER + this.design.context(id) + projectAgentContext();
     if (full.length > 30000) throw new Error("范围、PRD 与模块设计合计超过本轮上下文上限，请精简正文或拆分需求后重试");
     return full;
   }
@@ -238,6 +239,17 @@ export class WorkflowService {
         if (!workspace) throw new Error("需求还没有实施工作区");
         const result = await this.design.importFile(id, workspace.path);
         this.store.event(this.item(id).projectId, id, "prd.file.synced", result.prd.id, result.changed ? "已读取工作区设计变更，等待确认新 PRD。" : "工作区设计内容与当前 PRD 一致。");
+        await this.changed(); return result;
+      });
+      case "workflow.standard.inspect": {
+        const config = this.requireConfig(command.payload.projectId); await this.repository(config);
+        return inspectProjectStandard(config.repository, this.host.items.getProject(config.projectId)?.name ?? "项目");
+      }
+      case "workflow.standard.initialize": return this.lock(`project:${command.payload.projectId}`, async () => {
+        const config = this.requireConfig(command.payload.projectId); await this.repository(config);
+        if (this.used(config.projectId) || this.store.state.integrations.some((entry) => entry.projectId === config.projectId && active(entry))) throw new Error("请先结束项目执行、验证和集成，再初始化项目文件");
+        const result = await initializeProjectStandard(config.repository, this.host.items.getProject(config.projectId)?.name ?? "项目");
+        this.store.event(config.projectId, null, "project.standard.initialized", null, `补齐 ${result.created.length} 个标准文件，保留 ${result.preserved.length} 个现有文件；改动未自动提交。`);
         await this.changed(); return result;
       });
       case "workflow.module.create": return this.lock(`modules:${command.payload.projectId}`, async () => {
@@ -360,7 +372,7 @@ export class WorkflowService {
       const attachments = [...new Set([...(imageIds ?? []), ...pendingFeedback.flatMap((entry) => entry.imageIds ?? [])])];
       this.store.state.tickets.push({
         id: randomUUID(), requestId, itemId: id, projectId: item.projectId, scopeId: scope.id,
-        kind, prdId: prd?.id, instruction: fullInstruction,
+        kind, prdId: prd?.id, documentationVersion: prd && kind !== "discussion" ? 1 : undefined, instruction: fullInstruction,
         imageIds: attachments, phase: kind === "discussion" ? "discussion" : "implementation", status: "queued", runId: null, integrationId: null, error: null, createdAt: now(),
       });
       this.store.event(item.projectId, id, "run.queued", scope.id, `范围 v${scope.version} 已加入${kind === "discussion" ? "只读讨论" : "实施"}队列。`);
@@ -544,6 +556,7 @@ export class WorkflowService {
       if (!ticket || ticket.scopeId !== scope.id) throw new Error("当前范围尚未执行，请先开始本轮需求");
       const changes = await this.changes(id);
       await this.design.assertFileCurrent(id, changes.cwd);
+      await this.design.assertSnapshot(id, changes.cwd, undefined, ticket.documentationVersion);
       const selected = new Set(paths.map(safeWorkflowPath));
       if (prd && !selected.has(requirementDesignPath(id)) && !(await git(changes.cwd, ["ls-files", "--", requirementDesignPath(id)]))) throw new Error("PRD 设计文件未纳入交付；请检查 Git 忽略规则，刷新并确认设计文件后重新封存");
       if (changes.paths.some((file) => !selected.has(file)) || [...selected].some((file) => !changes.paths.includes(file))) throw new Error("交付文件已变化，请刷新并明确选择本次全部改动；来源不明的文件请先处理");
@@ -563,6 +576,7 @@ export class WorkflowService {
         const document = workspaceDesignSchema.parse(JSON.parse(await git(changes.cwd, ["show", `${commit}:${requirementDesignPath(id)}`])));
         if (document.prdId !== prd.id || document.content !== prd.content || JSON.stringify(document.moduleChanges) !== JSON.stringify(prd.moduleChanges)) throw new Error("封存的 PRD 与确认版本不一致，请重新核对工作区");
       }
+      await this.design.assertSnapshot(id, changes.cwd, commit, ticket.documentationVersion);
       if (review) for (const file of review.artifactPaths) await workflowArtifact(changes.cwd, commit, safeWorkflowPath(file));
       const deliveryId = randomUUID();
       await git(changes.cwd, ["update-ref", `refs/qingzhou/deliveries/${deliveryId}`, commit]);

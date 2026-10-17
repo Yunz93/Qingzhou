@@ -36,6 +36,8 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   z.object({ ...commandBase, type: z.literal("workflow.prd.import"), payload: z.object({ id: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.prd.confirm"), payload: z.object({ id: z.string().uuid(), prdId: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.module.create"), payload: z.object({ projectId: z.string().uuid(), name: z.string().min(1).max(200), content: z.string().max(12000) }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.standard.inspect"), payload: z.object({ projectId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.standard.initialize"), payload: z.object({ projectId: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.inspect"), payload: z.object({ projectId: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.state"), payload: z.object({ projectId: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.configure"), payload: z.object({
