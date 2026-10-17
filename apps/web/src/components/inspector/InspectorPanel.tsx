@@ -1,5 +1,5 @@
 import { useDialogLayer } from "../../hooks/useDialogLayer";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pin, PinOff, X, PanelRight, PanelRightClose } from "lucide-react";
 import {
   parseGitPatch,
@@ -232,7 +232,7 @@ export function InspectorPanel({
       });
   };
 
-  async function checkSkillUpdates() {
+  const checkSkillUpdates = useCallback(async () => {
     if (!onCheckSkillUpdates) return;
     setSkillBusy("check");
     setSkillError("");
@@ -245,14 +245,14 @@ export function InspectorPanel({
     } finally {
       setSkillBusy(null);
     }
-  }
+  }, [onCheckSkillUpdates]);
 
   useEffect(() => {
     if (tab !== "resources" || resourceTab !== "skills") return;
     if (!onCheckSkillUpdates || skillAutoChecked.current) return;
     skillAutoChecked.current = true;
     void checkSkillUpdates();
-  }, [tab, resourceTab, taskId, onCheckSkillUpdates]);
+  }, [tab, resourceTab, taskId, onCheckSkillUpdates, checkSkillUpdates]);
 
   async function updateSkills(paths?: string[]) {
     if (!onUpdateSkills) return;

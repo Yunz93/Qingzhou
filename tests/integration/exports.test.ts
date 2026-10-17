@@ -28,6 +28,7 @@ describe("html export route", () => {
       QINGZHOU_MAX_PROCESSES: "1",
       QINGZHOU_MUTATIONS: "approval",
       QINGZHOU_HOME_DIR: root.current,
+      QINGZHOU_SKIP_PI_TOOLS_FETCH: "1",
     });
     app = created.app;
     await app.listen({ host: created.config.host, port: 0 });
@@ -57,6 +58,10 @@ describe("html export route", () => {
     });
     expect(ok.status).toBe(200);
     expect(ok.headers.get("content-type")).toMatch(/text\/html/);
+    const policy = ok.headers.get("content-security-policy") ?? "";
+    expect(policy).toContain("sandbox allow-scripts");
+    expect(policy).not.toContain("allow-same-origin");
+    expect(policy).toContain("connect-src 'none'");
     expect(await ok.text()).toContain("exported session");
 
     const txtPath = path.join(dataDir, "notes.txt");

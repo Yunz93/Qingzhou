@@ -106,6 +106,56 @@ describe("integration fake-pi", () => {
     await ctx.app.close();
   });
 
+  it("keeps identical request IDs and snapshots isolated between connections", async () => {
+    const first = await openSocket(ctx.base);
+    const second = await openSocket(ctx.base);
+    try {
+      await first.waitFor("snapshot");
+      await second.waitFor("snapshot");
+      first.events.splice(0);
+      second.events.splice(0);
+      const project = path.join(root.current, "project");
+      // Independent connections both start their client request counter at c1.
+      first.send({ id: "c1", type: "task.create", payload: { cwd: project, title: "First window" } });
+      second.send({ id: "c1", type: "task.search", payload: { query: "no-such-task" } });
+      const [created, searched] = await Promise.all([
+        first.waitForRequest("c1"), second.waitForRequest("c1"),
+      ]);
+      expect(created.payload?.data?.task?.id).toBeTruthy();
+      expect(searched.payload?.data).toEqual({ tasks: [] });
+
+      // A later command is a barrier: all earlier responses on both chains
+      // have been sent, so late duplicate broadcasts cannot go unnoticed.
+      first.send({ id: "first-barrier", type: "task.search", payload: { query: "" } });
+      second.send({ id: "second-barrier", type: "task.search", payload: { query: "" } });
+      await Promise.all([first.waitForRequest("first-barrier"), second.waitForRequest("second-barrier")]);
+      expect(first.events.filter((event) => event.payload?.requestId === "c1")).toHaveLength(1);
+      expect(second.events.filter((event) => event.payload?.requestId === "c1")).toHaveLength(1);
+      expect(second.events.some((event) => event.type === "snapshot")).toBe(false);
+      // Task state updates still broadcast to other windows.
+      expect(second.events.some((event) => event.type === "task.created")).toBe(true);
+
+      first.events.splice(0);
+      second.events.splice(0);
+      first.send({ id: "bad-first", type: "not-a-command" });
+      second.send({ id: "bad-second", type: "task.activate", taskId: "00000000-0000-4000-8000-000000000000" });
+      expect((await first.waitForRequest("bad-first")).type).toBe("request.failed");
+      expect((await second.waitForRequest("bad-second")).type).toBe("request.failed");
+      first.send({ id: "error-barrier", type: "task.search", payload: { query: "" } });
+      await first.waitForRequest("error-barrier");
+      expect(first.events.some((event) => event.payload?.requestId === "bad-second")).toBe(false);
+      expect(second.events.some((event) => event.payload?.requestId === "bad-first")).toBe(false);
+    } finally {
+      first.ws.close();
+      second.ws.close();
+      const taskId = first.events.find((event) => event.type === "task.created")?.payload?.task?.id
+        ?? ctx.service.listTasks().find((task) => task.title === "First window")?.id;
+      if (taskId) {
+        await ctx.service.handleCommand({ id: "cleanup-window-task", type: "task.archive", taskId });
+      }
+    }
+  });
+
   it("streams prompt output, approvals, queue, crash, abort, and restore", async () => {
     const project = path.join(root.current, "project");
     const sock = await openSocket(ctx.base);

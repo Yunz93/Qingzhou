@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { createServer } from "node:http";
+import { describe, expect, it, vi } from "vitest";
 import {
   isUnsupportedRegionError,
   normalizeProxyEnv,
@@ -36,17 +37,26 @@ describe("HTTP proxy and region errors", () => {
   });
 
   it("routes proxiedFetch through the proxy when HTTPS_PROXY is set", async () => {
-    const prevHttps = process.env.HTTPS_PROXY;
-    const prevHttp = process.env.HTTP_PROXY;
-    process.env.HTTPS_PROXY = "http://127.0.0.1:9";
-    process.env.HTTP_PROXY = "http://127.0.0.1:9";
+    const destinations: string[] = [];
+    const proxy = createServer();
+    proxy.on("connect", (request, socket) => {
+      destinations.push(request.url ?? "");
+      socket.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("missing proxy port");
+    const proxyUrl = `http://127.0.0.1:${address.port}`;
+    // EnvHttpProxyAgent gives lowercase variables precedence. Isolate both
+    // spellings so an inherited developer/CI proxy cannot escape this fixture.
+    for (const name of ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]) vi.stubEnv(name, proxyUrl);
+    for (const name of ["NO_PROXY", "no_proxy"]) vi.stubEnv(name, "127.0.0.1,localhost,::1");
     try {
-      await expect(proxiedFetch("https://example.com", { signal: AbortSignal.timeout(2000) })).rejects.toThrow();
+      await expect(proxiedFetch("https://qingzhou-proxy.invalid", { signal: AbortSignal.timeout(2000) })).rejects.toThrow();
+      expect(destinations).toEqual(["qingzhou-proxy.invalid:443"]);
     } finally {
-      if (prevHttps === undefined) delete process.env.HTTPS_PROXY;
-      else process.env.HTTPS_PROXY = prevHttps;
-      if (prevHttp === undefined) delete process.env.HTTP_PROXY;
-      else process.env.HTTP_PROXY = prevHttp;
+      vi.unstubAllEnvs();
+      await new Promise<void>((resolve, reject) => proxy.close((error) => error ? reject(error) : resolve()));
     }
   });
 });

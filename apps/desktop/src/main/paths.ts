@@ -50,12 +50,12 @@ export function macosElectronHelperBin(execPath: string): string {
   return execPath;
 }
 
-export function packagedAppPath(): string | null {
+export function packagedAppPath(platform: NodeJS.Platform = process.platform): string | null {
   if (!app.isPackaged) return null;
-  if (process.platform === "darwin") {
+  if (platform === "darwin") {
     return macosBundlePathFromExecPath(app.getPath("exe"));
   }
-  return path.dirname(app.getPath("exe"));
+  return app.getPath("exe");
 }
 
 export function webDistDir(): string {

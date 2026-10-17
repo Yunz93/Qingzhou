@@ -55,6 +55,21 @@ describe("path policy", () => {
     expect(resolved.endsWith(`${path.sep}src${path.sep}app.ts`)).toBe(true);
   });
 
+  it("allows missing parent directories while still blocking escapes and protected files", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-new-path-"));
+    await expect(resolveAllowedPath("new/src/app.ts", root, [root])).resolves.toBe(
+      path.join(await realpath(root), "new", "src", "app.ts"),
+    );
+    await expect(resolveAllowedPath("new/src/.env", root, [root])).rejects.toBeInstanceOf(PathPolicyError);
+    await expect(resolveAllowedPath("../outside/new/app.ts", root, [root])).rejects.toBeInstanceOf(PathPolicyError);
+
+    const outside = await mkdtemp(path.join(os.tmpdir(), "qingzhou-new-outside-"));
+    await symlink(outside, path.join(root, "link"), process.platform === "win32" ? "junction" : "dir");
+    await expect(resolveAllowedPath("link/new/app.ts", root, [root])).rejects.toBeInstanceOf(PathPolicyError);
+    await symlink(path.join(outside, "missing"), path.join(root, "dangling"), process.platform === "win32" ? "junction" : "dir");
+    await expect(resolveAllowedPath("dangling/new/app.ts", root, [root])).rejects.toBeInstanceOf(PathPolicyError);
+  });
+
   it("serves html exports only from allowed roots", async () => {
     const home = await mkdtemp(path.join(os.tmpdir(), "qingzhou-home-"));
     const data = path.join(home, "data");

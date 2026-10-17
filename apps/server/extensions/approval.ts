@@ -29,11 +29,21 @@ function isProtected(resolvedPath: string): boolean {
 
 function resolveWritePath(inputPath: string, cwd: string): string {
   const absolute = path.isAbsolute(inputPath) ? inputPath : path.join(cwd, inputPath);
-  try {
-    return realpathSync(absolute);
-  } catch {
-    const parent = realpathSync(path.dirname(absolute));
-    return path.join(parent, path.basename(absolute));
+  let ancestor = absolute;
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync(ancestor), ...missing);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      // A dangling symlink is not a missing directory: following it on write
+      // could create files outside the project once its target is created.
+      if (lstatSync(ancestor, { throwIfNoEntry: false })?.isSymbolicLink()) throw error;
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      missing.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
   }
 }
 

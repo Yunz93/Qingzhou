@@ -115,20 +115,25 @@ export class RpcClient {
     if (!child) return;
     this.stopReading?.();
     this.stopReading = null;
-    if (!child.killed) {
-      child.kill(signal);
-    }
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (!child.killed) child.kill("SIGKILL");
-        resolve();
-      }, 1500);
-      child.once("exit", () => {
-        clearTimeout(timer);
-        resolve();
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          child.off("exit", finish);
+          child.off("error", finish);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          // `killed` only records that a signal was sent, not that Pi exited.
+          // Keep waiting for exit after escalation so stop never returns early.
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        }, 1500);
+        child.once("exit", finish);
+        child.once("error", finish);
+        child.kill(signal);
       });
-    });
-    this.process = null;
+    }
+    if (this.process === child) this.process = null;
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Pi process stopped"));

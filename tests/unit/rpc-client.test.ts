@@ -30,4 +30,46 @@ describe("rpc client correlation", () => {
     expect(src).toContain("envWithElectronAsNode(");
     expect(src).toContain("windowsHide: true");
   });
+
+  it.skipIf(process.platform === "win32")("waits for forced exit when Pi ignores SIGTERM", async () => {
+    let ready!: (pid: number) => void;
+    const started = new Promise<number>((resolve) => { ready = resolve; });
+    let exitSignal: string | null = null;
+    const client = new RpcClient({
+      bin: process.execPath,
+      args: [fileURLToPath(new URL("../fixtures/signal-resistant-pi.mjs", import.meta.url))],
+      cwd: process.cwd(),
+      onEvent: (event) => { if (event.type === "ready") ready(Number(event.pid)); },
+      onExit: (_code, signal) => { exitSignal = signal; },
+    });
+    let pid: number | undefined;
+    try {
+      await client.start();
+      pid = await started;
+      await client.stop();
+      expect(exitSignal).toBe("SIGKILL");
+      expect(() => process.kill(pid!, 0)).toThrow();
+    } finally {
+      if (pid) {
+        try { process.kill(pid, "SIGKILL"); } catch { /* Already exited. */ }
+      }
+      await client.stop("SIGKILL");
+    }
+  });
+
+  it("does not wait for the termination timeout after Pi has already exited", async () => {
+    let exited!: () => void;
+    const exit = new Promise<void>((resolve) => { exited = resolve; });
+    const client = new RpcClient({
+      bin: process.execPath,
+      args: ["-e", "setTimeout(() => process.exit(0), 100)"],
+      cwd: process.cwd(),
+      onExit: () => exited(),
+    });
+    await client.start();
+    await exit;
+    const start = Date.now();
+    await client.stop();
+    expect(Date.now() - start).toBeLessThan(500);
+  });
 });

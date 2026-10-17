@@ -117,12 +117,25 @@ export async function resolveAllowedPath(
   allowedRoots: string[],
 ): Promise<string> {
   const absolute = path.isAbsolute(inputPath) ? inputPath : path.join(cwd, inputPath);
+  let ancestor = absolute;
   let resolved: string;
-  try {
-    resolved = await realpath(absolute);
-  } catch {
-    const parent = await realpath(path.dirname(absolute));
-    resolved = path.join(parent, path.basename(absolute));
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      resolved = path.join(await realpath(ancestor), ...missing);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const stats = await lstat(ancestor).catch((statError: NodeJS.ErrnoException) => {
+        if (statError.code !== "ENOENT") throw statError;
+        return null;
+      });
+      if (stats?.isSymbolicLink()) throw new PathPolicyError(`Cannot resolve symlink: ${inputPath}`);
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      missing.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
   }
 
   const realCwd = await realpath(cwd);

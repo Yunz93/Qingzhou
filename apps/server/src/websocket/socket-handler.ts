@@ -56,7 +56,7 @@ export function registerWebsocket(app: FastifyInstance, config: AppConfig, servi
         try {
           parsed = JSON.parse(String(raw));
         } catch {
-          service.emit("", "request.failed", { requestId: "", error: "请求格式无效。" });
+          service.sendTo(wrapper, "", "request.failed", { requestId: "", error: "请求格式无效。" });
           return;
         }
         const result = clientCommandSchema.safeParse(parsed);
@@ -65,7 +65,7 @@ export function registerWebsocket(app: FastifyInstance, config: AppConfig, servi
             parsed && typeof parsed === "object" && "id" in parsed
               ? String((parsed as { id: unknown }).id)
               : "";
-          service.emit("", "request.failed", {
+          service.sendTo(wrapper, "", "request.failed", {
             requestId,
             error: formatClientCommandError(result.error),
           });
@@ -75,9 +75,10 @@ export function registerWebsocket(app: FastifyInstance, config: AppConfig, servi
         const taskId = command.taskId ?? "";
         try {
           const data = await service.handleCommand(command);
-          service.emit(taskId, "request.succeeded", { requestId: command.id, data });
-          if (
-            command.type === "snapshot.request" ||
+          service.sendTo(wrapper, taskId, "request.succeeded", { requestId: command.id, data });
+          if (command.type === "snapshot.request") {
+            service.sendTo(wrapper, command.payload?.taskId ?? "", "snapshot", data);
+          } else if (
             command.type === "task.activate" ||
             command.type === "task.create" ||
             command.type === "session.resume"
@@ -88,21 +89,22 @@ export function registerWebsocket(app: FastifyInstance, config: AppConfig, servi
                 : command.taskId ?? null;
             // Always push a snapshot on activate. Warm sessions are often opened
             // from the work board without a client-side transcript cache.
-            service.emit(
+            service.sendTo(
+              wrapper,
               taskId || snapshotTaskId || "",
               "snapshot",
               service.buildSnapshot(snapshotTaskId),
             );
           }
         } catch (error) {
-          service.emit(taskId, "request.failed", {
+          service.sendTo(wrapper, taskId, "request.failed", {
             requestId: command.id,
             error: humanizeUserFacingError(error),
           });
         }
         })
         .catch((error) => {
-          service.emit("", "server.error", {
+          service.sendTo(wrapper, "", "server.error", {
             code: "ws",
             message: error instanceof Error ? error.message : String(error),
           });

@@ -73,10 +73,11 @@ export class CheckpointStore {
 
   async restoreLatestByPath(taskId: string, filePath: string, cwd: string): Promise<CheckpointRecord> {
     const current = await this.list(taskId);
-    const normalized = filePath.replaceAll("\\", "/");
+    const requested = path.resolve(cwd, filePath);
     const record = current.find((item) => {
-      const stored = item.path.replaceAll("\\", "/");
-      return stored === normalized || stored.endsWith(`/${normalized}`) || normalized.endsWith(`/${stored}`);
+      // Old checkpoints can store absolute paths; compare the full resolved
+      // path so a newer src/note.ts never shadows a checkpoint for note.ts.
+      return path.relative(path.resolve(cwd, item.path), requested) === "";
     });
     if (!record) throw new Error("找不到这个文件的检查点");
     return this.restore(taskId, record.id, cwd);
