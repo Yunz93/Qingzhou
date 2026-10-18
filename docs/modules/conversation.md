@@ -14,3 +14,9 @@
 - 验证：[前端交互](../../tests/e2e/frontend-interactions.spec.ts)、[编排 E2E](../../tests/e2e/project-workflow.spec.ts)、[运行时集成](../../tests/integration/workflow-runtime.test.ts)。
 
 来源：[编排 PRD](../prd/project-work-orchestration.md)的交互补充；关联 [需求设计](requirement-design.md) 与 [Agent 执行](agent-runtime.md)。
+
+## 信息呈现精简（待验收）
+
+工作区保留顶部一套阶段进度和右侧下一步，连续对话不重复显示执行状态。发送前通过“本轮目的”选项明确只读讨论或实施，不再并列重复解释。工作区分支与路径保留在“范围 → 工作区与基线”。来源转换保留“不会自动实施”的操作结果提示。
+
+来源：[前端信息精简](../requirements/frontend-simplification/PRD.md)。

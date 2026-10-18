@@ -340,6 +340,13 @@ async function handlePrompt(message, mode) {
       });
       return;
     }
+    if (message.includes("STRUCTURED_DESIGN") && message.includes("qingzhou-design")) {
+      const itemId = message.match(/itemId:"([a-f0-9-]+)"/)?.[1];
+      const scopeId = message.match(/scopeId:"([a-f0-9-]+)"/)?.[1];
+      const expected = message.match(/expectedPrdId:(null|"[a-f0-9-]+")/)?.[1];
+      await streamText("结构化设计建议\n```qingzhou-design\n" + JSON.stringify({ schemaVersion: 1, itemId, scopeId, expectedPrdId: JSON.parse(expected || "null"), content: "# 结构化方案\n明确目标、错误路径及回归标准。", reason: "讨论后形成完整设计", moduleChanges: [], questions: ["是否保留原入口？"] }) + "\n```");
+      return;
+    }
     const writeAt = message.indexOf("WRITE:");
     const bashAt = message.indexOf("BASH:");
     const selectAt = message.indexOf("SELECT:");

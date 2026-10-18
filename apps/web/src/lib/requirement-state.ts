@@ -9,7 +9,7 @@ export const attemptLabels: Record<IntegrationAttempt["status"], string> = {
 export function requirementStatus(state: WorkflowProjectState, item: WorkItemSummary) {
   const plan = state.plans?.find((entry) => entry.itemId === item.id);
   const prd = state.prds?.find((entry) => entry.id === plan?.currentPrdId);
-  const moduleStale = !!prd && !prd.frozenAt && prd.moduleChanges.some((change) => change.baseRevisionId !== (state.moduleRevisions?.filter((entry) => entry.moduleId === change.moduleId).at(-1)?.id ?? null));
+  const moduleStale = !!prd && !prd.frozenAt && prd.moduleChanges.some((change) => change.baseRevisionId !== (prd.codeBaseline ? prd.codeBaseline.moduleRevisionIds[change.moduleId] ?? null : state.moduleRevisions?.filter((entry) => entry.moduleId === change.moduleId).at(-1)?.id ?? null));
   const config = state.configs[0];
   const scope = state.scopes.filter((entry) => entry.itemId === item.id).at(-1);
   const delivery = state.deliveries.filter((entry) => entry.itemId === item.id).at(-1);
@@ -44,7 +44,7 @@ export function requirementStatus(state: WorkflowProjectState, item: WorkItemSum
     else if (implementation === "等待回答") action = { kind: "question", reason: "Agent 需要你的回答", label: "回答问题", view: "conversation" };
     else if (!busy && plan && !prd?.frozenAt && (plan.confirmedScopeId !== scope?.id || !prd?.confirmedAt || prd.scopeId !== scope?.id || moduleStale)) action = { kind: "design", reason: moduleStale ? "模块已有新设计，请合并设计并确认新 PRD" : plan.confirmedScopeId !== scope?.id ? "当前需求范围等待确认" : "当前 PRD 等待审阅与确认", label: "确认设计", view: "design" };
     else if (attempt?.status === "ready" && !candidateCurrent) action = { kind: "integration", reason: "候选依据的主线、源交付或检查配置已变化，请更新候选", label: "处理集成", view: "delivery" };
-    else if (attempt?.status === "ready") action = { kind: "merge", reason: "组合验证已通过，等待确认合入", label: "审阅候选", view: "delivery" };
+    else if (attempt?.status === "ready") action = { kind: "merge", reason: attempt.review?.decision === "design_changed" ? "候选涉及设计变化，请取消并创建关联子需求" : attempt.review?.candidate === attempt.candidate && attempt.review.decision === "compatible" ? "候选复审通过，等待确认合入" : "组合验证已通过，等待候选行为复审", label: "审阅候选", view: "delivery" };
     else if (attempt && ["conflicts", "failed", "stale"].includes(attempt.status)) action = { kind: "integration", reason: attempt.error || attemptLabels[attempt.status], label: "处理集成", view: "delivery" };
     else if (!busy && acceptanceLabel === "需返工") action = { kind: "rework", reason: acceptance?.note || "交付需要调整", label: "反馈并继续", view: "delivery" };
     else if (implementation === "受阻" || implementation === "已暂停") action = { kind: "failure", reason: ticket?.error || verification?.error || implementation, label: "检查并恢复", view: "delivery" };

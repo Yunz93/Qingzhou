@@ -112,7 +112,7 @@ export function NewWorkItemDialog({ projectName, onCancel, onCreate, requirement
               onChange={(event) => setAcceptanceCriteria(event.target.value)}
               className="field mt-1 w-full text-sm"
               rows={3}
-              placeholder="逐条填写可判断的完成条件。保存后先沟通需求、确认 PRD，再开始实施。"
+              placeholder="逐条填写可判断的完成条件。"
             />
           </div>
           {error ? (

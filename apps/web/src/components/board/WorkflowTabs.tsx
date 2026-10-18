@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MoreHorizontal, X } from "lucide-react";
 import { useDialogLayer } from "../../hooks/useDialogLayer";
 
@@ -23,13 +23,19 @@ export function WorkflowTabs<T extends string>({ label, tabs, value, onChange, i
   </div>;
 }
 
-export function WorkflowModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function WorkflowModal({ title, onClose, children, inactive = false }: { title: string; onClose: () => void; children: ReactNode; inactive?: boolean }) {
   const ref = useRef<HTMLElement>(null);
+  const lastFocused = useRef<HTMLElement | null>(null);
+  const wasInactive = useRef(inactive);
   const id = useId();
   useDialogLayer(ref, onClose);
-  return <div className="dialog-scrim z-40">
+  useLayoutEffect(() => {
+    if (wasInactive.current && !inactive) lastFocused.current?.focus();
+    wasInactive.current = inactive;
+  }, [inactive]);
+  return <div className="dialog-scrim z-40" inert={inactive || undefined} aria-hidden={inactive || undefined}>
     <button className="absolute inset-0" aria-label="关闭设置" onClick={onClose} />
-    <section ref={ref} className="workflow-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
+    <section ref={ref} className="workflow-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} onFocusCapture={(event) => { if (!wasInactive.current && event.target instanceof HTMLElement) lastFocused.current = event.target; }}>
       <header><h2 id={id}>{title}</h2><button className="icon-btn" aria-label="关闭" onClick={onClose}><X size={18} /></button></header>
       <div className="workflow-modal-body">{children}</div>
     </section>

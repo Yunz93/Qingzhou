@@ -397,8 +397,9 @@ export class WorkItemController {
       const snapshot = this.host.supervisor.snapshot(taskId);
       await this.host.workflow?.captureTranscript(run.objectiveId, run.id, messages, snapshot?.tools ?? []);
       await this.host.workflow?.settled(run.objectiveId, true);
+      const cycle = this.host.workflow?.store.state.cycles?.findLast((entry) => entry.itemId === run.objectiveId);
       this.host.emit(taskId, "notification.shown", {
-        message: run.kind === "discussion" ? `“${item?.title ?? "需求"}”讨论已结束，可完善范围后开始实施。` : item && this.host.workflow?.enabled(item.projectId) ? `“${item.title}”本轮执行结束，待封存验证。` : item ? `“${item.title}”已完成一轮执行，等待你验收。` : "工作目标等待验收。",
+        message: run.kind === "discussion" ? `“${item?.title ?? "需求"}”讨论已结束，可完善范围后开始实施。` : cycle && ["running", "verifying"].includes(cycle.status) ? `“${item?.title ?? "需求"}”本轮结束，正在继续自动封存与验证。` : item && this.host.workflow?.enabled(item.projectId) ? `“${item.title}”本轮执行结束，待封存验证。` : item ? `“${item.title}”已完成一轮执行，等待你验收。` : "工作目标等待验收。",
         notifyType: "info",
       });
     }

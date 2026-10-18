@@ -23,7 +23,7 @@ export function ChatToRequirementDialog({ task, messages, projects, onClose, onC
     void socketClient.send<{ item: WorkItem }>("workItem.create", { projectId, title: title.trim(), description: description.trim(), acceptanceCriteria: criteria.trim(), start: false, source: { taskId: task.id, messageIds: selected, excerpt, images } })
       .then(({ item }) => onCreated(item.id)).catch((reason) => setError(reason instanceof Error ? reason.message : "整理需求失败")).finally(() => setBusy(false));
   }}><div className="dialog-head"><h2 id="convert-chat-title" className="dialog-title">整理为需求</h2><button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>关闭</button></div>
-    <div className="dialog-body space-y-3"><p className="text-sm text-mute">保留原对话，选择讨论依据并完善范围。保存后进入需求工作区，不会自动实施。</p>
+    <div className="dialog-body space-y-3"><p className="text-sm text-mute">保留原对话；保存后进入需求工作区，不会自动实施。</p>
       <label className="block text-sm">目标项目<select className="field mt-1 w-full" value={projectId} onChange={(event) => { setProjectId(event.target.value); setConfirmed(false); }} required><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
       {!projects.length ? <p className="text-sm text-mute">请先通过工作入口创建项目，再回来整理此对话。</p> : null}
       <label className="block text-sm">需求标题<input className="field mt-1 w-full" value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} /></label>

@@ -19,3 +19,19 @@
 - [真实 Git 集成测试](../../tests/integration/workflow.test.ts)、[运行时回归](../../tests/integration/workflow-runtime.test.ts)、[浏览器流程](../../tests/e2e/project-workflow.spec.ts)。
 
 依赖 [需求设计](requirement-design.md)、[Agent 执行](agent-runtime.md) 和 [对话衔接](conversation.md)。来源：[编排 PRD](../prd/project-work-orchestration.md)、[实现记录](../project-workflow.md)。
+
+## 工作流补全（待验收）
+
+自动轮次记录授权请求、范围、PRD、检查配置与最大修复次数。真实检查失败时把失败命令和日志带入原需求的修复轮次；达到上限、设计/配置变化、执行失败或重启后停止推进。通过只进入待人工验收，不自动固化或合入。
+
+集成候选必须包含源交付与目标主线，保持需求快照完整。每次重新验证清除原复审；复审绑定候选 commit、tree 和来源 PRD，设计变化阻止合入并转关联子需求。最终合入仍有独立确认与 Git CAS。
+
+来源：[工作流闭环补全](../requirements/workflow-completeness/PRD.md)。
+
+## 信息呈现精简（待验收）
+
+总览默认展示未归档需求、执行名额和待处理事项；仅有排队时增加排队统计。运行计数放入“运行详情”，项目标准文件入口位于“编排设置”。历史合入仍通过“演进与回放”访问。
+
+交付审阅隐藏没有内容的未完成项和产物栏目；封存补充信息、验证环境和检查日志按需展开。文件归属、实际风险、失败原因、逐条验收和合入确认直接保留。候选复审记录后显示结论，可展开“修改复审”；保存复审与最终合入保持两个独立动作。
+
+来源：[前端信息精简](../requirements/frontend-simplification/PRD.md)。

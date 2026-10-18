@@ -140,3 +140,8 @@ Agent 在独立工作区同步修改 `docs/qingzhou/requirements/<需求 ID>.jso
 | 追加 Agent 规范后聊天正文过长 | 目标和验收标准保留正文，完整规范与上下文在执行指令中展开 | `work-prompt-summary.ts`、`ConversationTimeline.tsx` |
 
 本轮验证：lint、类型检查、生产构建通过；445 项单测、60 项集成测试、45 个 Chromium 场景通过，4 项 Windows 限定用例在 Linux 跳过。标准 16 项入口齐备，28 份 Markdown 和清单路径无断链。具体范围、证据与限制见 [需求验证记录](requirements/project-standards/VERIFICATION.md)。
+# Agent 工作流闭环补全
+
+本轮按五项评审扣分点改造：新增确切集成候选的行为复审与固化设计保护；PRD 绑定实际代码和模块基线；模块文档随代码交付并回读集成版本；只读讨论提取结构化设计提案；明确授权的自动轮次执行封存、检查与有限修复，等待名额且遵守停止和重启边界。
+
+改前 / 改后和代码入口见 [实施记录](requirements/workflow-completeness/IMPLEMENTATION.md)，方案见 [PRD](requirements/workflow-completeness/PRD.md)，详细证据及限制见 [验证记录](requirements/workflow-completeness/VERIFICATION.md)。lint、类型检查和生产构建通过，448 项单元、73 项集成、47 项浏览器回归通过；4 项 Windows 限定用例跳过。最后的界面与自动推进复核 2 项通过。本轮工作区改动尚未提交，待用户验收。

@@ -27,6 +27,9 @@ const promptPayloadSchema = z
   });
 
 export const clientCommandSchema = z.discriminatedUnion("type", [
+  z.object({ ...commandBase, operationId: z.string().uuid(), type: z.literal("workflow.cycle.start"), payload: z.object({ id: z.string().uuid(), maxRepairs: z.number().int().min(0).max(3) }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.cycle.cancel"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.integration.review"), payload: z.object({ id: z.string().uuid(), candidate: z.string(), decision: z.enum(["compatible", "design_changed"]), note: z.string().trim().min(1).max(4000) }) }),
   z.object({ ...commandBase, type: z.literal("workflow.plan.begin"), payload: z.object({ id: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.scope.confirm"), payload: z.object({ id: z.string().uuid(), scopeId: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.prd.save"), payload: z.object({

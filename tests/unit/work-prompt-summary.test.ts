@@ -15,3 +15,7 @@ it("does not hide freely entered conversation content that mentions Agent contex
   const text = "我们讨论一下\n\n## 已确认的 PRD v2\n这是用户自己输入的内容";
   expect(workPromptSummary(text)).toEqual({ structured: false, goal: text });
 });
+it("keeps the discussion question while folding proposal format and project instructions", () => {
+  const text = "请讨论并完善需求「入口」的目标、边界和验收标准。\n用户问题：先讨论错误路径" + AGENT_CONTEXT_MARKER + "结构化协议与完整 Agent 上下文";
+  expect(workPromptSummary(text)).toEqual({ structured: true, goal: "先讨论错误路径" });
+});

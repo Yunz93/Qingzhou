@@ -35,6 +35,9 @@ export class WorkflowStore {
       }
     }
     // Restart never reruns side effects. Queued work also requires an explicit restart.
+    for (const cycle of this.state.cycles ?? []) if (["running", "verifying"].includes(cycle.status)) {
+      cycle.status = "interrupted"; cycle.error = "应用重启，自动轮次已中断；检查现场后可重新启动。";
+    }
     for (const ticket of this.state.tickets) {
       if (ticket.status === "running" || ticket.status === "queued") {
         ticket.status = "interrupted";

@@ -3,7 +3,7 @@ import { groupThinkingMessages } from "../../lib/thinking-groups";
 import { hasDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type ReactNode } from "react";
 import { Box, Info } from "lucide-react";
-import { stripModePrefix, type TimelineMessage, type ToolExecution } from "@qingzhou/protocol";
+import { extractDesignProposal, stripModePrefix, type TimelineMessage, type ToolExecution } from "@qingzhou/protocol";
 import { ToolExecutionRow } from "./ToolExecutionRow";
 import { ToolGroupRow } from "./ToolGroupRow";
 import { AssistantMarkdown } from "./AssistantMarkdown";
@@ -124,6 +124,7 @@ function UserMessage({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const visible = stripModePrefix(message.text);
   const { structured, goal } = workPromptSummary(visible);
+  const discussion = structured && visible.startsWith("请讨论并完善需求「");
   return (
     <article
       id={conversationMessageDomId(message.id)}
@@ -158,7 +159,7 @@ function UserMessage({
       ) : (
         <>
           {message.images?.length ? <MessageImages images={message.images} /> : null}
-          {visible ? structured ? <><p className="text-xs text-mute mb-2">已确认的需求执行</p><p className="whitespace-pre-wrap">{goal}</p><details className="mt-2 text-xs text-mute"><summary>查看完整执行指令</summary><p className="whitespace-pre-wrap mt-2">{visible}</p></details></> : <p className="whitespace-pre-wrap">{visible}</p> : null}
+          {visible ? structured ? <><p className="text-xs text-mute mb-2">{discussion ? "需求讨论 · 只读" : "已确认的需求执行"}</p><p className="whitespace-pre-wrap">{goal}</p><details className="mt-2 text-xs text-mute"><summary>{discussion ? "查看完整讨论上下文" : "查看完整执行指令"}</summary><p className="whitespace-pre-wrap mt-2">{visible}</p></details></> : <p className="whitespace-pre-wrap">{visible}</p> : null}
           {!visible && message.images?.length ? (
             <p className="text-[12px] text-mute">附 {message.images.length} 张图</p>
           ) : null}
@@ -231,13 +232,20 @@ const AssistantMessage = memo(function AssistantMessage({
   taskId: string | null;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const proposal = useMemo(() => {
+    if (message.streaming) return null;
+    try { return extractDesignProposal(message.text); } catch { return null; }
+  }, [message.text, message.streaming]);
   return (
     <article
       id={conversationMessageDomId(message.id)}
       className={`mr-auto w-full max-w-[90%] shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
     >
       <ThinkingBlock message={message} highlighted={highlighted} />
-      <AssistantMarkdown text={message.text} streaming={message.streaming} taskId={taskId} />
+      {proposal ? <div className="workflow-design-note"><strong>设计提案：{proposal.reason}</strong><p>可在“设计与 PRD”对照并采用为草稿，采用后仍需确认。</p>
+        {proposal.questions.length ? <ul>{proposal.questions.map((question, index) => <li key={index}>{question}</li>)}</ul> : null}
+        <details><summary>查看提议的设计</summary><AssistantMarkdown text={proposal.content} taskId={taskId} /></details>
+        <details><summary>查看原始提案回复</summary><AssistantMarkdown text={message.text} taskId={taskId} /></details></div> : <AssistantMarkdown text={message.text} streaming={message.streaming} taskId={taskId} />}
       {message.streaming ? <span className="sr-only" aria-live="polite">正在回复</span> : null}
       {message.text ? (
         <button

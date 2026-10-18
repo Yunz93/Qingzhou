@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, type RefObject } from "react";
 const layers: Array<{ id: symbol; modal: boolean }> = [];
 export function hasDialogLayer(): boolean { return layers.length > 0; }
 const activeModal = () => layers.findLast((layer) => layer.modal)?.id;
-const focusable = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
+const focusable = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]';
 
 export function useDialogLayer<T extends HTMLElement>(
   ref: RefObject<T | null>,

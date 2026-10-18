@@ -137,7 +137,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull, embedded = f
   }
 
   if (!item.taskId || !task) {
-    const discussionContent = <section className="workflow-draft-discussion" aria-label="需求连续对话"><div className="workflow-empty"><h3>先把需求讨论清楚</h3><p>讨论以只读方式完善目标、边界与验收标准。确认范围后再开始实施。</p></div>
+    const discussionContent = <section className="workflow-draft-discussion" aria-label="需求连续对话"><div className="workflow-empty"><h3>与 Agent 讨论需求与方案</h3></div>
       <label className="sr-only" htmlFor={`discussion-${item.id}`}>输入消息</label><textarea id={`discussion-${item.id}`} className="field w-full" rows={4} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="描述想法，或让助手帮你完善验收标准…" />
       {images.map((image) => <span key={image.id}>{image.name}<button className="btn btn-ghost" aria-label={`移除 ${image.name}`} onClick={() => setImages((current) => { URL.revokeObjectURL(image.previewUrl); return current.filter((entry) => entry.id !== image.id); })}>移除</button></span>)}
       <div className="flex flex-wrap gap-2 mt-3"><label className="btn btn-secondary">添加图片<input className="sr-only" type="file" accept="image/*" multiple onChange={(event) => { if (event.target.files) void uploadImages(event.target.files); event.target.value = ""; }} /></label><button className="btn btn-primary" disabled={sendPending || connection !== "open" || (!draft.trim() && !images.length)} onClick={() => void send("prompt.send")}>{sendPending ? "正在发送…" : "讨论这个需求"}</button></div>
@@ -177,7 +177,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull, embedded = f
         {itemClosed ? (
           <p className="px-4 pb-2 text-[12px] text-mute">这个目标已经结束，请先重新打开。</p>
         ) : null}
-        <div className="workflow-conversation-intent"><label>本轮目的 <select aria-label="本轮目的" className="field" value={intent} disabled={!["idle", "stopped", "error"].includes(status) || sendPending} onChange={(event) => setIntent(event.target.value)}><option value="discussion">讨论与规划 · 只读</option><option value="execute">继续实施 · 记入执行记录</option></select></label><span>{intent === "discussion" ? "发送后只讨论，不修改代码" : "发送后开始新一轮实施，验收与合入仍需确认"}</span></div>
+        <div className="workflow-conversation-intent"><label>本轮目的 <select aria-label="本轮目的" className="field" value={intent} disabled={!["idle", "stopped", "error"].includes(status) || sendPending} onChange={(event) => setIntent(event.target.value)}><option value="discussion">讨论与规划 · 只读</option><option value="execute">继续实施 · 记入执行记录</option></select></label></div>
         <PromptComposer
           recorded
           sending={sendPending}

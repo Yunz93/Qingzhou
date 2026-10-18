@@ -77,14 +77,13 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
     <div className="workflow-overview">
       <div className="workflow-project-heading">
         <div><h2>项目总览</h2>
-          <p className="mt-1 text-sm text-mute">{config ? "独立实施，逐项验收，按需合入。所有进展都在这里。" : "配置工作模式，让需求拥有独立工作区、验证证据和合入记录。"}</p></div>
-        <div className="flex flex-wrap gap-2">{config ? <button className="btn btn-secondary" onClick={() => setStandard(true)}>项目文件与规范</button> : null}<button className="btn btn-secondary" onClick={() => setSettings(true)}><Settings2 size={14} />{config ? "编排设置" : "配置工作模式"}</button></div>
+          {!config ? <p className="mt-1 text-sm text-mute">选择集成分支和项目检查，开始推进需求。</p> : null}</div>
+        <button className="btn btn-secondary" onClick={() => setSettings(true)}><Settings2 size={14} />{config ? "编排设置" : "配置工作模式"}</button>
       </div>
       {config ? <>
         <div className="workflow-project-metrics" aria-label="项目进度">
           <button onClick={() => { setView("requirements"); setParams((previous) => { previous.set("status", "active"); return previous; }); }}><strong>{active.length}</strong><span>未归档需求</span></button><button onClick={() => setView("requirements")}><strong>{state.queue?.used ?? running}<small> / {config.concurrency}</small></strong><span>执行名额占用</span></button>
-          <button onClick={() => setView("requirements")}><strong>{queued}</strong><span>排队等待</span></button><button className={attention ? "workflow-metric-attention" : ""} onClick={() => setView("attention")}><strong>{attention}</strong><span>待我处理</span></button>
-          <button onClick={() => setView("history")}><strong>{items.filter((item) => requirementStatus(state, item).everMerged).length}</strong><span>历史合入需求</span></button>
+          {queued > 0 ? <button onClick={() => setView("requirements")}><strong>{queued}</strong><span>排队等待</span></button> : null}<button className={attention ? "workflow-metric-attention" : ""} onClick={() => setView("attention")}><strong>{attention}</strong><span>待我处理</span></button>
         </div>
         <div className="workflow-mainline">
           <div className="flex min-w-0 flex-wrap items-center gap-2"><GitBranch size={14} /><strong>{config.targetBranch}</strong><code>{state.head?.slice(0, 8) ?? "版本不可用"}</code>
@@ -92,8 +91,10 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
           <div className="flex flex-wrap gap-1"><button className="btn btn-ghost" disabled={busy || ["running", "queued"].includes(state.mainVerification?.status ?? "")} onClick={() => void run("workflow.verifyMain", { projectId })}>验证当前主线</button>
             <button className="btn btn-ghost" disabled={busy} onClick={() => void run("workflow.pause", { projectId, paused: !config.paused })}>{config.paused ? <Play size={13} /> : <Pause size={13} />}{config.paused ? "恢复队列" : "暂停后续执行"}</button></div>
         </div>
-        <p className="workflow-project-caption">当前范围检查有效 {active.filter((item) => requirementStatus(state, item).valid).length} · 当前范围已合入 {active.filter((item) => requirementStatus(state, item).merged).length} · 并发上限 {config.concurrency}{config.paused ? " · 后续执行已暂停" : ""}</p>
-        <p className="workflow-project-caption">实施/讨论 {running} · 验证 {state.queue?.verifying ?? 0} · 准备 {state.queue?.reserved ?? 0}；等待验收不占执行名额。</p>
+        <details className="workflow-project-caption"><summary>运行详情{config.paused ? " · 队列已暂停" : ""}</summary>
+          <p className="mt-2">当前范围检查有效 {active.filter((item) => requirementStatus(state, item).valid).length} · 当前范围已合入 {active.filter((item) => requirementStatus(state, item).merged).length} · 并发上限 {config.concurrency}</p>
+          <p className="mt-1">实施/讨论 {running} · 验证 {state.queue?.verifying ?? 0} · 准备 {state.queue?.reserved ?? 0}；等待验收不占执行名额。</p>
+        </details>
         {state.mainVerification && state.queue?.resourceWaits[state.mainVerification.id] ? <p className="mt-2 text-sm text-mute">主线验证等待独占资源：{state.queue.resourceWaits[state.mainVerification.id]}</p> : null}
         {evidence ? <section className="mt-3" aria-label="主线检查证据"><VerificationDetails result={state.mainVerification ?? undefined} /></section> : null}
       </> : null}
@@ -106,19 +107,18 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
       <div role="tabpanel" id="project-panel-requirements" aria-labelledby="project-tab-requirements" hidden={view !== "requirements"}>{children}</div>
       <div role="tabpanel" id="project-panel-attention" aria-labelledby="project-tab-attention" hidden={view !== "attention"}><AttentionInbox state={state} items={items} onSelect={onSelect} /></div>
       <div role="tabpanel" id="project-panel-integration" aria-labelledby="project-tab-integration" hidden={view !== "integration"}>
-        <div className="workflow-view-intro"><h3>按交付选择合入顺序</h3><p>实施完成后可先保留交付。集成会基于最新主线创建候选，并重新运行组合检查。</p></div>
         <IntegrationQueue state={state} items={items} onRefresh={onRefresh} onSelect={onSelect} />
         {!integrations.length ? <div className="workflow-empty"><GitBranch size={28} /><h3>主线正在等待下一份交付</h3><p>在需求工作区完成验证和验收后，选择“准备合入这个交付”。</p><button className="btn btn-secondary" onClick={() => setView("requirements")}>回到需求</button></div> : null}
       </div>
       <div role="tabpanel" id="project-panel-modules" aria-labelledby="project-tab-modules" hidden={view !== "modules"}><ModuleDocuments state={state} items={items} projectId={projectId} onRefresh={onRefresh} onSelect={onSelect} /></div>
       <div role="tabpanel" id="project-panel-history" aria-labelledby="project-tab-history" hidden={view !== "history"}><WorkflowHistory state={state} items={items} onSelect={onSelect} onRefresh={onRefresh} expanded /></div>
     </> : null}
+    {settings ? <WorkflowModal inactive={standard} title={config ? "项目编排设置" : "配置工作模式"} onClose={() => setSettings(false)}><WorkflowSettings key={projectId} projectId={projectId} state={state} onOpenStandard={() => setStandard(true)} onSaved={async () => { await onRefresh(); setSettings(false); }} /></WorkflowModal> : null}
     {standard ? <ProjectStandard projectId={projectId} onClose={() => setStandard(false)} onRefresh={onRefresh} /> : null}
-    {settings ? <WorkflowModal title={config ? "项目编排设置" : "配置工作模式"} onClose={() => setSettings(false)}><WorkflowSettings key={projectId} projectId={projectId} state={state} onSaved={async () => { await onRefresh(); setSettings(false); }} /></WorkflowModal> : null}
   </section>;
 }
 
-function WorkflowSettings({ projectId, state, onSaved }: { projectId: string; state: WorkflowProjectState; onSaved: () => Promise<void> }) {
+function WorkflowSettings({ projectId, state, onSaved, onOpenStandard }: { projectId: string; state: WorkflowProjectState; onSaved: () => Promise<void>; onOpenStandard: () => void }) {
   const config = state.configs[0];
   const [info, setInfo] = useState<{ isGit: boolean; repository?: string; branch?: string; branches?: string[]; dirty?: string[]; suggestedChecks?: WorkflowCheck[] }>();
   const [branch, setBranch] = useState(config?.targetBranch ?? "");
@@ -162,6 +162,7 @@ function WorkflowSettings({ projectId, state, onSaved }: { projectId: string; st
     <h3 className="mt-4 text-sm font-semibold">3. 执行安排</h3><div className="mt-3"><label className="text-sm">并发上限<input aria-label="并发上限" type="number" min={1} max={16} className="field ml-2 w-20" value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} required /></label><p className="mt-2 text-sm text-mute">默认逐条执行；提高并发后可同时推进独立需求。</p></div>
     <div className="mt-3 flex gap-2"><button type="button" className="btn btn-secondary" onClick={() => setChecks([...checks, { id: crypto.randomUUID(), name: "回归检查", command: "", required: true, timeoutMs: 600000, resource: "" }])}>添加检查</button>
       <button type="submit" className="btn btn-primary" disabled={busy || !info?.isGit}>{busy ? "正在保存…" : "保存编排设置"}</button></div>
+    {config ? <button type="button" className="btn btn-ghost mt-3" disabled={busy} onClick={onOpenStandard}>项目文件与规范</button> : null}
     {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
   </form>;
 }
@@ -284,7 +285,6 @@ export function RequirementWorkflow({ state, item, items, onRefresh, view = "del
   };
   const active = ["running", "queued"].includes(status.ticket?.status ?? "") || ["running", "queued"].includes(status.verification?.status ?? "");
   return <section className="work-panel-section" aria-label="交付与集成">
-    <div hidden={view !== "delivery"}><h3 className="font-semibold">交付与集成</h3><p className="mt-2 text-sm text-mute">{status.implementation} · {status.acceptance} · {status.integration}</p></div>
     {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
     {status.verification && state.queue?.resourceWaits[status.verification.id] ? <p className="mt-2 text-sm text-mute">等待独占验证资源：{state.queue.resourceWaits[status.verification.id]}</p> : null}
     <div hidden={view !== "scope"} role="tabpanel" id="requirement-panel-scope" aria-labelledby="requirement-tab-scope">{scopeContent}<details open className="mt-3 text-sm"><summary>范围版本与前置需求</summary>
@@ -302,15 +302,15 @@ export function RequirementWorkflow({ state, item, items, onRefresh, view = "del
     {workspace && !workspace.removedAt && item.state === "open" && !prdFor(state, item.id)?.frozenAt ? <div className="mt-4">
       <button className="btn btn-secondary" disabled={busy || active || loadingChanges} onClick={() => { setError(""); setLoadingChanges(true); void socketClient.send<{ paths: string[] }>("workflow.changes", { id: item.id }).then((value) => { setPaths(value.paths); setSelected([]); }).catch((reason) => setError(message(reason))).finally(() => setLoadingChanges(false)); }}>{loadingChanges ? "正在读取改动…" : "查看本次待封存改动"}</button>
       {paths ? <div className="mt-3 rounded-lg border border-line p-3 text-sm">
-        <p>核对文件归属后明确选择。交付不会复制原目录文件；来源不明的改动请先处理。</p>
         <label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={paths.length > 0 && selected.length === paths.length} onChange={(event) => setSelected(event.target.checked ? paths : [])} />确认全部改动属于本需求</label>
         {paths.map((file) => <label key={file} className="mt-2 flex items-center gap-2 break-all"><input type="checkbox" checked={selected.includes(file)} onChange={(event) => setSelected(event.target.checked ? [...selected, file] : selected.filter((entry) => entry !== file))} />{file}</label>)}
         {!paths.length ? <p className="mt-2 text-mute">没有新文件差异，可封存当前代码树以重新验证。</p> : null}
-        <label className="mt-3 block">交付说明<textarea className="field mt-1 w-full" rows={2} value={summary} onChange={(event) => setSummary(event.target.value)} /></label>
         <label className="mt-3 block">本轮实现的行为<textarea className="field mt-1 w-full" rows={3} value={behaviors} maxLength={6000} onChange={(event) => setBehaviors(event.target.value)} placeholder="描述用户可观察的结果，提交后仍需人工验收。" /></label>
+        <details className="mt-3"><summary>补充交付信息</summary>
+        <label className="mt-3 block">交付说明<textarea className="field mt-1 w-full" rows={2} value={summary} onChange={(event) => setSummary(event.target.value)} /></label>
         <label className="mt-3 block">未完成与需人工检查<textarea className="field mt-1 w-full" rows={2} value={unresolved} maxLength={6000} onChange={(event) => setUnresolved(event.target.value)} placeholder="列出未验证的行为、限制及尚需决定的事项。" /></label>
         <label className="mt-3 block">保存到交付的产物路径<textarea className="field mt-1 w-full font-mono" rows={2} value={artifactPaths} onChange={(event) => setArtifactPaths(event.target.value)} placeholder="每行一个仓库内文件，如 screenshots/result.png。文件须已纳入本次提交，预览读取封存版本。" /></label>
-        <button className="btn btn-primary mt-3" disabled={busy || selected.length !== paths.length} onClick={() => void send("workflow.seal", { id: item.id, paths: selected, summary, review: { behaviors, unresolved, artifactPaths: artifactPaths.split("\n").map((file) => file.trim()).filter(Boolean) } })}>封存所选改动并验证</button>
+        </details><button className="btn btn-primary mt-3" disabled={busy || selected.length !== paths.length} onClick={() => void send("workflow.seal", { id: item.id, paths: selected, summary, review: { behaviors, unresolved, artifactPaths: artifactPaths.split("\n").map((file) => file.trim()).filter(Boolean) } })}>封存所选改动并验证</button>
       </div> : null}
     </div> : null}
     <div className="mt-4 space-y-3">{deliveries.map((delivery, index) => <details key={delivery.id} open={index === 0} className="workflow-delivery"><summary>交付 {deliveries.length - index} · {delivery.commit.slice(0, 8)} · {date(delivery.createdAt)}</summary>
@@ -349,8 +349,7 @@ function DeliveryActions({ state, deliveryId, current, busy, send }: { state: Wo
         {delivery.review?.artifactPaths.map((file) => <label className="flex items-start gap-2 mt-2" key={file}><input type="checkbox" checked={evidence[index]?.artifactPaths.includes(file) ?? false} onChange={(event) => updateEvidence(index, { artifactPaths: event.target.checked ? [...evidence[index]!.artifactPaths, file] : evidence[index]!.artifactPaths.filter((path) => path !== file) })} />引用产物：{file}</label>)}
         </details></div>)}
       {unsavedDesign ? <p className="workflow-design-note mt-3" role="alert">有未保存的 PRD 草稿，请回到“设计与 PRD”保存并确认，或明确放弃草稿后再验收。</p> : null}
-      {prdFor(state, delivery.itemId) ? <p className="workflow-design-note mt-3">最终确认会固化本交付对应的 PRD，并发布关联模块设计。请确认实现、PRD 与模块设计已同步；后续变更通过子需求推进。</p> : null}
-      <label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />我已审阅这个交付的代码、检查证据与需人工确认的结果</label>
+      <label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />我已审阅这个交付的代码、检查证据与需人工确认的结果{prd ? "，并确认 PRD 与模块设计已同步" : ""}</label>
       <button className="btn btn-primary mt-3" disabled={busy || unsavedDesign || !reviewed || checked.length !== criteria.length} onClick={() => void send("workflow.accept", { deliveryId, decision: "accepted", note: "已逐条人工确认当前范围验收标准", evidence: evidence.map((row) => ({ ...row, note: row.note.trim() || "用户已逐条人工确认，未补充文字观察。" })) })}>{prdFor(state, delivery.itemId) ? "验收并固化 PRD" : "验收这个版本"}</button>
       <button className="btn btn-ghost mt-3 ml-2" aria-expanded={rejecting} onClick={() => setRejecting(!rejecting)}>需要调整</button>
       {rejecting ? <div className="mt-3 rounded-lg border border-line p-3"><label className="block">验收反馈<textarea className="field mt-1 w-full" rows={3} value={note} onChange={(event) => { setNote(event.target.value); setConfirmContinue(false); }} placeholder="记录未达到的标准与需要调整的结果。" /></label><p className="mt-2 text-xs text-mute">可仅记录意见，或审阅下面的反馈后直接开始新一轮实施。</p><button className="btn btn-secondary mt-3" disabled={busy || !note.trim()} onClick={() => { setReviewed(false); setChecked([]); void send("workflow.accept", { deliveryId, decision: "rejected", note: note.trim() }); }}>记录返工意见</button><button className="btn btn-primary mt-3 ml-2" disabled={busy || !note.trim()} onClick={() => setConfirmContinue(true)}>反馈并继续</button>
@@ -364,6 +363,10 @@ function DeliveryActions({ state, deliveryId, current, busy, send }: { state: Wo
 function IntegrationDetails({ state, attempt, busy, send }: { state: WorkflowProjectState; attempt: IntegrationAttempt; busy: boolean; send: Send }) {
   const [reviewed, setReviewed] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewDecision, setReviewDecision] = useState("compatible");
+  const candidateReviewed = attempt.review?.candidate === attempt.candidate && attempt.review?.tree === attempt.tree && attempt.review?.decision === "compatible";
+  useEffect(() => { setReviewed(false); setReviewNote(""); }, [attempt.candidate, attempt.verificationId]);
   const repairable = ["conflicts", "failed", "ready"].includes(attempt.status);
   const config = state.configs[0];
   const delivery = state.deliveries.find((entry) => entry.id === attempt.deliveryId);
@@ -381,8 +384,15 @@ function IntegrationDetails({ state, attempt, busy, send }: { state: WorkflowPro
     {repairable ? <details className="mt-3" open={attempt.status !== "ready"}><summary className="text-sm">{attempt.status === "ready" ? "需要调整候选？展开修复操作" : "处理集成候选"}</summary><div className="mt-3"><label className="text-sm">集成反馈<textarea className="field mt-1 w-full" rows={2} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="需要产品取舍时说明处理方向" /></label>
       <div className="mt-2 flex flex-wrap gap-2"><button className="btn btn-secondary" disabled={busy} onClick={() => void send("workflow.integration.repair", { id: attempt.id, instruction })}>在原对话处理候选</button><button className="btn btn-secondary" disabled={busy} onClick={() => void send("workflow.integration.recheck", { id: attempt.id })}>封存候选并重新验证</button></div></div></details> : null}
     {attempt.status === "ready" && !readyCurrent ? <p className="mt-3 text-sm text-danger" role="status">候选依据已变化。请取消旧候选后基于最新主线重新准备；当前候选不能直接合入。</p> : null}
-    {attempt.status === "ready" && readyCurrent ? <div className="mt-3"><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />我已审阅组合后的候选与验证结果，确认将此版本合入主线</label>
-      <button className="btn btn-primary mt-3" disabled={busy || !reviewed} onClick={() => void send("workflow.integration.merge", { id: attempt.id })}>确认合入 {attempt.targetBranch}</button></div> : null}
+    {attempt.status === "ready" && readyCurrent ? <div className="mt-3">
+      {attempt.review ? <p role="status" className="text-sm mt-2">{candidateReviewed ? "当前候选复审通过" : "设计发生变化，请取消集成并在设计面板创建关联子需求"}：{attempt.review.note}</p> : null}
+      <details className="mt-2" open={!attempt.review}><summary>{attempt.review ? "修改复审" : "候选行为复审"}</summary>
+      <label className="block text-sm">复审结论<select aria-label="候选复审结论" className="field w-full" value={reviewDecision} onChange={(event) => setReviewDecision(event.target.value)}><option value="compatible">符合已确认设计，保留各需求有效行为</option><option value="design_changed">涉及设计变化，需要关联子需求</option></select></label>
+      <label className="block text-sm">复审依据<textarea aria-label="候选复审依据" className="field w-full" rows={2} maxLength={4000} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></label>
+      <button className="btn btn-secondary mt-2" disabled={busy || !reviewNote.trim()} onClick={() => void send("workflow.integration.review", { id: attempt.id, candidate: attempt.candidate, decision: reviewDecision, note: reviewNote })}>记录候选复审</button>
+      </details>
+      <label className="flex items-start gap-2 text-sm mt-3"><input type="checkbox" checked={reviewed} disabled={!candidateReviewed} onChange={(event) => setReviewed(event.target.checked)} />我已审阅组合后的候选与验证结果，确认将此版本合入主线</label>
+      <button className="btn btn-primary mt-3" disabled={busy || !reviewed || !candidateReviewed} onClick={() => void send("workflow.integration.merge", { id: attempt.id })}>确认合入 {attempt.targetBranch}</button></div> : null}
     {!["merged", "merging", "preparing", "verifying", "cancelled"].includes(attempt.status) ? <button className="btn btn-ghost mt-3" disabled={busy} onClick={() => void send("workflow.integration.cancel", { id: attempt.id })}>取消集成，保留现场</button> : null}
     {["stale", "failed", "cancelled"].includes(attempt.status) ? <button className="btn btn-secondary mt-3" disabled={busy} onClick={() => void send("workflow.integrate", { deliveryId: attempt.deliveryId })}>基于最新主线重新准备</button> : null}
   </details>;
@@ -390,7 +400,8 @@ function IntegrationDetails({ state, attempt, busy, send }: { state: WorkflowPro
 
 function VerificationDetails({ result }: { result: Verification | undefined }) {
   if (!result) return <p className="mt-2 text-sm text-mute">尚无检查证据</p>;
-  return <div className="mt-2 text-sm"><p>{checkLabels[result.status]} · 配置 v{result.configRevision} · {result.environment}</p>
+  return <div className="mt-2 text-sm"><p>{checkLabels[result.status]}</p>
+    <details className="mt-2"><summary>验证环境</summary><p className="mt-2">配置 v{result.configRevision} · {result.environment}</p></details>
     {result.error ? <p className="mt-2 text-danger">{result.error}</p> : null}
     {result.checks.map((check, index) => <details className="mt-2" key={`${check.id}:${index}`}><summary>{check.name} · {check.required ? "必需" : "非必需"} · {check.status === "passed" ? "通过" : check.status === "running" ? "执行中" : "失败或中断"} · 退出码 {check.exitCode ?? "无"}</summary>
       <pre className="workflow-code">{check.command}{"\n"}{check.cwd}{"\n"}{date(check.startedAt)}{check.finishedAt ? ` → ${date(check.finishedAt)}` : ""}{"\n\n"}{check.output || "暂无输出"}{check.truncated ? "\n[日志超出长度，已截断]" : ""}</pre></details>)}

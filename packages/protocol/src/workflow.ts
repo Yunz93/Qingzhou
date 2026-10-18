@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requirementPlanSchema, requirementPrdSchema, designModuleSchema, moduleRevisionSchema } from "./design.js";
+import { requirementPlanSchema, requirementPrdSchema, designModuleSchema, moduleRevisionSchema, designProposalSchema } from "./design.js";
 
 const id = z.string().uuid();
 const time = z.string().datetime();
@@ -92,6 +92,7 @@ export const deliveryAcceptanceSchema = z.object({
 export type DeliveryAcceptance = z.infer<typeof deliveryAcceptanceSchema>;
 
 export const integrationAttemptSchema = z.object({
+  review: z.object({ candidate: sha, tree: sha, prdId: id.optional(), decision: z.enum(["compatible", "design_changed"]), note: z.string(), createdAt: time }).optional(),
   id, requestId: z.string(), projectId: id, itemId: id, deliveryId: id,
   repositoryKey: z.string(), targetBranch: z.string(),
   status: z.enum(["queued", "preparing", "conflicts", "verifying", "ready", "merging", "merged", "failed", "stale", "cancelled"]),
@@ -102,6 +103,14 @@ export const integrationAttemptSchema = z.object({
   includedItemIds: z.array(id).optional(),
 });
 export type IntegrationAttempt = z.infer<typeof integrationAttemptSchema>;
+
+export const workflowCycleSchema = z.object({
+  id, requestId: z.string(), itemId: id, scopeId: id, prdId: id.optional(), configRevision: z.number().int().positive(),
+  maxRepairs: z.number().int().min(0).max(3), repairs: z.number().int().nonnegative(),
+  status: z.enum(["running", "verifying", "ready_for_review", "paused", "cancelled", "interrupted"]),
+  error: z.string().nullable(), createdAt: time, deliveryId: id.nullable(),
+});
+export type WorkflowCycle = z.infer<typeof workflowCycleSchema>;
 
 export const workflowEventSchema = z.object({
   id, sequence: z.number().int().positive(), projectId: id, itemId: id.nullable(),
@@ -114,6 +123,7 @@ export const workflowEventSchema = z.object({
 export type WorkflowEvent = z.infer<typeof workflowEventSchema>;
 
 export const workflowStateSchema = z.object({
+  proposals: z.array(designProposalSchema).optional(), cycles: z.array(workflowCycleSchema).optional(),
   schemaVersion: z.literal(1),
   plans: z.array(requirementPlanSchema).optional(), prds: z.array(requirementPrdSchema).optional(),
   modules: z.array(designModuleSchema).optional(), moduleRevisions: z.array(moduleRevisionSchema).optional(),
@@ -127,6 +137,8 @@ export const workflowStateSchema = z.object({
 export type WorkflowState = z.infer<typeof workflowStateSchema>;
 
 export type WorkflowProjectState = WorkflowState & {
+  mainDesignBaseline?: NonNullable<import("./design.js").RequirementPrd["codeBaseline"]>;
+  designBaselines?: Record<string, NonNullable<import("./design.js").RequirementPrd["codeBaseline"]>>;
   queue?: { running: number; verifying: number; reserved: number; used: number; limit: number; reasons: Record<string, string>; resourceWaits: Record<string, string> };
   baselineRelations?: Record<string, { behind: boolean; includedItemIds: string[]; error?: string }>;
   head: string | null;

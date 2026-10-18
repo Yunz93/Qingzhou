@@ -4,10 +4,10 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import {
-  ACTIVE_INTEGRATIONS, AGENT_CONTEXT_MARKER, projectAgentContext, requirementDesignPath, workspaceDesignSchema, verificationIsValid, workItemPrompt, workItemFeedbackPrompt,
+  ACTIVE_INTEGRATIONS, AGENT_CONTEXT_MARKER, extractDesignProposal, projectAgentContext, requirementDesignPath, workspaceDesignSchema, verificationIsValid, workItemPrompt, workItemFeedbackPrompt,
   type ClientCommand, type Delivery, type DeliveryAcceptance, type IntegrationAttempt, type Verification,
   type WorkItem, type WorkRunKind, type WorkflowConfig, type WorkflowCheck,
-  type WorkflowProjectState, type WorkflowTicket, type TimelineMessage, type ToolExecution,
+  type WorkflowProjectState, type WorkflowTicket, type WorkflowCycle, type RequirementPrd, type TimelineMessage, type ToolExecution,
 } from "@qingzhou/protocol";
 import { workItemContext } from "./work-item-context.js";
 import { initializeProjectStandard, inspectProjectStandard } from "./project-standard.js";
@@ -15,6 +15,7 @@ import { WorkflowDesign } from "./workflow-design.js";
 import { WorkflowStore } from "./workflow-store.js";
 import { changedPaths, workflowArtifact, redactWorkflowLog, repositoryInfo, safeWorkflowPath, workflowGit as git } from "./workflow-git.js";
 import type { WorkItemStore } from "./work-item-store.js";
+import { moduleDocumentContent } from "./workflow-module-docs.js";
 
 type Host = {
   dataDir: string;
@@ -133,6 +134,24 @@ export class WorkflowService {
     if (full.length > 30000) throw new Error("范围、PRD 与模块设计合计超过本轮上下文上限，请精简正文或拆分需求后重试");
     return full;
   }
+  private async designBaseline(id: string, fixedCommit?: string, ancestry = new Map<string, boolean>()): Promise<NonNullable<RequirementPrd["codeBaseline"]>> {
+    const item = this.item(id); const config = this.requireConfig(item.projectId);
+    const workspace = this.store.state.workspaces.find((entry) => entry.itemId === id && !entry.removedAt);
+    const commit = fixedCommit ?? await git(workspace?.path ?? config.repository, ["rev-parse", workspace ? "HEAD" : `refs/heads/${config.targetBranch}`]);
+    const moduleRevisionIds: Record<string, string | null> = {};
+    for (const module of this.store.state.modules?.filter((entry) => entry.projectId === item.projectId) ?? []) {
+      moduleRevisionIds[module.id] = null;
+      for (const revision of this.store.state.moduleRevisions?.filter((entry) => entry.moduleId === module.id) ?? []) {
+        const source = revision.integrationId ? this.store.state.integrations.find((entry) => entry.id === revision.integrationId)?.mergedCommit
+          : revision.deliveryId ? this.store.state.deliveries.find((entry) => entry.id === revision.deliveryId)?.commit : null;
+        if (revision.deliveryId && !source) continue;
+        const key = `${commit}:${source}`;
+        if (source && !ancestry.has(key)) ancestry.set(key, await git(config.repository, ["merge-base", "--is-ancestor", source, commit]).then(() => true, () => false));
+        if (!source || ancestry.get(key)) moduleRevisionIds[module.id] = revision.id;
+      }
+    }
+    return { commit, moduleRevisionIds };
+  }
   async beginPlanning(id: string): Promise<void> {
     await this.ready;
     await this.lock(`item:${id}`, async () => { this.assertEditable(id); this.design.begin(id); await this.changed(); });
@@ -174,6 +193,12 @@ export class WorkflowService {
     const head = config ? await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]).catch(() => null) : null;
     const tree = head && config ? await git(config.repository, ["rev-parse", `${head}^{tree}`]).catch(() => "") : "";
     const state = this.store.state;
+    const designBaselines: NonNullable<WorkflowProjectState["designBaselines"]> = {};
+    const ancestry = new Map<string, boolean>();
+    const mainDesignBaseline = config && head && items[0] ? await this.designBaseline(items[0].id, head, ancestry) : undefined;
+    if (config) await Promise.all(items.map(async (item) => {
+      try { designBaselines[item.id] = await this.designBaseline(item.id, undefined, ancestry); } catch { /* Missing workspaces remain visible as errors below. */ }
+    }));
     const workspaceStates: WorkflowProjectState["workspaceStates"] = {};
     await Promise.all(state.workspaces.filter((entry) => ids.has(entry.itemId) && !entry.removedAt).map(async (workspace) => {
       try {
@@ -204,8 +229,10 @@ export class WorkflowService {
       } catch (error) { baselineRelations[workspace.itemId] = { behind: true, includedItemIds, error: errorText(error) }; }
     }));
     return structuredClone({
+      designBaselines, mainDesignBaseline,
       queue: { running, verifying, reserved, used: running + verifying + reserved, limit: config?.concurrency ?? 1, reasons, resourceWaits: Object.fromEntries(this.resourceWaits) }, baselineRelations,
       ...state,
+      proposals: state.proposals?.filter((entry) => ids.has(entry.itemId)), cycles: state.cycles?.filter((entry) => ids.has(entry.itemId)),
       plans: state.plans?.filter((entry) => ids.has(entry.itemId)), prds: state.prds?.filter((entry) => ids.has(entry.itemId)),
       modules: state.modules?.filter((entry) => entry.projectId === projectId),
       moduleRevisions: state.moduleRevisions?.filter((entry) => state.modules?.some((module) => module.id === entry.moduleId && module.projectId === projectId)),
@@ -224,13 +251,16 @@ export class WorkflowService {
   async handle(command: ClientCommand): Promise<unknown> {
     await this.ready;
     switch (command.type) {
+      case "workflow.cycle.start": return this.startCycle(command.payload.id, command.payload.maxRepairs, command.operationId);
+      case "workflow.cycle.cancel": await this.stop(command.payload.id, true); return { ok: true };
+      case "workflow.integration.review": return this.reviewCandidate(command.payload);
       case "workflow.plan.begin": await this.beginPlanning(command.payload.id); return { ok: true };
       case "workflow.scope.confirm":
       case "workflow.prd.save":
       case "workflow.prd.confirm": return this.lock(`item:${command.payload.id}`, async () => {
         this.assertDesignEditable(command.payload.id);
         const result = command.type === "workflow.scope.confirm" ? this.design.confirmScope(command.payload.id, command.payload.scopeId)
-          : command.type === "workflow.prd.save" ? this.design.save(command.payload) : this.design.confirm(command.payload.id, command.payload.prdId);
+          : command.type === "workflow.prd.save" ? this.design.save(command.payload) : this.design.confirm(command.payload.id, command.payload.prdId, await this.designBaseline(command.payload.id));
         await this.changed(); return result ?? { ok: true };
       });
       case "workflow.prd.import": return this.lock(`item:${command.payload.id}`, async () => {
@@ -360,6 +390,11 @@ export class WorkflowService {
   }
   private async enqueueLocked(id: string, kind: WorkRunKind, instruction: string | undefined, requestId: string, imageIds?: string[]): Promise<{ item: WorkItem }> {
       const item = this.item(id);
+      if (requestId.startsWith("cycle:")) {
+        const cycle = this.cycle(id);
+        if (!cycle || cycle.status !== "running" || !requestId.startsWith(`cycle:${cycle.id}:`)) throw new Error("自动轮次已停止，未启动后续执行");
+        this.assertCycle(cycle);
+      }
       this.requireConfig(item.projectId);
       if (item.state !== "open") throw new Error("请先重新打开这个需求");
       if (this.store.state.tickets.some((ticket) => ticket.itemId === id && (ticket.requestId === requestId || ["running", "queued"].includes(ticket.status)))) return { item };
@@ -367,7 +402,8 @@ export class WorkflowService {
       const scope = this.store.scope(item);
       const prd = this.design.prd(id);
       const baseInstruction = instruction ?? workItemPrompt({ ...scope, description: workItemContext(item), feedback: this.host.items.listFeedback(id).filter((entry) => !entry.deliveredAt) });
-      const fullInstruction = this.instructionWithDesign(id, baseInstruction);
+      const proposalInstructions = kind === "discussion" ? `\n\n需要提交设计方案时，输出一个且仅一个带 qingzhou-design 语言标识的 JSON 代码块，字段为 schemaVersion:1、itemId:${JSON.stringify(id)}、scopeId:${JSON.stringify(scope.id)}、expectedPrdId:${JSON.stringify(prd?.id ?? null)}、content（完整 PRD）、reason、moduleChanges（moduleId、baseRevisionId、content）、questions（待确认问题数组）。只提交提案，不确认或实施；模块依据使用代码对应版本。可用模块：${JSON.stringify((this.store.state.modules ?? []).filter((entry) => entry.projectId === item.projectId).map((entry) => ({ id: entry.id, name: entry.name })))}；代码基线：${JSON.stringify(await this.designBaseline(id))}` : "";
+      const fullInstruction = this.instructionWithDesign(id, baseInstruction + (proposalInstructions ? AGENT_CONTEXT_MARKER + proposalInstructions : ""));
       const pendingFeedback = this.host.items.listFeedback(id).filter((entry) => !entry.deliveredAt);
       const attachments = [...new Set([...(imageIds ?? []), ...pendingFeedback.flatMap((entry) => entry.imageIds ?? [])])];
       this.store.state.tickets.push({
@@ -434,7 +470,7 @@ export class WorkflowService {
       if (info.commonDir !== config.commonDir || info.branch !== existing.branch) throw new Error("需求工作区身份或分支被外部修改，请检查现场");
       return existing.path;
     }
-    const baseline = await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]);
+    const baseline = this.design.prd(item.id)?.codeBaseline?.commit ?? await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]);
     const cwd = path.join(this.host.dataDir, "worktrees", item.id);
     const branch = `qingzhou/requirement/${item.id}`;
     // Journal intent before Git side effects, allowing interrupted creation to be inspected.
@@ -452,6 +488,13 @@ export class WorkflowService {
       const attempt = ticket.integrationId ? this.attempt(ticket.integrationId) : null;
       const cwd = attempt?.workspace ?? await this.workspace(item);
       if (ticket.status !== "running" || this.disposed) return;
+      const prd = this.design.prd(item.id);
+      if (ticket.phase === "implementation" && prd?.codeBaseline) {
+        const head = await git(cwd, ["rev-parse", "HEAD"]);
+        const previous = this.store.state.tickets.some((entry) => entry.id !== ticket.id && entry.itemId === item.id && entry.prdId === prd.id && entry.phase === "implementation" && entry.runId);
+        if (!previous && head !== prd.codeBaseline.commit) throw new Error("工作区代码已偏离确认的 PRD 基线，请重新审阅并确认新 PRD");
+        await git(cwd, ["merge-base", "--is-ancestor", prd.codeBaseline.commit, head]);
+      }
       if (ticket.phase === "implementation") await this.design.materialize(item.id, cwd);
       this.store.event(item.projectId, item.id, "run.started", ticket.id, ticket.phase === "integration" ? "在原需求对话中处理集成候选。" : ticket.phase === "discussion" ? "开始只读讨论，尚未启动实施。" : "开始实施已固定范围的需求。");
       await this.changed();
@@ -460,6 +503,7 @@ export class WorkflowService {
       await this.changed();
     } catch (error) {
       ticket.status = "failed"; ticket.error = errorText(error);
+      const cycle = this.cycle(ticket.itemId); if (cycle && ticket.phase === "implementation") await this.pauseCycle(cycle, error);
       this.store.event(ticket.projectId, ticket.itemId, "run.failed", ticket.id, ticket.error);
       await this.changed(); this.kick();
     }
@@ -483,11 +527,24 @@ export class WorkflowService {
       success ? ticket.phase === "discussion" ? "只读讨论结束，完善范围与验收标准后可开始实施。" : "本轮执行结束；封存改动并运行项目检查后形成可验收交付。" : "执行失败或停止，现场已保留。");
     await this.changed(); this.kick();
     if (success && ticket.integrationId) await this.recheck(ticket.integrationId);
+    if (ticket.phase === "implementation") this.background(() => this.advanceCycle(itemId, success), ticket.projectId, itemId);
     });
   }
   async captureTranscript(itemId: string, runId: string, messages: TimelineMessage[], tools: ToolExecution[]): Promise<void> {
     await this.ready;
     if (!this.store.state.workspaces.some((entry) => entry.itemId === itemId)) return;
+    const ticket = this.store.state.tickets.find((entry) => entry.itemId === itemId && entry.runId === runId);
+    if (ticket?.phase === "discussion" && !this.store.state.proposals?.some((entry) => entry.runId === runId)) {
+      try {
+        const proposal = extractDesignProposal(messages.findLast((entry) => entry.role === "assistant" && entry.text.trim())?.text ?? "");
+        if (proposal) {
+          if (proposal.itemId !== itemId || proposal.scopeId !== ticket.scopeId || proposal.expectedPrdId !== (ticket.prdId ?? null)) throw new Error("设计提案的需求或依据版本不匹配");
+          for (const change of proposal.moduleChanges) if (!this.store.state.modules?.some((entry) => entry.id === change.moduleId && entry.projectId === ticket.projectId)) throw new Error("提案关联了其他项目的模块");
+          (this.store.state.proposals ??= []).push({ ...proposal, id: randomUUID(), runId, createdAt: now() });
+          this.store.event(ticket.projectId, itemId, "design.proposed", runId, "已提取结构化设计提案；等待用户审阅并采用为草稿。");
+        }
+      } catch (error) { this.store.event(this.item(itemId).projectId, itemId, "design.proposal.failed", runId, errorText(error)); }
+    }
     const directory = path.join(this.host.dataDir, "workflow-transcripts");
     await mkdir(directory, { recursive: true });
     const redact = (value: unknown): unknown => {
@@ -508,6 +565,7 @@ export class WorkflowService {
   }
   async stop(id: string, onlyQueued = false): Promise<void> {
     await this.ready;
+    for (const cycle of this.store.state.cycles ?? []) if (cycle.itemId === id && ["running", "verifying"].includes(cycle.status)) { cycle.status = "cancelled"; cycle.error = "用户停止自动推进；当前执行或检查保留现场。"; }
     for (const ticket of this.store.state.tickets) if (ticket.itemId === id && (ticket.status === "queued" || (!onlyQueued && ticket.status === "running"))) ticket.status = "cancelled";
     await this.changed(); this.kick();
   }
@@ -544,6 +602,11 @@ export class WorkflowService {
       const previous = duplicate && this.store.state.deliveries.find((entry) => entry.id === duplicate.subjectId);
       if (previous) return { delivery: structuredClone(previous) };
       this.assertEditable(id);
+      if (requestId.startsWith("cycle:")) {
+        const cycle = this.cycle(id);
+        if (!cycle || !requestId.startsWith(`cycle:${cycle.id}:`)) throw new Error("自动轮次已停止，未继续封存");
+        this.assertCycle(cycle);
+      }
       if (item.state !== "open") throw new Error("请先重新打开需求");
       if (this.used(item.projectId) >= config.concurrency) throw new Error("项目执行名额已满，请等待后封存验证，或暂停后续队列");
       this.reservations.set(item.projectId, (this.reservations.get(item.projectId) ?? 0) + 1);
@@ -557,6 +620,7 @@ export class WorkflowService {
       const changes = await this.changes(id);
       await this.design.assertFileCurrent(id, changes.cwd);
       await this.design.assertSnapshot(id, changes.cwd, undefined, ticket.documentationVersion);
+      await this.design.assertModuleDocuments(id, changes.cwd);
       const selected = new Set(paths.map(safeWorkflowPath));
       if (prd && !selected.has(requirementDesignPath(id)) && !(await git(changes.cwd, ["ls-files", "--", requirementDesignPath(id)]))) throw new Error("PRD 设计文件未纳入交付；请检查 Git 忽略规则，刷新并确认设计文件后重新封存");
       if (changes.paths.some((file) => !selected.has(file)) || [...selected].some((file) => !changes.paths.includes(file))) throw new Error("交付文件已变化，请刷新并明确选择本次全部改动；来源不明的文件请先处理");
@@ -577,6 +641,7 @@ export class WorkflowService {
         if (document.prdId !== prd.id || document.content !== prd.content || JSON.stringify(document.moduleChanges) !== JSON.stringify(prd.moduleChanges)) throw new Error("封存的 PRD 与确认版本不一致，请重新核对工作区");
       }
       await this.design.assertSnapshot(id, changes.cwd, commit, ticket.documentationVersion);
+      await this.design.assertModuleDocuments(id, changes.cwd, commit);
       if (review) for (const file of review.artifactPaths) await workflowArtifact(changes.cwd, commit, safeWorkflowPath(file));
       const deliveryId = randomUUID();
       await git(changes.cwd, ["update-ref", `refs/qingzhou/deliveries/${deliveryId}`, commit]);
@@ -654,6 +719,7 @@ export class WorkflowService {
       result.status === "passed" ? (result.checks.some((check) => check.status !== "passed") ? "必需检查通过；有非必需检查异常。" : "必需检查通过。") : result.error || (result.status === "unverified" ? "未配置必需检查，不能视为已验证。" : "必需检查失败，请查看日志。"));
     await this.changed();
     this.kick();
+    if (result.phase === "delivery" && result.itemId) this.background(() => this.cycleVerified(result), config.projectId, result.itemId);
   }
   private command(command: string, cwd: string, timeoutMs: number, verificationId: string): Promise<{ exitCode: number | null; output: string; truncated: boolean }> {
     return new Promise((resolve) => {
@@ -682,6 +748,88 @@ export class WorkflowService {
   private delivery(id: string): Delivery {
     const delivery = this.store.state.deliveries.find((entry) => entry.id === id);
     if (!delivery) throw new Error("找不到这个交付版本"); return delivery;
+  }
+  private cycle(itemId: string): WorkflowCycle | undefined {
+    return this.store.state.cycles?.findLast((entry) => entry.itemId === itemId && ["running", "verifying"].includes(entry.status));
+  }
+  private assertCycle(cycle: WorkflowCycle): void {
+    if (!["running", "verifying"].includes(cycle.status)) throw new Error("自动轮次已停止");
+    const item = this.item(cycle.itemId); const config = this.requireConfig(item.projectId);
+    if (this.disposed || item.state !== "open" || config.paused) throw new Error("项目暂停、需求关闭或应用退出，自动推进暂停");
+    if (this.store.scope(item).id !== cycle.scopeId || this.design.prd(item.id)?.id !== cycle.prdId || config.revision !== cycle.configRevision) throw new Error("需求范围、PRD 或检查配置已变化，请重新确认后启动");
+    this.assertImplementationScope(item);
+  }
+  private async pauseCycle(cycle: WorkflowCycle, error: unknown): Promise<void> {
+    if (!["running", "verifying"].includes(cycle.status)) return;
+    cycle.status = "paused"; cycle.error = errorText(error);
+    this.store.event(this.item(cycle.itemId).projectId, cycle.itemId, "cycle.paused", cycle.id, cycle.error);
+    await this.changed();
+  }
+  async startCycle(id: string, maxRepairs: number, requestId: string): Promise<{ cycle: WorkflowCycle }> {
+    return this.lock(`item:${id}`, async () => {
+      const duplicate = this.store.state.cycles?.find((entry) => entry.itemId === id && entry.requestId === requestId);
+      if (duplicate) return { cycle: structuredClone(duplicate) };
+      if (this.cycle(id)) throw new Error("自动推进已在进行中");
+      this.assertEditable(id); const item = this.item(id); this.assertImplementationScope(item);
+      const config = this.requireConfig(item.projectId);
+      if (!config.checks.some((check) => check.required)) throw new Error("请先配置至少一项必需检查，再启动实施并验证");
+      const cycle: WorkflowCycle = { id: randomUUID(), requestId, itemId: id, scopeId: this.store.scope(item).id,
+        prdId: this.design.prd(id)?.id, configRevision: config.revision, maxRepairs, repairs: 0,
+        status: "running", error: null, createdAt: now(), deliveryId: null };
+      this.assertCycle(cycle); (this.store.state.cycles ??= []).push(cycle);
+      this.store.event(item.projectId, id, "cycle.started", cycle.id, `已授权实施、封存当前需求全部改动并验证；最多修复 ${maxRepairs} 轮，之后等待人工验收。`);
+      await this.changed();
+      try { await this.enqueueLocked(id, "initial", undefined, `cycle:${cycle.id}:0`); }
+      catch (error) { await this.pauseCycle(cycle, error); throw error; }
+      return { cycle: structuredClone(cycle) };
+    });
+  }
+  private async advanceCycle(itemId: string, success: boolean): Promise<void> {
+    const cycle = this.cycle(itemId); if (!cycle || cycle.status !== "running") return;
+    try {
+      if (!success) throw new Error("Agent 执行失败或停止，自动推进暂停");
+      const config = this.requireConfig(this.item(itemId).projectId);
+      while (true) {
+        this.assertCycle(cycle);
+        while (this.used(config.projectId) >= this.requireConfig(config.projectId).concurrency) {
+          await new Promise<void>((resolve) => this.slotWaiters.add(resolve)); this.assertCycle(cycle);
+        }
+        const changes = await this.changes(itemId); this.assertCycle(cycle);
+        cycle.status = "verifying"; await this.changed();
+        try {
+          const { delivery } = await this.seal(itemId, changes.paths, "自动推进交付；行为完成情况等待人工验收", `cycle:${cycle.id}:seal:${cycle.repairs}`);
+          cycle.deliveryId = delivery.id; await this.changed();
+          const verification = this.store.state.verifications.find((entry) => entry.id === delivery.verificationId);
+          if (verification && !["queued", "running"].includes(verification.status)) await this.cycleVerified(verification);
+          return;
+        } catch (error) {
+          // Another queued requirement may claim the slot during the file preflight.
+          if (error instanceof Error && error.message.startsWith("项目执行名额已满") && cycle.status === "verifying") { cycle.status = "running"; continue; }
+          throw error;
+        }
+      }
+    } catch (error) { await this.pauseCycle(cycle, error); }
+  }
+  private async cycleVerified(result: Verification): Promise<void> {
+    if (!result.itemId) return;
+    return this.lock(`cycle:${result.itemId}`, async () => {
+      const cycle = this.cycle(result.itemId!);
+      if (!cycle || cycle.status !== "verifying" || cycle.deliveryId !== result.subjectId) return;
+      try {
+        this.assertCycle(cycle);
+        const config = this.requireConfig(this.item(cycle.itemId).projectId);
+        if (verificationIsValid(result, config, result.tree)) {
+          cycle.status = "ready_for_review";
+          this.store.event(config.projectId, cycle.itemId, "cycle.ready", cycle.id, "自动验证通过，等待人工逐条验收；未自动固化或合入。");
+          await this.changed(); return;
+        }
+        if (result.status !== "failed" || result.error || cycle.repairs >= cycle.maxRepairs) throw new Error(result.error || "验证未通过或已达到修复次数上限，请人工审阅后继续");
+        cycle.repairs++; cycle.status = "running"; await this.changed();
+        const logs = result.checks.filter((entry) => entry.required && entry.status !== "passed").map((entry) => `${entry.name}\n命令：${entry.command}\n${entry.output}`).join("\n\n").slice(-7000);
+        const instruction = workItemFeedbackPrompt(this.item(cycle.itemId), `自动修复第 ${cycle.repairs}/${cycle.maxRepairs} 轮。仅修复已确认 PRD 范围内的失败；需要设计取舍时停止并提问，不修改确认元数据。\n${logs}`);
+        await this.enqueue(cycle.itemId, "retry", instruction, `cycle:${cycle.id}:${cycle.repairs}`);
+      } catch (error) { await this.pauseCycle(cycle, error); }
+    });
   }
   private async currentDelivery(delivery: Delivery): Promise<void> {
     this.design.assertDelivery(delivery);
@@ -790,6 +938,8 @@ export class WorkflowService {
     if (!attempt.workspace) throw new Error("缺少集成工作区");
     attempt.candidate = await git(attempt.workspace, ["rev-parse", "HEAD"]);
     attempt.tree = await git(attempt.workspace, ["rev-parse", "HEAD^{tree}"]);
+    attempt.review = undefined;
+    await this.assertCandidateDesign(attempt);
     await git(attempt.workspace, ["update-ref", `refs/qingzhou/integrations/${attempt.id}`, attempt.candidate]);
     attempt.patch = await git(attempt.workspace, ["diff", "--no-ext-diff", "--no-textconv", this.delivery(attempt.deliveryId).commit, attempt.candidate]);
     const verification = this.newVerification(config, attempt.itemId, attempt.id, "integration", attempt.candidate, attempt.tree);
@@ -846,10 +996,11 @@ export class WorkflowService {
       const scope = this.store.state.scopes.find((entry) => entry.id === delivery.scopeId)!;
       const verification = this.store.state.verifications.find((entry) => entry.id === attempt.verificationId);
       attempt.status = "conflicts";
+      attempt.review = undefined;
       this.store.state.tickets.push({
         id: randomUUID(), requestId: randomUUID(), itemId: item.id, projectId: item.projectId, scopeId: scope.id,
         kind: "feedback", phase: "integration", status: "queued", runId: null, integrationId: id, error: null, createdAt: now(),
-        instruction: `【集成处理阶段】继续同一需求对话，仅在当前集成工作区处理候选；不要修改源交付或主线，不要推送。\n${workItemPrompt(scope)}\n目标基线：${attempt.baseline}\n源交付：${delivery.commit}\n冲突：${attempt.conflicts.join("、")}\n失败检查：${verification?.checks.filter((check) => check.status !== "passed").map((check) => `${check.name}\n${check.output}`).join("\n").slice(-12000) || "无"}\n用户补充：${instruction || "解决冲突并修复回归，遇到产品语义取舍请提问；候选最终仍需用户确认。"}`,
+        instruction: `【集成处理阶段】继续同一需求对话，仅在当前集成工作区处理候选；不要修改源交付或主线，不要推送。不改写已固化 PRD 和执行快照；涉及行为或设计变化时停止并请求关联子需求。合并模块文档时保留双方有效设计及正文标记。\n${workItemPrompt(scope)}\n${this.design.context(item.id).slice(0, 12000)}\n目标基线：${attempt.baseline}\n源交付：${delivery.commit}\n冲突：${attempt.conflicts.join("、")}\n失败检查：${verification?.checks.filter((check) => check.status !== "passed").map((check) => `${check.name}\n${check.output}`).join("\n").slice(-6000) || "无"}\n用户补充：${instruction || "解决冲突并修复回归，遇到产品语义取舍请提问；候选最终仍需用户确认。"}`,
       });
       this.store.event(item.projectId, item.id, "integration.repair", id, "已授权在原需求对话中处理隔离集成候选。" );
       await this.changed(); this.kick(); return { ok: true };
@@ -865,6 +1016,8 @@ export class WorkflowService {
       const delivery = this.delivery(attempt.deliveryId);
       await this.currentDelivery(delivery);
       if (!this.accepted(delivery)) throw new Error("交付尚未验收");
+      if (attempt.review?.candidate !== attempt.candidate || attempt.review.tree !== attempt.tree || attempt.review.decision !== "compatible" || attempt.review.prdId !== delivery.prdId) throw new Error("请先针对当前候选完成行为复审；设计变化需创建关联子需求，不能沿用源交付验收");
+      await this.assertCandidateDesign(attempt);
       if (!verificationIsValid(this.store.state.verifications.find((entry) => entry.id === attempt.verificationId), config, attempt.tree)) throw new Error("候选验证已失效，请重新验证");
       if ((await changedPaths(attempt.workspace)).length || await git(attempt.workspace, ["rev-parse", "HEAD"]) !== attempt.candidate) throw new Error("集成候选被修改，请重新验证");
       const info = await repositoryInfo(config.repository);
@@ -896,6 +1049,15 @@ export class WorkflowService {
   private async markMerged(attempt: IntegrationAttempt): Promise<void> {
     attempt.status = "merged"; attempt.mergedCommit = attempt.candidate; attempt.updatedAt = now();
     const config = this.requireConfig(attempt.projectId);
+    const prd = this.store.state.prds?.find((entry) => entry.id === this.delivery(attempt.deliveryId).prdId);
+    for (const change of prd?.codeBaseline ? prd.moduleChanges : []) {
+      const module = this.store.state.modules?.find((entry) => entry.id === change.moduleId);
+      if (!module?.documentPath || this.store.state.moduleRevisions?.some((entry) => entry.moduleId === module.id && entry.integrationId === attempt.id)) continue;
+      const content = moduleDocumentContent(await git(config.repository, ["show", `${attempt.candidate}:${module.documentPath}`]));
+      const previous = this.store.state.moduleRevisions?.filter((entry) => entry.moduleId === module.id).at(-1);
+      (this.store.state.moduleRevisions ??= []).push({ id: randomUUID(), moduleId: module.id, version: (previous?.version ?? 0) + 1,
+        previousId: change.baseRevisionId, integrationId: attempt.id, sourcePrdId: prd!.id, deliveryId: attempt.deliveryId, content, createdAt: now() });
+    }
     const included = await Promise.all(this.store.state.integrations.filter((entry) => entry.repositoryKey === attempt.repositoryKey && entry.status === "merged" && entry.mergedCommit).map(async (entry) => {
       try { await git(config.repository, ["merge-base", "--is-ancestor", entry.mergedCommit!, attempt.candidate!]); return entry.itemId; }
       catch { return null; }
@@ -906,6 +1068,43 @@ export class WorkflowService {
       this.store.state.verifications.push({ ...structuredClone(verification), id: randomUUID(), phase: "main", subjectId: attempt.id });
     }
     this.store.event(attempt.projectId, attempt.itemId, "main.merged", attempt.id, `已合入 ${attempt.targetBranch}：${attempt.candidate?.slice(0, 8)}${attempt.error ? `；${attempt.error}` : ""}`);
+  }
+  private async assertCandidateDesign(attempt: IntegrationAttempt): Promise<void> {
+    if (!attempt.workspace || !attempt.candidate) throw new Error("缺少集成候选");
+    const delivery = this.delivery(attempt.deliveryId);
+    await git(attempt.workspace, ["merge-base", "--is-ancestor", delivery.commit, attempt.candidate]);
+    await git(attempt.workspace, ["merge-base", "--is-ancestor", attempt.baseline!, attempt.candidate]);
+    const ticket = this.store.state.tickets.find((entry) => entry.id === delivery.ticketId);
+    await this.design.assertSnapshot(attempt.itemId, attempt.workspace, attempt.candidate, ticket?.documentationVersion);
+    if (delivery.prdId) {
+      const file = requirementDesignPath(attempt.itemId);
+      if (await git(attempt.workspace, ["show", `${attempt.candidate}:${file}`]) !== await git(attempt.workspace, ["show", `${delivery.commit}:${file}`])) throw new Error("集成候选改写了固化设计 JSON，请恢复源交付设计；设计变化通过关联子需求处理");
+    }
+    const otherDesigns = (await git(attempt.workspace, ["diff", "--name-only", "-z", attempt.baseline!, attempt.candidate, "--", "docs/qingzhou/requirements"])).split("\0").filter(Boolean)
+      .filter((file) => file !== requirementDesignPath(attempt.itemId) && !file.startsWith(`docs/qingzhou/requirements/${attempt.itemId}/`));
+    if (otherDesigns.length) throw new Error("集成候选修改了其他需求的设计快照，请恢复原始设计");
+    const prd = this.store.state.prds?.find((entry) => entry.id === delivery.prdId);
+    for (const change of prd?.codeBaseline ? prd.moduleChanges : []) {
+      const module = this.store.state.modules?.find((entry) => entry.id === change.moduleId);
+      if (module?.documentPath) moduleDocumentContent(await git(attempt.workspace, ["show", `${attempt.candidate}:${module.documentPath}`]));
+    }
+  }
+  async reviewCandidate(input: Extract<ClientCommand, { type: "workflow.integration.review" }>["payload"]): Promise<{ attempt: IntegrationAttempt }> {
+    return this.lock(`integration:${input.id}`, async () => {
+      const attempt = this.attempt(input.id); const delivery = this.delivery(attempt.deliveryId);
+      if (attempt.status !== "ready" || !attempt.tree || attempt.candidate !== input.candidate) throw new Error("候选已变化或尚未通过验证，请重新审阅");
+      if (this.store.state.tickets.some((entry) => entry.integrationId === attempt.id && ["queued", "running"].includes(entry.status))) throw new Error("候选正在修复，请等待结束后复审");
+      if (!input.note.trim()) throw new Error("请记录候选行为复审依据");
+      const config = this.requireConfig(attempt.projectId);
+      if (!verificationIsValid(this.store.state.verifications.find((entry) => entry.id === attempt.verificationId), config, attempt.tree)
+        || await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]) !== attempt.baseline
+        || await git(attempt.workspace!, ["rev-parse", "HEAD"]) !== attempt.candidate || (await changedPaths(attempt.workspace!)).length) throw new Error("候选或验证依据已变化，请重新准备和验证");
+      await this.assertCandidateDesign(attempt);
+      attempt.review = { candidate: attempt.candidate!, tree: attempt.tree, prdId: delivery.prdId, decision: input.decision, note: input.note, createdAt: now() };
+      this.store.event(attempt.projectId, attempt.itemId, "integration.reviewed", attempt.id,
+        input.decision === "compatible" ? "当前候选行为复审通过；仍需最终确认合入。" : "候选涉及设计变化，禁止沿用原验收；请取消集成并创建关联子需求。");
+      await this.changed(); return { attempt: structuredClone(attempt) };
+    });
   }
   async cancelIntegration(id: string): Promise<{ ok: true }> {
     const attempt = this.attempt(id);

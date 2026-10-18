@@ -13,7 +13,7 @@ export function ProjectStandard({ projectId, onClose, onRefresh }: { projectId: 
     return () => { current = false; };
   }, [projectId, retry]);
   return <WorkflowModal title="项目文件与 Agent 规范" onClose={() => { if (!busy) onClose(); }}><section className="workflow-design" aria-label="项目标准文件">
-    <p className="text-sm text-mute">建立项目概览、模块与需求导航、文档模板和 Agent 协作规则。保留现有文件与代码目录；点击后在项目目录产生待提交改动，不自动提交。</p>
+    <p className="text-sm text-mute">仅补齐缺失文件，保留现有内容；改动不会自动提交。</p>
     {inspection ? <><p className="text-sm">标准 v{inspection.version} · 缺失 {inspection.files.filter((file) => file.status === "missing").length} 个文件</p><ul className="workflow-standard-files">{inspection.files.map((file) => <li key={file.path}><details><summary><code>{file.path}</code><span>{file.status === "present" ? "已有 · 保留" : "待建立"}</span></summary><p className="text-sm text-mute">{file.purpose}</p>{file.preview ? <pre className="workflow-document">{file.preview}</pre> : null}</details></li>)}</ul>
       <button className="btn btn-primary" disabled={busy || inspection.ready} onClick={() => {
         setBusy(true); setError(""); setResult(""); void socketClient.send<{ created: string[]; preserved: string[]; inspection: ProjectStandardInspection }>("workflow.standard.initialize", { projectId }).then(async (value) => {
