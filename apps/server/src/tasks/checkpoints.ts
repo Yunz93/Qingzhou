@@ -11,6 +11,13 @@ export type CheckpointRecord = {
 
 const MAX_PER_TASK = 40;
 
+export function checkpointSnapshotPath(snapshotRoot: string, filePath: string, pathApi: Pick<typeof path, "parse" | "join"> = path): string {
+  // A drive prefix is invalid inside another Windows directory. Preserve the
+  // existing layout for relative, POSIX absolute, and UNC paths.
+  const root = pathApi.parse(filePath).root;
+  return pathApi.join(snapshotRoot, /^[a-z]:/i.test(root) ? filePath.slice(root.length) : filePath);
+}
+
 export class CheckpointStore {
   constructor(private readonly dataDir: string) {}
 
@@ -19,7 +26,7 @@ export class CheckpointStore {
   }
 
   private snapshotPath(taskId: string, id: string, relativePath: string): string {
-    return path.join(this.dataDir, "checkpoints", taskId, id, relativePath);
+    return checkpointSnapshotPath(path.join(this.dataDir, "checkpoints", taskId, id), relativePath);
   }
 
   async list(taskId: string): Promise<CheckpointRecord[]> {

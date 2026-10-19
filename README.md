@@ -37,8 +37,8 @@ irm https://github.com/Yunz93/Qingzhou/releases/latest/download/install-windows.
 先同步所有 `package.json` 的版本号并更新 `CHANGELOG.md`，再创建对应的正式版本标签：
 
 ```bash
-git tag v0.1.22
-git push origin v0.1.22
+git tag v0.1.23
+git push origin v0.1.23
 ```
 
 这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt` 和 `latest.json`。正式版本会设为 GitHub `latest`，安装与应用内更新统一读取它。`main` 推送只运行 CI；手动发布也须选择与各 `package.json` 版本一致的 `vX.Y.Z` 标签。安装脚本会校验清单（旧版本没有清单时只警告）。
