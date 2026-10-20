@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { documentSourceSchema } from "./documents.js";
 
 const id = z.string().uuid();
 const time = z.string().datetime();
 export const moduleChangeSchema = z.object({
+  document: documentSourceSchema.optional(),
   moduleId: id, baseRevisionId: id.nullable(), content: z.string().min(1).max(12000),
 });
 export const requirementPlanSchema = z.object({
@@ -10,6 +12,7 @@ export const requirementPlanSchema = z.object({
 });
 export type RequirementPlan = z.infer<typeof requirementPlanSchema>;
 export const requirementPrdSchema = z.object({
+  document: documentSourceSchema.optional(), documentError: z.string().optional(),
   codeBaseline: z.object({ commit: z.string().regex(/^[a-f0-9]{40,64}$/), moduleRevisionIds: z.record(id.nullable()) }).optional(),
   id, itemId: id, scopeId: id, version: z.number().int().positive(), previousId: id.nullable(),
   content: z.string().max(16000), reason: z.string().max(2000),
@@ -19,10 +22,12 @@ export const requirementPrdSchema = z.object({
 export type RequirementPrd = z.infer<typeof requirementPrdSchema>;
 export const designModuleSchema = z.object({
   documentPath: z.string().optional(),
+  documentFormat: z.literal("markdown").optional(),
   id, projectId: id, name: z.string().min(1).max(200), createdAt: time,
 });
 export type DesignModule = z.infer<typeof designModuleSchema>;
 export const moduleRevisionSchema = z.object({
+  document: documentSourceSchema.optional(), documentError: z.string().optional(),
   integrationId: id.optional(),
   id, moduleId: id, version: z.number().int().positive(), previousId: id.nullable(),
   content: z.string().max(12000), sourcePrdId: id.nullable(), deliveryId: id.nullable(), createdAt: time,
@@ -39,7 +44,7 @@ export const requirementDesignPath = (itemId: string) => `docs/qingzhou/requirem
 export const designProposalInputSchema = z.object({
   schemaVersion: z.literal(1), itemId: id, scopeId: id, expectedPrdId: id.nullable(),
   content: z.string().trim().min(1).max(16000), reason: z.string().trim().min(1).max(2000),
-  moduleChanges: z.array(moduleChangeSchema).max(8), questions: z.array(z.string().min(1).max(1000)).max(20),
+  moduleChanges: z.array(moduleChangeSchema.omit({ document: true })).max(8), questions: z.array(z.string().min(1).max(1000)).max(20),
 });
 export const designProposalSchema = designProposalInputSchema.extend({ id, runId: id, createdAt: time });
 export type DesignProposal = z.infer<typeof designProposalSchema>;

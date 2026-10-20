@@ -23,3 +23,11 @@ JSON 单入口便于验证，但对人和 Agent 阅读编辑不够直接。增�
 ## 验证
 
 覆盖初始化幂等与保留已有 AGENTS.md、路径边界、JSON / Markdown 修改合并、无共同依据的残留提案、上下文和版本标记保护、Git 快照、并行集成及界面流程。结果见 [本需求验证记录](../requirements/project-standards/VERIFICATION.md)。
+
+## Markdown 单入口修订（已实施，待验收）
+
+依据 [文档审阅 PRD v1](../requirements/document-review-simplification/PRD.md)，新建及显式导入后的文档以项目 Markdown 为正文入口。状态仅保存路径、hash 与生命周期关联；历史正文使用不可变 Markdown 快照，读取时校验 hash。保存成功须完成文件与状态持久化，恢复日志只回滚本次写入，不覆盖外部修改。
+
+目录配置保存在清单的可选 `documentPaths`；默认 `docs/requirements`、`docs/modules`，已绑定文档不随配置移动。原 JSON 路径仍保留只读执行依据，未导入的旧需求继续兼容以上双入口合并规则，既有交付不改路径或确认事实。
+
+原目录中的平台文档须同时匹配登记 hash 和候选内容才能受控合入；初始模块基线只有在原目录与候选分别准确匹配初始和确认提案时才允许前进。人工暂存、未知文件和外部修改均阻止覆盖。Git 衔接记录独立恢复意图，重启不自动合入。

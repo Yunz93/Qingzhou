@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { documentPathsSchema } from "./documents.js";
 
 export const PROJECT_STANDARD_VERSION = 1;
 export const AGENT_CONTEXT_MARKER = "\n\n[轻舟 Agent 执行上下文]\n";
@@ -16,6 +17,7 @@ export const PROJECT_STANDARD_PATHS = {
   decisions: "docs/decisions/README.md",
 } as const;
 export const projectStandardManifestSchema = z.object({
+  documentPaths: documentPathsSchema.optional(),
   schemaVersion: z.literal(1), standard: z.literal("qingzhou-project"),
   paths: z.object(Object.fromEntries(Object.entries(PROJECT_STANDARD_PATHS).filter(([key]) => key !== "manifest").map(([key, value]) => [key, z.literal(value)])) as Record<Exclude<keyof typeof PROJECT_STANDARD_PATHS, "manifest">, z.ZodLiteral<string>>),
 });
@@ -23,8 +25,8 @@ export type ProjectStandardInspection = {
   version: number; ready: boolean;
   files: Array<{ path: string; purpose: string; status: "missing" | "present"; preview?: string }>;
 };
-export const requirementFiles = (itemId: string) => {
-  const directory = `docs/qingzhou/requirements/${itemId}`;
+export const requirementFiles = (itemId: string, prdPath?: string) => {
+  const directory = prdPath ? prdPath.slice(0, prdPath.lastIndexOf("/")) : `docs/qingzhou/requirements/${itemId}`;
   return {
     directory, prd: `${directory}/PRD.md`, context: `${directory}/CONTEXT.md`,
     agents: `${directory}/AGENTS.md`, implementation: `${directory}/IMPLEMENTATION.md`,

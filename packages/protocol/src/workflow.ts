@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DocumentPaths } from "./documents.js";
 import { requirementPlanSchema, requirementPrdSchema, designModuleSchema, moduleRevisionSchema, designProposalSchema } from "./design.js";
 
 const id = z.string().uuid();
@@ -92,6 +93,7 @@ export const deliveryAcceptanceSchema = z.object({
 export type DeliveryAcceptance = z.infer<typeof deliveryAcceptanceSchema>;
 
 export const integrationAttemptSchema = z.object({
+  documentIndexTree: sha.optional(),
   review: z.object({ candidate: sha, tree: sha, prdId: id.optional(), decision: z.enum(["compatible", "design_changed"]), note: z.string(), createdAt: time }).optional(),
   id, requestId: z.string(), projectId: id, itemId: id, deliveryId: id,
   repositoryKey: z.string(), targetBranch: z.string(),
@@ -123,6 +125,7 @@ export const workflowEventSchema = z.object({
 export type WorkflowEvent = z.infer<typeof workflowEventSchema>;
 
 export const workflowStateSchema = z.object({
+  documentFiles: z.array(z.object({ projectId: id, path: z.string(), hash: z.string() })).optional(),
   proposals: z.array(designProposalSchema).optional(), cycles: z.array(workflowCycleSchema).optional(),
   schemaVersion: z.literal(1),
   plans: z.array(requirementPlanSchema).optional(), prds: z.array(requirementPrdSchema).optional(),
@@ -137,6 +140,8 @@ export const workflowStateSchema = z.object({
 export type WorkflowState = z.infer<typeof workflowStateSchema>;
 
 export type WorkflowProjectState = WorkflowState & {
+  documentPaths?: DocumentPaths;
+  documentPathsError?: string;
   mainDesignBaseline?: NonNullable<import("./design.js").RequirementPrd["codeBaseline"]>;
   designBaselines?: Record<string, NonNullable<import("./design.js").RequirementPrd["codeBaseline"]>>;
   queue?: { running: number; verifying: number; reserved: number; used: number; limit: number; reasons: Record<string, string>; resourceWaits: Record<string, string> };

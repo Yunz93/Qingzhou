@@ -5,19 +5,49 @@ import path from "node:path";
 import { workflowStateSchema, type WorkflowState, type ScopeRevision, type WorkItem } from "@qingzhou/protocol";
 import { CoalescedJsonFile } from "./coalesced-json-file.js";
 import type { WorkItemStore } from "./work-item-store.js";
+import { createHash } from "node:crypto";
+import { readWorkspaceText } from "./workspace-files.js";
 
 export class WorkflowStore {
   state: WorkflowState = {
     schemaVersion: 1, configs: [], scopes: [], workspaces: [], dependencies: {},
     tickets: [], deliveries: [], acceptances: [], verifications: [], integrations: [], events: [],
   };
-  private readonly file: CoalescedJsonFile<WorkflowState>;
+  private readonly file: CoalescedJsonFile<unknown>;
   constructor(private readonly dataDir: string) {
-    this.file = new CoalescedJsonFile(path.join(dataDir, "workflow.json"), () => this.state, { debounceMs: 0, fsync: true });
+    this.file = new CoalescedJsonFile(path.join(dataDir, "workflow.json"), () => {
+      // Runtime content is hydrated from immutable Markdown; no second editable JSON body.
+      const metadata = <T extends { content: string; document?: unknown; documentError?: string }>(record: T) => {
+        if (!record.document) return record;
+        const { content: _content, documentError: _error, ...fields } = record;
+        return fields;
+      };
+      return {
+        ...this.state,
+        prds: this.state.prds?.map((prd) => ({ ...metadata(prd), moduleChanges: prd.moduleChanges.map(metadata) })),
+        moduleRevisions: this.state.moduleRevisions?.map(metadata),
+      };
+    }, { debounceMs: 0, fsync: true });
   }
   async load(items: WorkItemStore): Promise<void> {
     try {
-      this.state = workflowStateSchema.parse(JSON.parse(await readFile(path.join(this.dataDir, "workflow.json"), "utf8")));
+      const raw = JSON.parse(await readFile(path.join(this.dataDir, "workflow.json"), "utf8"));
+      const hydrate = async (record: { content?: string; document?: { revisionPath: string; hash: string }; documentError?: string }, repository?: string) => {
+        if (!record.document) return;
+        try {
+          if (!repository) throw new Error("找不到文档所属项目");
+          const content = await readWorkspaceText(repository, record.document.revisionPath);
+          if (content === null || createHash("sha256").update(content).digest("hex") !== record.document.hash) throw new Error(`历史文档缺失或被修改：${record.document.revisionPath}`);
+          record.content = content;
+        } catch (error) { record.content = "[文档不可用，请恢复对应 Markdown 文件]"; record.documentError = error instanceof Error ? error.message : "读取文档失败"; }
+      };
+      for (const prd of raw.prds ?? []) {
+        const repository = items.getProject(items.get(prd.itemId)?.projectId ?? "")?.cwd;
+        await hydrate(prd, repository);
+        for (const change of prd.moduleChanges ?? []) { await hydrate(change, repository); if (change.documentError) prd.documentError = change.documentError; }
+      }
+      for (const revision of raw.moduleRevisions ?? []) await hydrate(revision, items.getProject(raw.modules?.find((entry: { id: string }) => entry.id === revision.moduleId)?.projectId ?? "")?.cwd);
+      this.state = workflowStateSchema.parse(raw);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       try {
@@ -51,6 +81,7 @@ export class WorkflowStore {
       verification.finishedAt = new Date().toISOString();
       verification.error = "验证中断，未自动重放命令。";
       for (const check of verification.checks) if (check.status === "running") check.status = "interrupted";
+      this.event(verification.projectId, verification.itemId, "verification.interrupted", verification.id, verification.error);
     }
     await this.save();
   }

@@ -2,7 +2,7 @@ import { ArchivedTasksDialog } from "../components/tasks/ArchivedTasksDialog";
 import { hasDialogLayer } from "../hooks/useDialogLayer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, MessageSquare, PanelRight, Pencil, Settings } from "lucide-react";
+import { ArrowUpRight, ClipboardList, MessageSquare, PanelRight, Pencil, Settings } from "lucide-react";
 import { TaskSidebar } from "../components/tasks/TaskSidebar";
 import { ConversationTimeline } from "../components/timeline/ConversationTimeline";
 import { PromptComposer, type ComposerImage } from "../components/composer/PromptComposer";
@@ -190,6 +190,17 @@ export function WorkbenchLayout() {
     () => new Set(workItems.map((item) => item.taskId).filter((id): id is string => Boolean(id))),
     [workItems],
   );
+  const taskGroupNames = useMemo(() => {
+    const names = new Map(workProjects.map((project) => [project.cwd, project.name]));
+    const itemsByTask = new Map(workItems.map((item) => [item.taskId, item]));
+    for (const entry of tasks) {
+      const item = itemsByTask.get(entry.id);
+      if (!item) continue;
+      const project = workProjects.find((project) => project.id === item.projectId);
+      if (project && entry.cwd !== project.cwd) names.set(entry.cwd, `${project.name} · ${item.title}`);
+    }
+    return names;
+  }, [tasks, workItems, workProjects]);
   const runtimeStatus = task?.status ?? "stopped";
   const status = ["idle", "stopped"].includes(runtimeStatus) && linkedWorkItem?.latestRun && workRunIsActive(linkedWorkItem.latestRun.status) ? "queued" : runtimeStatus;
   const reconnect = async () => {
@@ -581,13 +592,15 @@ export function WorkbenchLayout() {
     if (task) void socketClient.send("files.tree", {}, task.id);
   }, [task]);
 
-  const hasChanges = tools.some((tool) => tool.toolName === "write" || tool.toolName === "edit");
+  const hasChanges = tools.some((tool) => tool.status === "succeeded" && (tool.toolName === "write" || tool.toolName === "edit"));
 
   function renderSidebar(onClose?: () => void) {
     return (
       <TaskSidebar
         tasks={tasks.filter((entry) => !hiddenConversations.includes(entry.id))}
         activeTaskId={activeTaskId}
+        waitingInputTaskIds={new Set(pendingInteractions.map((entry) => entry.taskId))}
+        groupNames={taskGroupNames}
         query={query}
         onQuery={setQuery}
         onSelect={(id) => void selectTask(id)}
@@ -735,18 +748,19 @@ export function WorkbenchLayout() {
       {dockLeft ? <div className="flex h-full">{renderSidebar()}</div> : null}
       <div className="flex min-w-0 flex-1 flex-col bg-surface">
         <header
-          className={`titlebar app-drag flex items-center gap-1.5 border-b border-line px-3 ${dockLeft ? "" : "traffic-inline"}`}
+          className={`titlebar conversation-titlebar app-drag items-center border-b border-line px-3 ${dockLeft ? "" : "traffic-inline"}`}
         >
           <button
             type="button"
-            className={`pressable app-no-drag hover-fill inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] text-ink ${dockLeft ? "md:hidden" : ""}`}
+            className={`conversation-list-trigger pressable app-no-drag hover-fill inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px] text-ink ${dockLeft ? "md:hidden" : ""}`}
+            aria-label="会话"
             onClick={() => setTaskOpen(true)}
           >
             <MessageSquare size={14} />
-            会话
+            <span className="conversation-list-label">会话</span>
           </button>
           <ModeSwitcher />
-          <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2">
+          <div className="conversation-heading app-no-drag flex min-w-0 flex-1 items-center gap-2">
             <PiStatusRing status={status} size={16} />
             {editingTitle && task ? (
               <input
@@ -819,8 +833,8 @@ export function WorkbenchLayout() {
               <div className="min-w-0 flex-1" />
             )}
           </div>
-          <div className="app-no-drag flex shrink-0 items-center gap-0.5">
-            {task && !linkedWorkItem ? <button className="btn btn-secondary" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}>整理为需求</button> : null}
+          <div className="conversation-actions app-no-drag flex shrink-0 items-center gap-0.5">
+            {task && !linkedWorkItem ? <button className="conversation-convert btn btn-secondary" aria-label="整理为需求" title="整理为需求" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /><span>整理为需求</span></button> : null}
             {task ? (
               <div className="hidden sm:block">
                 <ContextMeter
@@ -860,6 +874,7 @@ export function WorkbenchLayout() {
           runtime={runtime}
           errorMessage={task?.errorMessage || serverError || requestError}
           sending={promptSending}
+          waitingForInput={Boolean(interaction)}
         />
         {!piAvailable ? (
           <div className="banner-note text-danger" role="alert">

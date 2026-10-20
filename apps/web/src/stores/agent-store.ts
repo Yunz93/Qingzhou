@@ -556,8 +556,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
     }),
   applySnapshot: (payload, taskId) => {
     const current = get();
+    const tasks = payload.tasks.filter((task) => !task.archivedAt && !current.archivingByTask[task.id]);
     const snapshotTaskId = taskId ?? payload.activeTaskId ?? current.activeTaskId;
-    const nextActive = resolveActiveTaskId(payload.tasks, current.activeTaskId, payload.activeTaskId);
+    const nextActive = resolveActiveTaskId(tasks, current.activeTaskId, payload.activeTaskId);
     const transcript = snapshotTaskId
       ? withTranscript({ ...current, activeTaskId: nextActive }, snapshotTaskId, payload.messages, payload.tools)
       : { messagesByTask: current.messagesByTask, toolsByTask: current.toolsByTask };
@@ -571,7 +572,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         : current.commandsByTask;
     const merged = { ...current, ...transcript, runtimeByTask, fileEntriesByTask, commandsByTask };
     set({
-      tasks: payload.tasks,
+      tasks,
       activeTaskId: nextActive,
       ...visibleSessionFields(merged, nextActive),
       messages:

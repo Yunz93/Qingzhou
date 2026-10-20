@@ -101,7 +101,7 @@ export function ApprovalSheet({ approval, onRespond, context }: Props) {
             checked={remember}
             onChange={(event) => setRemember(event.target.checked)}
           />
-          记住这次
+          {approval.toolName === "bash" ? "以后自动允许此命令" : approval.toolName === "write" ? "以后自动允许写入此文件" : approval.toolName === "edit" ? "以后自动允许编辑此文件" : "记住对此目标的许可"}
         </label>
         <div className="flex flex-1 items-center justify-end gap-2">
           <button type="button" className="pressable btn btn-danger" onClick={() => onRespond(false, false)}>

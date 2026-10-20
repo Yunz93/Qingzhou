@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { requirementFiles, requirementDesignPath, workItemPrompt, type ClientCommand, type Delivery, type RequirementPrd, type WorkItem } from "@qingzhou/protocol";
+import { requirementPrdSchema, requirementFiles, requirementDesignPath, workItemPrompt, type ClientCommand, type Delivery, type RequirementPrd, type WorkItem } from "@qingzhou/protocol";
 import type { WorkflowStore } from "./workflow-store.js";
 import { readWorkspaceDesign, writeWorkspaceDesign } from "./workflow-design-file.js";
 import { initializeProjectStandard } from "./project-standard.js";
@@ -54,7 +54,8 @@ export class WorkflowDesign {
       if (!change.content.trim()) throw new Error("请填写模块变更后的完整设计");
     }
   }
-  save(input: SavePrd) {
+  save(input: SavePrd, prepareOnly = false) {
+    if (!requirementPrdSchema.pick({ content: true, reason: true, moduleChanges: true }).safeParse(input).success) throw new Error("设计内容超出限制：PRD 最多 16000 字符，模块设计最多 12000 字符，最多关联 8 个模块");
     const item = this.item(input.id);
     this.assertMutable(item.id);
     const plan = this.begin(item.id);
@@ -66,11 +67,14 @@ export class WorkflowDesign {
       id: randomUUID(), itemId: item.id, scopeId: scope.id,
       version: (this.store.state.prds?.filter((entry) => entry.itemId === item.id).at(-1)?.version ?? 0) + 1,
       previousId: plan.currentPrdId, content: input.content, reason: input.reason,
-      moduleChanges: structuredClone(input.moduleChanges), createdAt: now(), confirmedAt: null, frozenAt: null, deliveryId: null,
+      moduleChanges: input.moduleChanges.map(({ moduleId, baseRevisionId, content }) => ({ moduleId, baseRevisionId, content })), createdAt: now(), confirmedAt: null, frozenAt: null, deliveryId: null,
     };
-    (this.store.state.prds ??= []).push(prd); plan.currentPrdId = prd.id;
-    this.store.event(item.projectId, item.id, "prd.revised", prd.id, `PRD v${prd.version}：${prd.reason}；需确认后实施。`);
+    if (!prepareOnly) this.commitPrd(prd);
     return { prd };
+  }
+  commitPrd(prd: RequirementPrd) {
+    (this.store.state.prds ??= []).push(prd); this.begin(prd.itemId).currentPrdId = prd.id;
+    this.store.event(this.item(prd.itemId).projectId, prd.itemId, "prd.revised", prd.id, `PRD v${prd.version}：${prd.reason}；需确认后实施。`);
   }
   confirm(id: string, prdId: string, baseline?: RequirementPrd["codeBaseline"]) {
     const item = this.item(id);
@@ -95,6 +99,7 @@ export class WorkflowDesign {
     const scope = this.store.scope(item);
     if (plan.confirmedScopeId !== scope.id) throw new Error("请先沟通并确认当前需求范围，再确认 PRD");
     const prd = this.prd(item.id);
+    if (prd?.documentError) throw new Error(prd.documentError);
     if (!prd?.confirmedAt || prd.scopeId !== scope.id) throw new Error("请先审阅并确认当前 PRD，再开始实施");
     this.validateModules(item, prd.moduleChanges, true, prd.codeBaseline);
     return prd;
@@ -104,7 +109,7 @@ export class WorkflowDesign {
     const prd = this.prd(delivery.itemId);
     if (!prd?.confirmedAt || prd.id !== delivery.prdId || prd.scopeId !== delivery.scopeId || this.store.scope(this.item(delivery.itemId)).id !== delivery.scopeId) throw new Error("交付所依据的 PRD 已变化，请按新 PRD 实施并重新封存验证");
   }
-  finalize(delivery: Delivery) {
+  finalize(delivery: Delivery, persist?: (revisions: import("@qingzhou/protocol").ModuleRevision[]) => Promise<void>) {
     if (!this.plan(delivery.itemId)) return;
     this.assertDelivery(delivery);
     const prd = this.prd(delivery.itemId)!;
@@ -112,37 +117,48 @@ export class WorkflowDesign {
     const item = this.item(delivery.itemId);
     this.validateModules(item, prd.moduleChanges, true, prd.codeBaseline);
     // All preconditions are checked before any module is changed; one persistence write records completion.
+    const revisions: import("@qingzhou/protocol").ModuleRevision[] = [];
     for (const change of prd.moduleChanges) {
       const previous = this.store.state.moduleRevisions?.filter((entry) => entry.moduleId === change.moduleId).at(-1);
       const revision = { id: randomUUID(), moduleId: change.moduleId, previousId: prd.codeBaseline ? change.baseRevisionId : previous?.id ?? null,
         version: (previous?.version ?? 0) + 1, content: change.content, sourcePrdId: prd.id, deliveryId: delivery.id, createdAt: now() };
-      (this.store.state.moduleRevisions ??= []).push(revision);
-      this.store.event(item.projectId, item.id, "module.updated", revision.id, `模块设计更新至 v${revision.version}，依据 PRD v${prd.version}；代码合入状态独立记录。`);
+      revisions.push(revision);
     }
-    prd.frozenAt = now(); prd.deliveryId = delivery.id;
-    this.store.event(item.projectId, item.id, "prd.frozen", prd.id, `最终确认完成，PRD v${prd.version} 已固化，保留交付与模块版本关联。`);
+    const commit = () => {
+      for (const revision of revisions) {
+        (this.store.state.moduleRevisions ??= []).push(revision);
+        this.store.event(item.projectId, item.id, "module.updated", revision.id, `模块设计更新至 v${revision.version}，依据 PRD v${prd.version}；代码合入状态独立记录。`);
+      }
+      prd.frozenAt = now(); prd.deliveryId = delivery.id;
+      this.store.event(item.projectId, item.id, "prd.frozen", prd.id, `最终确认完成，PRD v${prd.version} 已固化，保留交付与模块版本关联。`);
+    };
+    return persist ? persist(revisions).then(commit) : commit();
   }
-  createModule(projectId: string, name: string, content: string) {
+  createModule(projectId: string, name: string, content: string, prepareOnly = false) {
     if (!this.items.getProject(projectId)) throw new Error("找不到这个项目");
     if (this.store.state.modules?.some((entry) => entry.projectId === projectId && entry.name.trim() === name.trim())) throw new Error("项目中已有同名模块");
     const moduleId = randomUUID();
     const module = { id: moduleId, documentPath: `docs/modules/${moduleId}.md`, projectId, name: name.trim(), createdAt: now() };
     if (!module.name) throw new Error("请填写模块名称");
-    (this.store.state.modules ??= []).push(module);
     const revision = { id: randomUUID(), moduleId: module.id, version: 1, previousId: null,
       content, sourcePrdId: null, deliveryId: null, createdAt: now() };
-    (this.store.state.moduleRevisions ??= []).push(revision);
-    this.store.event(projectId, null, "module.created", module.id, `建立模块“${module.name}”的设计基线。后续更新通过关联 PRD 交付。`);
+    if (!prepareOnly) this.commitModule(module, revision);
     return { module, revision };
   }
-  private matches(document: { content: string; moduleChanges: RequirementPrd["moduleChanges"] }, prd: RequirementPrd): boolean {
-    return document.content === prd.content && JSON.stringify(document.moduleChanges) === JSON.stringify(prd.moduleChanges);
+  commitModule(module: import("@qingzhou/protocol").DesignModule, revision: import("@qingzhou/protocol").ModuleRevision) {
+    (this.store.state.modules ??= []).push(module); (this.store.state.moduleRevisions ??= []).push(revision);
+    this.store.event(module.projectId, null, "module.created", module.id, `建立模块“${module.name}”的设计基线。后续更新通过关联 PRD 交付。`);
+  }
+  matches(document: { content: string; moduleChanges: RequirementPrd["moduleChanges"] }, prd: RequirementPrd): boolean {
+    const body = (changes: RequirementPrd["moduleChanges"]) => changes.map(({ moduleId, baseRevisionId, content }) => ({ moduleId, baseRevisionId, content }));
+    return document.content === prd.content && JSON.stringify(body(document.moduleChanges)) === JSON.stringify(body(prd.moduleChanges));
   }
   private async readDocument(id: string, cwd: string) {
     const document = await readWorkspaceDesign(cwd, id);
     if (!document) return null;
     const base = this.store.state.prds?.find((entry) => entry.id === document.prdId && entry.itemId === id);
     if (!base) throw new Error("工作区设计文件的 PRD 依据不属于当前需求");
+    if (base.document && !this.matches(document, base)) throw new Error("当前需求正文以 Markdown 为准；JSON 是只读依据，请恢复后修改 Markdown");
     return readDesignMarkdown(cwd, id, document, base);
   }
   async materialize(id: string, cwd: string): Promise<void> {
@@ -164,7 +180,7 @@ export class WorkflowDesign {
     if (prd.codeBaseline) await materializeModuleDocuments(cwd, prd, this.store.state);
     await writeWorkspaceDesign(cwd, id, { schemaVersion: 1, documentationVersion: 1, prdId: prd.id, content: prd.content, moduleChanges: prd.moduleChanges });
   }
-  async importFile(id: string, cwd: string): Promise<{ prd: RequirementPrd; changed: boolean }> {
+  async importFile(id: string, cwd: string, prepareOnly = false): Promise<{ prd: RequirementPrd; changed: boolean }> {
     const prd = this.prd(id);
     if (!prd) throw new Error("请先建立 PRD");
     this.assertMutable(id);
@@ -173,7 +189,7 @@ export class WorkflowDesign {
     if (this.matches(document, prd)) return { prd, changed: false };
     if (document.prdId !== prd.id) throw new Error("工作区设计文件依据的 PRD 已过期，请先合并设计面板与文件中的修改，避免覆盖新版本");
     const result = this.save({ id, scopeId: prd.scopeId, expectedPrdId: prd.id, content: document.content,
-      moduleChanges: document.moduleChanges, reason: "从实施工作区同步设计调整" });
+      moduleChanges: document.moduleChanges, reason: "从实施工作区同步设计调整" }, prepareOnly);
     return { ...result, changed: true };
   }
   async assertFileCurrent(id: string, cwd: string): Promise<void> {
@@ -187,7 +203,7 @@ export class WorkflowDesign {
     if (!prd) return;
     const document = await readWorkspaceDesign(cwd, id);
     if (requiredVersion && document?.documentationVersion !== requiredVersion) throw new Error("需求文档版本标记缺失，请恢复确认的工作区设计后重试");
-    if (!requiredVersion && !document?.documentationVersion && await readWorkspaceText(cwd, requirementFiles(id).context) === null) return; // Legacy JSON-only workspaces remain compatible.
+    if (!requiredVersion && !document?.documentationVersion && await readWorkspaceText(cwd, requirementFiles(id, prd.document?.workspacePath ?? prd.document?.path).context) === null) return; // Legacy JSON-only workspaces remain compatible.
     for (const [file, expected] of Object.entries(requirementDocuments(this.item(id), prd, this.store.state))) {
       const actual = commit ? await workflowGit(cwd, ["show", `${commit}:${file}`]).catch(() => null) : await readWorkspaceText(cwd, file);
       if (actual === null || (commit ? actual !== expected.trimEnd() : actual !== expected)) throw new Error("需求文档快照与确认设计不一致，请检查 PRD、模块提案、CONTEXT.md 与基线快照后重试");
@@ -207,10 +223,11 @@ export class WorkflowDesign {
   context(id: string): string {
     const prd = this.prd(id);
     if (!prd) return "";
+    const files = requirementFiles(id, prd.document?.workspacePath ?? prd.document?.path);
     const modules = prd.moduleChanges.map((change) => {
       const name = this.store.state.modules?.find((entry) => entry.id === change.moduleId)?.name ?? change.moduleId;
       return `### 模块：${name}\n${change.content}`;
     }).join("\n\n");
-    return `\n\n## ${prd.confirmedAt ? "已确认" : "待确认"}的 PRD v${prd.version}（${prd.id}）\n${prd.content}\n\n## 本需求完成后的模块设计\n${modules || "未关联模块"}\n\n实施时先读 ${requirementFiles(id).context} 与 ${requirementFiles(id).agents}。设计 JSON 为 ${requirementDesignPath(id)}，可直接编辑 ${requirementFiles(id).prd} 和同目录 modules/<模块 ID>.md，并维护 IMPLEMENTATION.md、VERIFICATION.md。Markdown 与 JSON 若同时修改需保持一致，不改写确认 ID 或模块基线；本轮结束后系统会读回为待确认的新 PRD。请说明差异，与用户重新确认后继续对应实现。执行结束不代表 PRD 已固化。`;
+    return `\n\n## ${prd.confirmedAt ? "已确认" : "待确认"}的 PRD v${prd.version}（${prd.id}）\n${prd.content}\n\n## 本需求完成后的模块设计\n${modules || "未关联模块"}\n\n实施时先读 ${files.context} 与 ${files.agents}。设计 JSON 为 ${requirementDesignPath(id)}，可直接编辑 ${files.prd} 和同目录 modules/<模块 ID>.md，并维护 IMPLEMENTATION.md、VERIFICATION.md。${prd.document ? "Markdown 是正文唯一编辑入口，JSON 是只读依据。" : "旧版 JSON 与 Markdown 若同时修改需保持一致。"}不改写确认 ID 或模块基线；本轮结束后系统会读回为待确认的新 PRD。请说明差异，与用户重新确认后继续对应实现。执行结束不代表 PRD 已固化。`;
   }
 }

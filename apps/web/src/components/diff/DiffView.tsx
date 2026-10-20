@@ -28,7 +28,7 @@ function ReviewDiff({ lines }: { lines: DiffLine[] }) {
   const visible = blocks.length > 400 ? blocks.slice(0, 400) : blocks;
   return (
     <div className="overflow-x-auto rounded-md border border-line/80 bg-canvas font-mono text-[11px] leading-[1.55]">
-      {visible.map((block, index) =>
+      <div className="min-w-full w-max">{visible.map((block, index) =>
         block.kind === "skip" ? (
           <div
             key={`skip-${index}`}
@@ -46,11 +46,11 @@ function ReviewDiff({ lines }: { lines: DiffLine[] }) {
             <span className="w-3 shrink-0 select-none text-center text-mute">
               {block.type === "add" ? "+" : block.type === "remove" ? "-" : ""}
             </span>
-            <span className="min-w-0 flex-1 whitespace-pre-wrap break-all px-1">{block.text || " "}</span>
+            <span className="flex-1 whitespace-pre px-1">{block.text || " "}</span>
           </div>
         ),
       )}
-      {blocks.length > 400 ? <div className="px-2 py-1 text-mute">还有 {blocks.length - 400} 行</div> : null}
+      {blocks.length > 400 ? <div className="px-2 py-1 text-mute">还有 {blocks.length - 400} 行</div> : null}</div>
     </div>
   );
 }

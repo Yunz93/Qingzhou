@@ -9,6 +9,7 @@ type Props = {
   runtime?: RuntimeState | null;
   errorMessage?: string | null;
   sending?: boolean;
+  waitingForInput?: boolean;
 };
 
 const ICONS = {
@@ -19,16 +20,16 @@ const ICONS = {
   done: CheckCircle2,
 } as const;
 
-export function RunStatusBar({ status, tools, hasChanges, runtime, errorMessage, sending }: Props) {
-  const current = runStatusStage(status, tools, hasChanges, runtime, errorMessage, sending);
+export function RunStatusBar({ status, tools, hasChanges, runtime, errorMessage, sending, waitingForInput = false }: Props) {
+  const current = runStatusStage(status, tools, hasChanges, runtime, errorMessage, sending, waitingForInput);
   if (!current) return null;
   const Icon = ICONS[current.kind];
-  const active =
+  const active = !waitingForInput && (
     status === "running" ||
     status === "booting" ||
     status === "aborting" ||
     Boolean(sending) ||
-    Boolean(runtime?.compacting || runtime?.retrying);
+    Boolean(runtime?.compacting || runtime?.retrying));
 
   return (
     <div
@@ -46,7 +47,7 @@ export function RunStatusBar({ status, tools, hasChanges, runtime, errorMessage,
             ? "text-danger"
             : active
               ? "animate-spin text-accent motion-reduce:animate-none"
-              : status === "waiting_approval"
+              : current.kind === "wait"
                 ? "text-warn"
                 : "text-mute"
         }

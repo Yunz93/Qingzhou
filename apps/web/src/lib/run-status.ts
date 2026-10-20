@@ -1,4 +1,5 @@
 import type { RuntimeState, TaskStatus, ToolExecution } from "@qingzhou/protocol";
+import { toolNameLabel } from "../copy";
 
 export type RunStatusKind = "spin" | "wait" | "queue" | "error" | "done";
 
@@ -9,7 +10,9 @@ export function runStatusStage(
   runtime?: RuntimeState | null,
   errorMessage?: string | null,
   sending?: boolean,
+  waitingForInput = false,
 ): { label: string; detail: string; kind: RunStatusKind } | null {
+  if (waitingForInput) return { label: "等待回答", detail: "回答当前问题后继续", kind: "wait" };
   const current = [...tools].reverse().find((tool) => tool.status === "running" || tool.status === "waiting_approval");
   if (runtime?.compacting) {
     return { label: "正在压缩上下文", detail: runtime.compactionReason ?? "把旧内容收成摘要", kind: "spin" };
@@ -25,7 +28,7 @@ export function runStatusStage(
     return { label: "下一条已排队", detail: runtime?.followUp[0] ?? "回复结束后发送", kind: "queue" };
   }
   if (status === "waiting_approval") {
-    return { label: "等待确认", detail: current?.toolName ?? "请查看这次操作", kind: "wait" };
+    return { label: "等待确认", detail: current ? toolNameLabel(current.toolName) : "请查看这次操作", kind: "wait" };
   }
   if (status === "queued") return { label: "排队中", detail: "正在等待空闲的 AI 进程", kind: "queue" };
   if (status === "booting") return { label: "正在启动", detail: "正在准备 AI 引擎", kind: "spin" };

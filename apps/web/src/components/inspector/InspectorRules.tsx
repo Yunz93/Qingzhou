@@ -14,9 +14,12 @@ type Props = {
   onCreate?: () => void;
 };
 
-function fileLabel(file: AgentFile): string {
-  const name = file.path.replaceAll("\\", "/").split("/").pop() || file.path;
-  return name;
+function fileLabel(file: AgentFile, cwd?: string | null): string {
+  const normalized = file.path.replaceAll("\\", "/");
+  const root = cwd?.replaceAll("\\", "/").replace(/\/$/, "");
+  const name = normalized.split("/").pop() || normalized;
+  if (root && normalized === `${root}/${name}`) return `当前项目 · ${name}`;
+  return `${normalized.split("/").at(-2) || "根目录"} · ${name}`;
 }
 
 export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, onCreate }: Props) {
@@ -128,7 +131,7 @@ export function InspectorRules({ files, cwd, loading = false, onRead, onWrite, o
             }`}
             onClick={() => setSelected(file.path)}
           >
-            {fileLabel(file)}
+            {fileLabel(file, cwd)}
           </button>
         ))}
         <button

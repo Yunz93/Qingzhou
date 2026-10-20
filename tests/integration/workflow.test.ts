@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as gitModule from "../../apps/server/src/tasks/workflow-git.ts";
+import * as workspaceFiles from "../../apps/server/src/tasks/workspace-files.ts";
 import { clientCommandSchema, requirementDesignPath, requirementFiles, verificationIsValid, type WorkItem, type WorkflowCheck } from "@qingzhou/protocol";
 import { WorkItemStore } from "../../apps/server/src/tasks/work-item-store.ts";
 import { WorkflowService } from "../../apps/server/src/tasks/workflow-service.ts";
@@ -252,6 +253,68 @@ describe("project requirement workflow with real Git", () => {
     const launched = f.launched.length; const restored = f.createService(); await restored.ready;
     expect(restored.store.state.tickets[0]?.status).toBe("interrupted"); expect(f.launched).toHaveLength(launched);
     expect(restored.store.state.scopes[0]?.itemId).toBe(a.id);
+  });
+
+  it("records a verification interrupted on restart exactly once without rerunning checks", async () => {
+    const f = await fixture(); const item = await f.create("中断检查历史"); await f.start(item);
+    await writeFile(path.join(f.launched[0]!.cwd, "result.txt"), "done"); await f.finish(item);
+    const delivery = await f.deliver(item);
+    const verification = f.service.store.state.verifications.find((entry) => entry.id === delivery.verificationId)!;
+    verification.status = "running"; verification.finishedAt = null;
+    verification.checks[0]!.status = "running";
+    const launchCount = f.launched.length; await f.service.store.save(); await f.service.flush(); f.service.dispose();
+    const restored = f.createService(); await restored.ready;
+    const recovered = restored.store.state.verifications.find((entry) => entry.id === verification.id)!;
+    expect(recovered.status).toBe("interrupted"); expect(recovered.checks[0]!.status).toBe("interrupted");
+    expect(restored.store.state.events.filter((event) => event.type === "verification.interrupted" && event.subjectId === verification.id)).toHaveLength(1);
+    expect(f.launched).toHaveLength(launchCount);
+    await restored.flush(); restored.dispose();
+    const again = f.createService(); await again.ready;
+    expect(again.store.state.events.filter((event) => event.type === "verification.interrupted" && event.subjectId === verification.id)).toHaveLength(1);
+    expect(f.launched).toHaveLength(launchCount);
+  });
+
+  it("recovers workspace creation interrupted before Git creates the worktree", async () => {
+    const f = await fixture(); const item = await f.create("interrupted workspace"); await planned(f, item);
+    const original = gitModule.workflowGit;
+    const spy = vi.spyOn(gitModule, "workflowGit").mockImplementation(async (cwd, args, input) => {
+      if (args[0] === "worktree" && args[1] === "add") throw new Error("simulated interruption before worktree creation");
+      return original(cwd, args, input);
+    });
+    try { await f.start(item); } finally { spy.mockRestore(); }
+    expect(f.launched).toHaveLength(0);
+    expect(f.service.store.state.workspaces).toHaveLength(1);
+    f.service.dispose();
+    const restored = f.createService(); await restored.ready;
+    expect(f.launched).toHaveLength(0);
+    await restored.enqueue(item.id, "initial"); await restored.idle();
+    expect(f.launched).toHaveLength(1);
+    expect(await git(f.launched[0]!.cwd, ["branch", "--show-current"])).toBe(`qingzhou/requirement/${item.id}`);
+    expect(await readFile(path.join(f.launched[0]!.cwd, requirementFiles(item.id).prd), "utf8")).toContain("设计 interrupted workspace");
+  });
+
+  it("does not recreate a completed workspace moved outside the application", async () => {
+    const f = await fixture(); const item = await f.create("moved workspace");
+    const workspace = await f.start(item); await f.finish(item);
+    await rename(workspace.cwd, `${workspace.cwd}-moved`);
+    await f.service.enqueue(item.id, "initial"); await f.service.idle();
+    expect(f.launched).toHaveLength(1);
+    expect(f.service.store.state.tickets.at(-1)?.status).toBe("failed");
+    expect(await readFile(path.join(`${workspace.cwd}-moved`, "shared.txt"), "utf8")).toBe(base);
+    await expect(readFile(path.join(workspace.cwd, "shared.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves unrelated files at the path of an interrupted workspace creation", async () => {
+    const f = await fixture(); const item = await f.create("occupied workspace");
+    const cwd = path.join(f.dataDir, "worktrees", item.id);
+    f.service.store.state.workspaces.push({ itemId: item.id, path: cwd, branch: `qingzhou/requirement/${item.id}`,
+      baseline: f.baseline, originalPath: f.repository, createdAt: new Date().toISOString(), removedAt: null });
+    await mkdir(cwd, { recursive: true }); await writeFile(path.join(cwd, "keep.txt"), "unrelated work\n");
+    await f.service.enqueue(item.id, "initial"); await f.service.idle();
+    expect(f.launched).toHaveLength(0);
+    expect(f.service.store.state.tickets.at(-1)?.status).toBe("failed");
+    expect(await readFile(path.join(cwd, "keep.txt"), "utf8")).toBe("unrelated work\n");
+    expect(await git(f.repository, ["branch", "--list", `qingzhou/requirement/${item.id}`])).toBe("");
   });
 
   it("queues verification behind active implementation slots", async () => {
@@ -763,4 +826,388 @@ it("waits for a verification slot when the next queued requirement takes the imp
   await f.finish(b);
   expect(f.service.store.state.cycles!.at(-1)?.status).toBe("ready_for_review");
   expect(f.service.store.state.verifications.at(-1)?.status).toBe("passed");
+});
+
+it("writes custom Markdown immediately, preserves bindings, and reloads bodies from immutable files", async () => {
+  const f = await fixture(); const item = await f.create("可读文档");
+  await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "design/requirements", modules: "design/modules" } });
+  const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "阅读模块", content: "# 当前设计\n\n- 易读" }) as ReturnType<WorkflowService["design"]["createModule"]>;
+  expect(module.documentPath).toMatch(/^design\/modules\/阅读模块-/);
+  expect(await readFile(path.join(f.repository, module.documentPath), "utf8")).toBe(revision.content);
+  await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const input = { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "# 阅读方案\n\n|目标|结果|\n|---|---|\n|正文|Markdown|", reason: "首次保存", moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: revision.content }] };
+  const { prd } = await f.command("workflow.prd.save", input) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  expect(prd.document?.path).toMatch(/^design\/requirements\/可读文档-/);
+  expect(await readFile(path.join(f.repository, prd.document!.path), "utf8")).toBe(prd.content);
+  expect(f.service.store.state.workspaces).toHaveLength(0);
+  const raw = JSON.parse(await readFile(path.join(f.dataDir, "workflow.json"), "utf8"));
+  expect(raw.prds[0].content).toBeUndefined(); expect(raw.prds[0].moduleChanges[0].content).toBeUndefined(); expect(raw.moduleRevisions[0].content).toBeUndefined();
+  await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "future/prds", modules: "future/modules" } });
+  const { prd: next } = await f.command("workflow.prd.save", { ...input, expectedPrdId: prd.id, content: "# 新版本" }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  expect(next.document?.path).toBe(prd.document?.path);
+  const restarted = f.createService(); await restarted.ready;
+  expect(restarted.design.prd(item.id)?.content).toBe("# 新版本");
+  expect(restarted.store.state.prds?.find((entry) => entry.id === prd.id)?.content).toBe(prd.content);
+});
+
+it("preserves external edits, requires explicit sync, and never carries confirmation to the new version", async () => {
+  const f = await fixture(); const item = await f.create("外部修改"); await f.service.beginPlanning(item.id);
+  const scope = f.service.store.scope(item); await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const input = { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "# 原始设计", reason: "保存", moduleChanges: [] };
+  const { prd } = await f.command("workflow.prd.save", input) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  await writeFile(path.join(f.repository, prd.document!.path), "# 外部编辑");
+  await expect(f.command("workflow.prd.save", { ...input, expectedPrdId: prd.id, content: "界面草稿" })).rejects.toThrow(/外部修改/);
+  await expect(f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id })).rejects.toThrow(/外部修改/);
+  expect(f.service.design.prd(item.id)?.id).toBe(prd.id);
+  expect(await readFile(path.join(f.repository, prd.document!.path), "utf8")).toBe("# 外部编辑");
+  const synced = await f.command("workflow.prd.import", { id: item.id, source: "project" }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  expect(synced.prd).toMatchObject({ content: "# 外部编辑", confirmedAt: null, previousId: prd.id });
+  expect(await readFile(path.join(f.repository, prd.document!.revisionPath), "utf8")).toBe(prd.content);
+});
+
+it("merges exact managed Markdown while retaining another demand's draft and blocking user staging", async () => {
+  const f = await fixture();
+  await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "custom/prds", modules: "custom/modules" } });
+  const save = async (title: string) => {
+    const item = await f.create(title); await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+    await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+    const { prd } = await f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: `# ${title}`, reason: "首次保存", moduleChanges: [] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+    return { item, prd };
+  };
+  const a = await save("当前需求"); const b = await save("其他草稿");
+  await f.command("workflow.prd.confirm", { id: a.item.id, prdId: a.prd.id });
+  const launch = await f.start(a.item); expect(launch).toBeDefined();
+  await writeFile(path.join(launch.cwd, "feature.txt"), "implemented\n"); await f.finish(a.item);
+  await writeFile(path.join(f.repository, a.prd.document!.path), "外部变更不能封存");
+  await expect(f.deliver(a.item)).rejects.toThrow(/外部修改/);
+  expect(f.service.store.state.deliveries).toHaveLength(0);
+  await writeFile(path.join(f.repository, a.prd.document!.path), a.prd.content);
+  const delivery = await f.deliver(a.item); const attempt = await f.integrate(delivery.id); expect(attempt.status).toBe("ready");
+  await writeFile(path.join(f.repository, "manual.txt"), "用户暂存"); await git(f.repository, ["add", "manual.txt"]);
+  await expect(f.service.merge(attempt.id)).rejects.toThrow(/人工暂存/);
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("manual.txt");
+  await git(f.repository, ["restore", "--staged", "manual.txt"]); await unlink(path.join(f.repository, "manual.txt"));
+  await f.service.merge(attempt.id);
+  expect(attempt.status).toBe("merged"); expect(await readFile(path.join(f.repository, "feature.txt"), "utf8")).toBe("implemented\n");
+  expect(await readFile(path.join(f.repository, b.prd.document!.path), "utf8")).toBe(b.prd.content);
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("");
+  expect((await git(f.repository, ["status", "--porcelain", "--untracked-files=all"]))).toContain(b.prd.document!.path);
+});
+
+it("previews all legacy revision bodies before import and retains historical IDs and workspace paths", async () => {
+  const f = await fixture(); const item = await f.create("旧项目设计");
+  const { module, revision } = f.service.design.createModule(f.project.id, "旧模块", "模块基线");
+  const original = await planned(f, item, [{ moduleId: module.id, baseRevisionId: revision.id, content: "提案一" }]);
+  const scope = f.service.store.scope(item);
+  const latest = f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId: original.id, content: "第二版", reason: "修订", moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "提案二" }] }).prd;
+  await f.service.flush();
+  const inspection = await f.service.documents.inspect(f.project.id);
+  expect(inspection.files.some((entry) => entry.source.includes("v1"))).toBe(true);
+  await f.command("workflow.documents.import", { projectId: f.project.id });
+  expect(f.service.store.state.prds?.map((entry) => entry.id)).toEqual([original.id, latest.id]);
+  expect(original.confirmedAt).not.toBeNull(); expect(latest.confirmedAt).toBeNull();
+  for (const prd of [original, latest]) {
+    expect(prd.document?.workspacePath).toBe(requirementFiles(item.id).prd);
+    expect(await readFile(path.join(f.repository, prd.document!.revisionPath), "utf8")).toBe(prd.content);
+    const change = prd.moduleChanges[0]!;
+    expect(await readFile(path.join(f.repository, change.document!.revisionPath), "utf8")).toBe(change.content);
+  }
+  const restarted = f.createService(); await restarted.ready;
+  expect(restarted.design.prd(item.id)?.content).toBe("第二版");
+  expect((await restarted.documents.inspect(f.project.id)).files).toEqual([]);
+});
+
+it("rejects occupied and linked document destinations without writing partial state", async () => {
+  const f = await fixture(); const item = await f.create("冲突目标"); await f.service.beginPlanning(item.id);
+  const scope = f.service.store.scope(item); await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const file = `docs/requirements/${item.title}-${item.id}/PRD.md`;
+  await mkdir(path.dirname(path.join(f.repository, file)), { recursive: true }); await writeFile(path.join(f.repository, file), "已有用户文档");
+  await expect(f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "新设计", reason: "保存", moduleChanges: [] })).rejects.toThrow(/目标已占用/);
+  expect(f.service.design.prd(item.id)).toBeUndefined(); expect(await readFile(path.join(f.repository, file), "utf8")).toBe("已有用户文档");
+  const { symlink } = await import("node:fs/promises"); const outside = path.join(f.root, "outside"); await mkdir(outside); await symlink(outside, path.join(f.repository, "linked"));
+  await expect(f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "linked/prds", modules: "modules" } })).rejects.toThrow(/链接/);
+  await expect(readFile(path.join(f.repository, "docs/qingzhou/project.json"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("rolls back an interrupted file write but keeps external edits and never invents a PRD version", async () => {
+  const f = await fixture(); const item = await f.create("中断保存"); await f.service.beginPlanning(item.id);
+  const scope = f.service.store.scope(item); await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const staged = f.service.design.save({ id: item.id, scopeId: scope.id, expectedPrdId: null, content: "待保存正文", reason: "保存", moduleChanges: [] }, true).prd;
+  await f.service.documents.persistPrd(staged); // Simulate process exit before state/confirmation is committed.
+  await writeFile(path.join(f.repository, staged.document!.path), "中断后的外部编辑");
+  const restarted = f.createService(); await restarted.ready;
+  expect(restarted.design.prd(item.id)).toBeUndefined();
+  expect(await readFile(path.join(f.repository, staged.document!.path), "utf8")).toBe("中断后的外部编辑");
+  await expect(readFile(path.join(f.repository, staged.document!.revisionPath))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("recovers staged managed documents before CAS without altering worktree files or merging", async () => {
+  const f = await fixture(); const item = await f.create("合入中断"); await f.service.beginPlanning(item.id);
+  const scope = f.service.store.scope(item); await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "# 设计", reason: "保存", moduleChanges: [] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  const launch = await f.start(item); await writeFile(path.join(launch.cwd, "feature.txt"), "实现"); await f.finish(item);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id);
+  const files = await gitModule.changedPaths(f.repository);
+  attempt.status = "merging"; await f.service.store.save();
+  await f.service.documents.stageOwnedForMerge(f.project.id, attempt.candidate!, files, attempt.id, attempt.baseline!);
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).not.toBe("");
+  const restarted = f.createService(); await restarted.ready;
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("");
+  expect(await readFile(path.join(f.repository, prd.document!.path), "utf8")).toBe(prd.content);
+  expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(f.baseline);
+  expect(restarted.store.state.integrations.find((entry) => entry.id === attempt.id)?.status).toBe("failed");
+});
+
+it("advances a new module's exact initial Markdown baseline with its confirmed delivery while preserving external edits", async () => {
+  const f = await fixture(); const item = await f.create("首次模块交付");
+  const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "新模块", content: "# 原设计\n英文问候\n" }) as ReturnType<WorkflowService["design"]["createModule"]>;
+  await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "# 增加中文", reason: "设计更新", moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "# 新设计\n英文和中文问候\n" }] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  const launch = await f.start(item); await writeFile(path.join(launch.cwd, "feature.txt"), "implemented\n"); await f.finish(item);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id);
+  await writeFile(path.join(f.repository, module.documentPath), "用户另外修改的模块设计");
+  await expect(f.service.merge(attempt.id)).rejects.toThrow(/未提交改动或外部修改/);
+  expect(await readFile(path.join(f.repository, module.documentPath), "utf8")).toBe("用户另外修改的模块设计");
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("");
+  await writeFile(path.join(f.repository, module.documentPath), revision.content);
+  await f.service.merge(attempt.id); expect(attempt.status).toBe("merged");
+  expect(attempt.error).toBeNull();
+  expect(await readFile(path.join(f.repository, module.documentPath), "utf8")).toBe(prd.moduleChanges[0]!.content);
+  expect(await readFile(path.join(f.repository, revision.document!.revisionPath), "utf8")).toBe(revision.content);
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("");
+});
+
+it("keeps project history readable with invalid path configuration and repairs only the document settings", async () => {
+  const f = await fixture(); const item = await f.create("配置恢复"); await planned(f, item);
+  await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "design/prds", modules: "design/modules" } });
+  const file = path.join(f.repository, "docs/qingzhou/project.json"); const manifest = JSON.parse(await readFile(file, "utf8"));
+  manifest.documentPaths.prds = "../outside"; manifest.customSetting = { keep: true }; await writeFile(file, JSON.stringify(manifest));
+  const state = await f.service.state(f.project.id);
+  expect(state.documentPathsError).toContain("配置无效"); expect(state.prds?.some((entry) => entry.itemId === item.id)).toBe(true);
+  await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "docs/prds", modules: "docs/modules" } });
+  expect(JSON.parse(await readFile(file, "utf8")).customSetting).toEqual({ keep: true });
+  expect((await f.service.state(f.project.id)).documentPathsError).toBeUndefined();
+});
+
+it.each(["prd", "module"])("retains legacy %s bodies and bindings after a failed document import", async (kind) => {
+  const f = await fixture(); const item = await f.create("导入失败恢复");
+  const prd = kind === "prd" ? await planned(f, item) : undefined;
+  const module = kind === "module" ? f.service.design.createModule(f.project.id, "旧模块", "原模块正文") : undefined;
+  await f.service.store.save(); await f.service.flush();
+  const original = workspaceFiles.writeWorkspaceText;
+  const spy = vi.spyOn(workspaceFiles, "writeWorkspaceText").mockImplementation(async (root, file, content, overwrite) => {
+    if (root === f.repository && file.includes("/.versions/")) throw new Error("simulated revision write failure");
+    return original(root, file, content, overwrite);
+  });
+  try { await expect(f.command("workflow.documents.import", { projectId: f.project.id })).rejects.toThrow("simulated revision write failure"); }
+  finally { spy.mockRestore(); }
+  expect(prd?.document ?? module?.revision.document).toBeUndefined();
+  await f.service.store.save(); await f.service.flush();
+  const restored = f.createService(); await restored.ready;
+  if (prd) expect(restored.design.prd(item.id)?.content).toBe(prd.content);
+  else expect(restored.store.state.moduleRevisions?.find((entry) => entry.id === module!.revision.id)?.content).toBe("原模块正文");
+});
+
+it("preserves tracked unrelated document drafts when the candidate leaves their baseline unchanged", async () => {
+  const f = await fixture(); const b = await f.create("已跟踪草稿"); await f.service.beginPlanning(b.id);
+  const scope = f.service.store.scope(b); await f.command("workflow.scope.confirm", { id: b.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: b.id, scopeId: scope.id, expectedPrdId: null, content: "原草稿", reason: "保存", moduleChanges: [] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await git(f.repository, ["add", "docs"]); await git(f.repository, ["commit", "-m", "track document draft"]);
+  const a = await f.create("独立交付"); const launch = await f.start(a);
+  await writeFile(path.join(launch.cwd, "feature.txt"), "A"); await f.finish(a);
+  const delivery = await f.deliver(a); const attempt = await f.integrate(delivery.id);
+  await f.command("workflow.prd.save", { id: b.id, scopeId: scope.id, expectedPrdId: prd.id, content: "保留新版草稿", reason: "修订", moduleChanges: [] });
+  await f.service.merge(attempt.id);
+  expect(await readFile(path.join(f.repository, prd.document!.path), "utf8")).toBe("保留新版草稿");
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("");
+});
+
+it("refuses a polluted document index tree without removing concurrently staged user files", async () => {
+  const f = await fixture(); await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "docs/requirements", modules: "docs/modules" } });
+  const item = await f.create("并发暂存"); const launch = await f.start(item);
+  await writeFile(path.join(launch.cwd, "feature.txt"), "implemented"); await f.finish(item);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id);
+  const original = f.service.documents.ownedChanges.bind(f.service.documents);
+  const spy = vi.spyOn(f.service.documents, "ownedChanges").mockImplementationOnce(async (...args) => {
+    const owned = await original(...args);
+    await writeFile(path.join(f.repository, "manual.txt"), "用户并发暂存"); await git(f.repository, ["add", "manual.txt"]);
+    return owned;
+  });
+  try { await expect(f.service.merge(attempt.id)).rejects.toThrow(/索引|暂存/); }
+  finally { spy.mockRestore(); }
+  expect(await readFile(path.join(f.repository, "manual.txt"), "utf8")).toBe("用户并发暂存");
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toContain("manual.txt");
+  expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(attempt.baseline);
+});
+
+it("allocates distinct module revisions when independent deliveries are accepted concurrently", async () => {
+  const f = await fixture();
+  const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "并行模块", content: "初始设计" }) as ReturnType<WorkflowService["design"]["createModule"]>;
+  const deliveries = [];
+  for (const title of ["A", "B"]) {
+    const item = await f.create(title); await planned(f, item, [{ moduleId: module.id, baseRevisionId: revision.id, content: `设计 ${title}` }]);
+    const launch = await f.start(item); await writeFile(path.join(launch.cwd, `${title}.txt`), title); await f.finish(item); deliveries.push(await f.deliver(item));
+  }
+  const original = f.service.documents.persistModule.bind(f.service.documents);
+  const spy = vi.spyOn(f.service.documents, "persistModule").mockImplementation(async (...args) => {
+    await new Promise((resolve) => setTimeout(resolve, 30)); return original(...args);
+  });
+  try { await Promise.all(deliveries.map((delivery) => f.service.accept(delivery.id, "accepted"))); }
+  finally { spy.mockRestore(); }
+  expect(f.service.store.state.moduleRevisions?.filter((entry) => entry.moduleId === module.id).map((entry) => entry.version)).toEqual([1, 2, 3]);
+});
+
+it("rejects immutable module history changes both when sealing and when verifying a candidate", async () => {
+  const f = await fixture();
+  const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "不可变历史", content: "原始历史正文\n" }) as ReturnType<WorkflowService["design"]["createModule"]>;
+  await git(f.repository, ["add", "docs"]); await git(f.repository, ["commit", "-m", "track initial module history"]);
+  const item = await f.create("保护历史"); await planned(f, item, [{ moduleId: module.id, baseRevisionId: revision.id, content: "完成后的设计" }]);
+  const launch = await f.start(item); const file = revision.document!.revisionPath;
+  await writeFile(path.join(launch.cwd, "feature.txt"), "implemented"); await writeFile(path.join(launch.cwd, file), "篡改历史"); await f.finish(item);
+  await expect(f.deliver(item)).rejects.toThrow(/历史.*文档|不可变/);
+  await writeFile(path.join(launch.cwd, file), revision.content);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id);
+  await writeFile(path.join(attempt.workspace!, file), "候选篡改历史");
+  await f.service.recheck(attempt.id); await f.service.idle();
+  expect(attempt.status).toBe("failed"); expect(attempt.error).toMatch(/历史.*文档|不可变/);
+  expect(await readFile(path.join(f.repository, file), "utf8")).toBe(revision.content);
+});
+
+it("continues an imported legacy JSON-only workspace without rewriting its sealed Git history", async () => {
+  const f = await fixture(); const item = await f.create("旧 JSON 工作区"); const prd = await planned(f, item);
+  const launch = await f.start(item); await f.finish(item);
+  const file = path.join(launch.cwd, requirementDesignPath(item.id));
+  const document = JSON.parse(await readFile(file, "utf8")); delete document.documentationVersion;
+  await writeFile(file, JSON.stringify(document));
+  await unlink(path.join(launch.cwd, requirementFiles(item.id).prd));
+  await f.command("workflow.documents.import", { projectId: f.project.id });
+  expect(f.service.design.prd(item.id)?.id).toBe(prd.id);
+  const next = await f.start(item); expect(next).toBeDefined();
+  expect(await readFile(path.join(next.cwd, requirementFiles(item.id).prd), "utf8")).toBe(prd.content);
+});
+
+it("continues implementation from a committed imported initial module document", async () => {
+  const f = await fixture(); const { module, revision } = f.service.design.createModule(f.project.id, "导入模块", "旧初始设计");
+  await f.service.store.save(); await f.command("workflow.documents.import", { projectId: f.project.id });
+  await git(f.repository, ["add", "docs"]); await git(f.repository, ["commit", "-m", "track imported documents"]);
+  const item = await f.create("导入后实施"); await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "更新导入模块", reason: "保存", moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "新设计" }] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  const launch = await f.start(item); expect(launch).toBeDefined();
+  await writeFile(path.join(launch.cwd, "feature.txt"), "implemented"); await f.finish(item);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id); await f.service.merge(attempt.id);
+  expect(await readFile(path.join(f.repository, module.documentPath!), "utf8")).toContain("新设计");
+});
+
+it("rejects oversized external module proposals before persisting a new PRD", async () => {
+  const f = await fixture(); const { module, revision } = f.service.design.createModule(f.project.id, "长度限制", "初始设计");
+  const item = await f.create("外部正文长度"); const base = await planned(f, item, [{ moduleId: module.id, baseRevisionId: revision.id, content: "原提案" }]);
+  await f.command("workflow.documents.import", { projectId: f.project.id });
+  const oversized = "x".repeat(12001); await writeFile(path.join(f.repository, base.moduleChanges[0]!.document!.path), oversized);
+  await expect(f.command("workflow.prd.import", { id: item.id, source: "project" })).rejects.toThrow(/12000|模块/);
+  expect(f.service.design.prd(item.id)?.id).toBe(base.id);
+  expect(await readFile(path.join(f.repository, base.moduleChanges[0]!.document!.path), "utf8")).toBe(oversized);
+  await f.service.flush(); const restored = f.createService(); await restored.ready;
+  expect(restored.design.prd(item.id)?.moduleChanges[0]?.content).toBe("原提案");
+});
+
+it("reloads generated document bindings beneath valid long configured directories", async () => {
+  const f = await fixture(); const directory = Array.from({ length: 4 }, () => "x".repeat(50)).join("/");
+  await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: `${directory}/p`, modules: `${directory}/m` } });
+  const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "长目录模块", content: "初始正文" }) as ReturnType<WorkflowService["design"]["createModule"]>;
+  expect(revision.document!.revisionPath.length).toBeGreaterThan(240);
+  await f.service.flush(); const restored = f.createService(); await restored.ready;
+  expect(restored.store.state.moduleRevisions?.find((entry) => entry.moduleId === module.id)?.content).toBe("初始正文");
+});
+
+it("rejects candidate edits to another frozen requirement's custom execution snapshots", async () => {
+  const f = await fixture(); await f.command("workflow.documents.configure", { projectId: f.project.id, paths: { prds: "design/prds", modules: "design/modules" } });
+  const b = await f.create("B 固化需求"); await f.service.beginPlanning(b.id); const scope = f.service.store.scope(b);
+  await f.command("workflow.scope.confirm", { id: b.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: b.id, scopeId: scope.id, expectedPrdId: null, content: "B 的设计", reason: "保存", moduleChanges: [] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: b.id, prdId: prd.id });
+  const wb = await f.start(b); await writeFile(path.join(wb.cwd, "b.txt"), "B"); await f.finish(b);
+  const db = await f.deliver(b); const ib = await f.integrate(db.id); await f.service.merge(ib.id);
+  const a = await f.create("A 后续需求"); const wa = await f.start(a); await writeFile(path.join(wa.cwd, "a.txt"), "A"); await f.finish(a);
+  const context = requirementFiles(b.id, prd.document!.path).context;
+  const before = await readFile(path.join(f.repository, context), "utf8");
+  await writeFile(path.join(wa.cwd, context), "源交付改写其他需求");
+  await expect(f.deliver(a)).rejects.toThrow(/其他需求|快照/);
+  await writeFile(path.join(wa.cwd, context), before);
+  const da = await f.deliver(a); const ia = await f.integrate(da.id);
+  await writeFile(path.join(ia.workspace!, context), "改写其他需求的依据");
+  await f.service.recheck(ia.id); await f.service.idle();
+  expect(ia.status).toBe("failed"); expect(ia.error).toMatch(/其他需求|快照/);
+  expect(await readFile(path.join(f.repository, context), "utf8")).toBe(before);
+});
+
+it("preserves structured proposal bodies when an agent copies server document metadata", async () => {
+  const f = await fixture(); const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "提案模块", content: "基线" }) as ReturnType<WorkflowService["design"]["createModule"]>;
+  const item = await f.create("结构化提案"); await f.start(item);
+  const ticket = f.service.store.state.tickets.find((entry) => entry.itemId === item.id)!; ticket.phase = "discussion";
+  const proposal = { schemaVersion: 1, itemId: item.id, scopeId: ticket.scopeId, expectedPrdId: null, content: "提案正文", reason: "讨论", questions: [], moduleChanges: [{ moduleId: module.id, baseRevisionId: revision.id, content: "模块提案正文", document: revision.document }] };
+  await f.service.captureTranscript(item.id, ticket.runId!, [{ id: randomUUID(), role: "assistant", text: `\x60\x60\x60qingzhou-design\n${JSON.stringify(proposal)}\n\x60\x60\x60`, createdAt: new Date().toISOString() }], []);
+  expect(f.service.store.state.proposals?.[0]?.moduleChanges[0]?.content).toBe("模块提案正文");
+  expect(f.service.store.state.proposals?.[0]?.moduleChanges[0]).not.toHaveProperty("document");
+  // Existing in-memory records from the previous protocol must also retain their bodies.
+  Object.assign(f.service.store.state.proposals![0]!.moduleChanges[0]!, { document: revision.document });
+  await f.service.store.save();
+  await f.service.flush(); const restored = f.createService(); await restored.ready;
+  expect(restored.store.state.proposals?.[0]?.moduleChanges[0]?.content).toBe("模块提案正文");
+});
+
+it("preserves concurrent manual staging of a document included in the candidate", async () => {
+  const f = await fixture(); const item = await f.create("同路径暂存保护"); await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "登记的 PRD", reason: "保存", moduleChanges: [] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  const launch = await f.start(item); await writeFile(path.join(launch.cwd, "feature.txt"), "implemented"); await f.finish(item);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id);
+  const file = prd.document!.path; const manual = "用户手工暂存的另一版正文";
+  const original = f.service.documents.ownedChanges.bind(f.service.documents);
+  const spy = vi.spyOn(f.service.documents, "ownedChanges").mockImplementationOnce(async (...args) => {
+    const owned = await original(...args);
+    await writeFile(path.join(f.repository, file), manual); await git(f.repository, ["add", "--", file]);
+    await writeFile(path.join(f.repository, file), prd.content);
+    return owned;
+  });
+  try { await expect(f.service.merge(attempt.id)).rejects.toThrow(/索引|暂存/); }
+  finally { spy.mockRestore(); }
+  expect(await git(f.repository, ["show", `:${file}`])).toBe(manual);
+  expect(await readFile(path.join(f.repository, file), "utf8")).toBe(prd.content);
+  expect(await git(f.repository, ["rev-parse", "HEAD"])).toBe(attempt.baseline);
+});
+
+it("preserves an external index lock and concurrent manual staging during merge recovery", async () => {
+  const f = await fixture(); const item = await f.create("恢复时暂存保护"); await f.service.beginPlanning(item.id); const scope = f.service.store.scope(item);
+  await f.command("workflow.scope.confirm", { id: item.id, scopeId: scope.id });
+  const { prd } = await f.command("workflow.prd.save", { id: item.id, scopeId: scope.id, expectedPrdId: null, content: "登记正文", reason: "保存", moduleChanges: [] }) as { prd: import("@qingzhou/protocol").RequirementPrd };
+  await f.command("workflow.prd.confirm", { id: item.id, prdId: prd.id });
+  const launch = await f.start(item); await writeFile(path.join(launch.cwd, "feature.txt"), "implemented"); await f.finish(item);
+  const delivery = await f.deliver(item); const attempt = await f.integrate(delivery.id);
+  const files = await gitModule.changedPaths(f.repository); const file = prd.document!.path;
+  const lock = `${await git(f.repository, ["rev-parse", "--path-format=absolute", "--git-path", "index"])}.lock`;
+  await writeFile(lock, "external lock", { flag: "wx" });
+  try { await expect(f.service.documents.stageOwnedForMerge(f.project.id, attempt.candidate!, files, attempt.id, attempt.baseline!)).rejects.toThrow(); }
+  finally { expect(await readFile(lock, "utf8")).toBe("external lock"); await unlink(lock); }
+  expect(await git(f.repository, ["diff", "--cached", "--name-only"])).toBe("");
+  await f.service.documents.stageOwnedForMerge(f.project.id, attempt.candidate!, files, attempt.id, attempt.baseline!);
+  const original = gitModule.workflowGit;
+  const spy = vi.spyOn(gitModule, "workflowGit").mockImplementation(async (cwd, args, input, index) => {
+    if (args[0] === "restore") {
+      await writeFile(path.join(f.repository, file), "恢复期间手工暂存"); await original(f.repository, ["add", "--", file]);
+      await writeFile(path.join(f.repository, file), prd.content);
+    }
+    return original(cwd, args, input, index);
+  });
+  try { await expect(f.service.documents.reconcileMerge(attempt.id, f.project.id, attempt.candidate!, attempt.baseline!, false)).rejects.toThrow(/索引|暂存/); }
+  finally { spy.mockRestore(); }
+  expect(await git(f.repository, ["show", `:${file}`])).toBe("恢复期间手工暂存");
+  expect(await readFile(path.join(f.repository, file), "utf8")).toBe(prd.content);
 });

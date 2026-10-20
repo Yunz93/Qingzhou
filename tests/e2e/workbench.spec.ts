@@ -76,6 +76,8 @@ test("workbench core loop", async ({ page }) => {
   expect(existsSync(path.join(project, "denied.txt"))).toBe(false);
   await expect(page.getByRole("button", { name: "停止" })).toHaveCount(0);
 
+  await expect(page.getByText("这次对话改了项目里的文件", { exact: true })).toHaveCount(0);
+
   await page.getByLabel("输入消息").fill("BASH:echo hi");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("heading", { name: "允许运行这条命令吗？" })).toBeVisible();
@@ -210,7 +212,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeEnabled({ timeout: 20_000 });
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
-  await expect(page.getByText(/检测服务启动时读取的环境变量/)).toBeVisible();
+  await expect(page.getByText("修改系统环境或 .env 后需重启应用；刷新只检测当前进程。")).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新状态" })).toBeVisible();
   await page.getByRole("button", { name: "API Key", exact: true }).click();
   await page.getByLabel("服务商").selectOption("anthropic");
@@ -221,18 +223,19 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByText("models.json", { exact: true })).toBeVisible();
   await expect(page.getByText(/已配置.*个模型/)).toBeVisible();
   await expect(page.getByText("信任默认工作区")).toBeVisible();
-  await expect(page.getByText("默认工作文件夹")).toBeVisible();
+  await expect(page.getByText("默认工作文件夹", { exact: true })).toBeVisible();
   await expect(page.getByText("应用数据目录")).toBeVisible();
-  await expect(page.getByText("新建对话或任务时的默认目录")).toBeVisible();
+  await expect(page.getByText("新对话默认使用此目录，可在会话中切换。")).toBeVisible();
   await page.getByRole("button", { name: "打开设置向导" }).click();
   await page.getByRole("button", { name: "继续" }).click();
+  await page.getByText("无法打开登录页？", { exact: true }).click();
   await expect(page.getByText("/login")).toBeVisible();
   await expect(page.getByRole("button", { name: "使用已有登录" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await page.goto("/");
   await page.getByRole("button", { name: "新对话" }).click();
-  await expect(page.getByText("继续本机上的 Pi 会话")).toBeVisible();
+  await page.getByText("继续已有会话", { exact: true }).click();
   await expect(page.getByText("resume from e2e")).toBeVisible();
   await chooseTypePath(page);
   await page.getByLabel("工作文件夹").fill(project);
@@ -293,7 +296,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByLabel("压缩时额外交代")).toBeVisible();
 });
 
-test("visual workbench at required viewports", async ({ page }) => {
+test("visual workbench at required viewports", async ({ page, browser }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新对话" }).click();
   await chooseTypePath(page);
@@ -305,16 +308,47 @@ test("visual workbench at required viewports", async ({ page }) => {
   for (const size of [
     { name: "1440", width: 1440, height: 900 },
     { name: "1280", width: 1280, height: 800 },
+    { name: "533", width: 533, height: 600 },
     { name: "375", width: 375, height: 812 },
   ] as const) {
     await page.setViewportSize({ width: size.width, height: size.height });
-    await expect(page.locator("body")).toBeVisible();
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-    );
-    expect(overflow).toBe(false);
+    for (const theme of ["light", "dark"] as const) {
+      const switchTheme = page.getByRole("button", { name: theme === "light" ? "切换到浅色" : "切换到深色", exact: true });
+      if (await switchTheme.count()) await switchTheme.click();
+      await expect(page.getByLabel("输入消息", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+      const overlaps = await headerOverlapLabels(page);
+      await page.screenshot({ animations: "disabled", path: `.qingzhou-test/ui-audit/viewport-${size.name}-${theme}.png`, fullPage: true });
+      expect(overlaps, `${size.name} ${theme}`).toEqual([]);
+      for (const name of ["追加", "排队"]) {
+        expect(await page.getByRole("button", { name, exact: true }).evaluate((button) => button.scrollHeight <= button.clientHeight)).toBe(true);
+      }
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      );
+      expect(overflow).toBe(false);
+    }
   }
+  const touchContext = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, storageState: await page.context().storageState() });
+  try {
+    const touchPage = await touchContext.newPage();
+    await touchPage.goto(page.url());
+    await expect(touchPage.getByLabel("输入消息", { exact: true })).toBeVisible();
+    await touchPage.screenshot({ animations: "disabled", path: ".qingzhou-test/ui-audit/viewport-375-touch.png", fullPage: true });
+    expect(await headerOverlapLabels(touchPage), "375 touch").toEqual([]);
+  } finally { await touchContext.close(); }
 });
+
+async function headerOverlapLabels(page: import("@playwright/test").Page) {
+return page.locator(".conversation-titlebar").evaluate((header) => {
+  const boxes = [...header.querySelectorAll("button, nav a, a[aria-label='设置']")]
+    .map((node) => ({ label: node.getAttribute("aria-label") || node.textContent?.trim(), rect: node.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width && rect.height);
+  return boxes.flatMap((a, index) => boxes.slice(index + 1).filter((b) =>
+    Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left) > 1 && Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top) > 1)
+    .map((b) => [a.label, b.label]));
+});
+}
 
 async function chooseTypePath(page: import("@playwright/test").Page): Promise<void> {
   await page.getByRole("button", { name: "输入路径" }).click();
@@ -341,11 +375,16 @@ async function createTask(page: import("@playwright/test").Page, title: string):
   }
   while ((await list.count()) > 0) {
     const count = await list.count();
-    const item = list.first();
+    const id = await list.first().getAttribute("data-task-id");
+    const item = page.getByRole("complementary", { name: "会话", exact: true }).locator(`li[data-task-id="${id}"]`);
+    const label = await item.getByRole("button", { name: /^会话操作 / }).getAttribute("aria-label");
     await item.hover();
     await item.getByRole("button", { name: /^会话操作 / }).click();
-    await item.getByRole("menuitem", { name: /^(归档|隐藏) / }).click();
+    const action = item.getByRole("menuitem", { name: /^(归档|隐藏) / });
+    const archive = (await action.getAttribute("aria-label"))?.startsWith("归档 ");
+    await action.click();
     await expect(list).toHaveCount(count - 1);
+    if (archive) await expect(page.getByRole("status").filter({ hasText: `已归档「${label!.replace(/^会话操作 /, "")}」` })).toBeVisible();
   }
   await page.getByRole("button", { name: "新对话" }).click();
   await chooseTypePath(page);

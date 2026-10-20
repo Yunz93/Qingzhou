@@ -92,7 +92,8 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
       .then((next) => {
         setStatus(next);
         setWorkspace(next.workspaceRoot ?? next.allowedRoots[0] ?? next.homeDir);
-        setProvider(next.providers[0]?.id ?? "anthropic");
+        const nextCatalog = mergeAuthCatalog(next.oauthProviders ?? [{ id: "github", label: "GitHub Copilot" }, { id: "openai", label: "OpenAI (ChatGPT)" }], next.providers);
+        setProvider(pickDefaultProvider(nextCatalog, "oauth", nextCatalog.find((entry) => findAuthEntry(next.authEntries ?? [], entry.id, "oauth"))?.id));
         setStep("welcome");
       })
       .catch(() => setError("连不上轻舟。确认应用正在运行。"));
@@ -235,7 +236,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
   }
 
   const titles: Record<Step, string> = {
-    welcome: "先花半分钟准备一下",
+    welcome: "准备使用轻舟",
     pi: status?.piBundled ? "AI 引擎出了点问题" : "需要安装 Pi",
     auth: "连接一个 AI",
     workspace: "选一个工作文件夹",
@@ -254,7 +255,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
       {onCancel ? (
         <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onCancel} />
       ) : null}
-      <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-lg" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+      <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-solid dialog-panel-lg" role="dialog" aria-modal="true" aria-labelledby="setup-title">
         <div className="dialog-head">
           <div className="dialog-head-text">
             <p className="dialog-kicker">{isDesktopApp() ? "欢迎使用轻舟" : "轻舟设置"}</p>
@@ -274,13 +275,13 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
             <>
               <p className="text-sm leading-6 text-mute">
                 {isDesktopApp()
-                  ? "轻舟是这台电脑上的私人对话。接下来粘贴一把密钥，再选一个它可以工作的文件夹。"
-                  : "轻舟让 AI 帮你处理这台电脑上的文件。我们会准备三件事：Pi、AI 密钥、工作文件夹。"}
+                  ? "连接 AI 并选择工作文件夹，即可开始使用。"
+                  : "确认运行环境，连接 AI 并选择工作文件夹。"}
               </p>
               <ol className="list-decimal space-y-1 pl-5 text-sm leading-6 text-mute">
-                <li>使用已有的 Pi 登录，或粘贴一把 API Key</li>
+                <li>连接已有账号或输入 API Key</li>
                 <li>选一个工作文件夹</li>
-                <li>开始聊天 — 改文件前会先问你</li>
+                <li>确认操作权限后开始对话</li>
               </ol>
             </>
           ) : null}
@@ -308,7 +309,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
           {step === "auth" ? (
             <>
               <p className="text-sm leading-6 text-mute">
-                先选方式，再选服务商。订阅登录适合 GitHub Copilot / OpenAI；也可以给支持的服务商粘贴 API Key。
+                连接账号，或使用 API Key。
               </p>
               <div className="seg w-full max-w-[240px]">
                 {([
@@ -376,12 +377,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                     ) : null}
                   </div>
                   {authMode === "oauth" ? (
-                    <p className="text-[12px] leading-5 text-mute">
-                      点「订阅登录」会打开系统浏览器完成授权。若没打开，可在终端运行
-                      <code className="mx-1 font-mono text-ink">pi</code>
-                      后输入 <code className="font-mono text-ink">/login</code>
-                      ，再点刷新。
-                    </p>
+                    <details className="text-[12px] leading-5 text-mute"><summary>无法打开登录页？</summary><p className="mt-2">在终端运行 <code className="font-mono text-ink">pi</code>，输入 <code className="font-mono text-ink">/login</code> 完成授权，再刷新状态。</p></details>
                   ) : (
                     <div>
                       <label className="block text-sm text-mute" htmlFor="api-key">
@@ -409,7 +405,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
           {step === "workspace" ? (
             <>
               <p className="text-sm leading-6 text-mute">
-                选一个文件夹，轻舟只在这里面工作。之后可以在这个文件夹里打开具体项目。
+                选择默认工作文件夹，之后可为会话选择其他目录。
               </p>
               <FolderPicker
                 initialPath={workspace || status?.homeDir}
@@ -485,9 +481,9 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
               >
                 刷新
               </button>
-              <button type="button" className="pressable btn btn-ghost" onClick={() => setStep("workspace")}>
+              {authMode === "api_key" || !hasExistingLogin ? <button type="button" className="pressable btn btn-ghost" onClick={() => setStep("workspace")}>
                 {hasExistingLogin ? "使用已有登录" : "暂时跳过"}
-              </button>
+              </button> : null}
               {authMode === "api_key" ? (
                 <button
                   type="button"
@@ -507,7 +503,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                   disabled={busy || (!hasExistingLogin && activeEntry?.kind !== "oauth")}
                   onClick={() => setStep("workspace")}
                 >
-                  继续
+                  {hasExistingLogin ? "使用已有登录" : "继续"}
                 </button>
               )}
             </>

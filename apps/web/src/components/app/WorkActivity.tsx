@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Inbox } from "lucide-react";
 import type { WorkflowProjectState } from "@qingzhou/protocol";
 import { useAgentStore } from "../../stores/agent-store";
 import { socketClient } from "../../transport/socket-client";
@@ -47,7 +48,7 @@ export function WorkActivity() {
   const running = items.filter((item) => item.latestRun && ["queued", "running", "waiting_approval", "waiting_input"].includes(item.latestRun.status)).length;
   if (!items.length) return null;
   return <div className="work-activity app-no-drag" ref={ref}>
-    <button className="btn btn-ghost" aria-expanded={open} aria-haspopup="dialog" aria-label={`工作动态：${actions.length} 项待处理，${running} 项运行中${error ? "，部分状态待刷新" : ""}`} onClick={() => setOpen(!open)}><span>待处理 {actions.length}</span>{running ? <span className="work-activity-running">运行 {running}</span> : null}{error ? <span title="部分项目状态读取失败">· 待刷新</span> : null}</button>
+    <button className="btn btn-ghost" aria-expanded={open} aria-haspopup="dialog" aria-label={`工作动态：${actions.length} 项待处理，${running} 项运行中${error ? "，部分状态待刷新" : ""}`} onClick={() => setOpen(!open)}><Inbox className="work-activity-icon" size={14} aria-hidden="true" /><span><span className="work-activity-label">待处理 </span>{actions.length}</span>{running ? <span className="work-activity-running">运行 {running}</span> : null}{error ? <span title="部分项目状态读取失败">· 待刷新</span> : null}</button>
     {open ? <div className="work-activity-popover" role="dialog" aria-label="跨模式工作动态"><div className="flex items-center justify-between"><strong>待我处理</strong><button className="btn btn-ghost" onClick={() => setOpen(false)}>关闭</button></div>
       {connection !== "open" ? <p role="status" className="text-sm text-mute mt-2">连接已断开，展示最近状态。</p> : null}
       {actions.length ? <ul>{actions.map(({ item, reason, panel }) => <li key={item.id}><Link to={`/board?item=${item.id}&panel=${panel === "conversation" ? "scope" : panel}`} onClick={() => setOpen(false)}><small>{projects.find((entry) => entry.id === item.projectId)?.name ?? "项目"}</small><strong>{item.title}</strong><span>{reason}</span></Link></li>)}</ul> : <p className="mt-3 text-sm text-mute">当前没有已知待处理事项。{running ? `另有 ${running} 项正在推进。` : ""}</p>}

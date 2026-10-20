@@ -21,7 +21,7 @@
 
 独立工作区、封存提交、集成候选和真实检查绑定具体版本。重启中断不重放副作用，集成使用 Git 引用检查和 CAS；原项目目录有未提交改动时不覆盖它。
 
-项目标准清单与模板由 `project-standard.ts` 生成；安全文件访问集中在 `workspace-files.ts`。`workflow-design-docs.ts` 提供需求的 Markdown 与只读快照，`workflow-design.ts` 将修改读回为新 PRD。JSON 与 Markdown 有不同修改时拒绝静默取舍。
+项目标准清单与模板由 `project-standard.ts` 生成；安全文件访问集中在 `workspace-files.ts`。`project-documents.ts` 负责可配置目录、项目 Markdown 与不可变版本、迁移、写入恢复和受控 Git 衔接；`workflow-design-docs.ts` 提供工作区文档与只读快照，`workflow-design.ts` 将修改读回为新 PRD。新建或已导入文档以 Markdown 为正文入口，状态保存路径和 hash；未导入旧需求仍兼容 JSON / Markdown 合并，冲突拒绝静默取舍。本轮实现待用户验收。
 
 ## 主要模块
 

@@ -10,3 +10,11 @@ it("allows an exact saved design while blocking local body, module or revision c
 it("keeps an unreadable cached design visible for recovery instead of discarding it during acceptance", () => {
   expect(hasPrdDraftChanges("{broken", prd)).toBe(true);
 });
+it("ignores storage metadata while retaining module content and basis changes", () => {
+  const change = { moduleId: "module", baseRevisionId: "base", content: "模块设计" };
+  const stored = { ...prd, moduleChanges: [{ ...change, document: { path: "docs/module.md", revisionPath: "docs/.versions/base.md", hash: "hash" } }] };
+  const raw = { ...draft, moduleChanges: [change] };
+  expect(hasPrdDraftChanges(JSON.stringify(raw), stored)).toBe(false);
+  expect(hasPrdDraftChanges(JSON.stringify({ ...raw, moduleChanges: [{ ...change, baseRevisionId: "other" }] }), stored)).toBe(true);
+  expect(hasPrdDraftChanges(JSON.stringify({ ...raw, moduleChanges: [{ ...change, content: "本地修改" }] }), stored)).toBe(true);
+});

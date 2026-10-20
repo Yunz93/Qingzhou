@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { verificationIsValid, type DeliveryAcceptance, type WorkflowProjectState, type WorkflowCheck, type WorkflowEvent, type WorkItemSummary, type IntegrationAttempt, type Verification, type TimelineMessage, type ToolExecution } from "@qingzhou/protocol";
+import { verificationIsValid, type DeliveryAcceptance, type WorkflowProjectState, type WorkflowCheck, type WorkItemSummary, type IntegrationAttempt, type Verification } from "@qingzhou/protocol";
 import { GitBranch, Layers, LayoutGrid, List, Pause, Play, Plus, Search, Settings2, ShieldCheck } from "lucide-react";
 import { requirementStatus, attemptLabels } from "../../lib/requirement-state";
 export { requirementStatus } from "../../lib/requirement-state";
@@ -9,10 +9,11 @@ import { WorkflowMenu, WorkflowModal, WorkflowTabs } from "./WorkflowTabs";
 import { AttentionInbox, useAttentionItems } from "./AttentionInbox";
 import { DeliveryReview } from "./DeliveryReview";
 import { hasPrdDraftChanges } from "../../lib/prd-draft";
+import { DocumentSettings } from "./DocumentSettings";
 import { ProjectStandard } from "./ProjectStandard";
 import { ModuleDocuments } from "./ModuleDocuments";
 import { planningReady, prdFor } from "./RequirementDesign";
-import { MainlineHistory } from "./MainlineHistory";
+import { WorkflowHistory } from "./WorkflowHistory";
 import { socketClient } from "../../transport/socket-client";
 import { useAgentStore } from "../../stores/agent-store";
 
@@ -74,7 +75,7 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
     try { setError(""); await socketClient.send(type, payload); await onRefresh(); } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
   };
   return <section aria-label="项目编排" className="workflow-project">
-    <div className="workflow-overview">
+    <div className={`workflow-overview ${view !== "requirements" ? "workflow-overview-compact" : ""}`}>
       <div className="workflow-project-heading">
         <div><h2>项目总览</h2>
           {!config ? <p className="mt-1 text-sm text-mute">选择集成分支和项目检查，开始推进需求。</p> : null}</div>
@@ -102,7 +103,7 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
     </div>
     {config ? <>
       <WorkflowTabs id="project" label="项目视图" value={view} onChange={setView} tabs={[
-        { id: "requirements", label: "需求", count: active.length }, { id: "attention", label: "待我处理", count: attention }, { id: "integration", label: "集成队列", count: integrations.length }, { id: "modules", label: "模块文档", count: state.modules?.length ?? 0 }, { id: "history", label: "演进与回放" },
+        { id: "requirements", label: "需求", count: active.length }, { id: "attention", label: "待我处理", count: attention }, { id: "integration", label: "集成队列", count: integrations.length }, { id: "modules", label: "模块文档", count: state.modules?.length ?? 0 }, { id: "history", label: "项目历史" },
       ]} />
       <div role="tabpanel" id="project-panel-requirements" aria-labelledby="project-tab-requirements" hidden={view !== "requirements"}>{children}</div>
       <div role="tabpanel" id="project-panel-attention" aria-labelledby="project-tab-attention" hidden={view !== "attention"}><AttentionInbox state={state} items={items} onSelect={onSelect} /></div>
@@ -121,6 +122,7 @@ export function ProjectWorkflow({ projectId, state, items, onRefresh, onSelect, 
 function WorkflowSettings({ projectId, state, onSaved, onOpenStandard }: { projectId: string; state: WorkflowProjectState; onSaved: () => Promise<void>; onOpenStandard: () => void }) {
   const config = state.configs[0];
   const [info, setInfo] = useState<{ isGit: boolean; repository?: string; branch?: string; branches?: string[]; dirty?: string[]; suggestedChecks?: WorkflowCheck[] }>();
+  const [settingsTab, setSettingsTab] = useState("workflow");
   const [branch, setBranch] = useState(config?.targetBranch ?? "");
   const [concurrency, setConcurrency] = useState(config?.concurrency ?? 1);
   const [checks, setChecks] = useState<WorkflowCheck[]>(config?.checks ?? []);
@@ -134,21 +136,23 @@ function WorkflowSettings({ projectId, state, onSaved, onOpenStandard }: { proje
     return () => { current = false; };
   }, [projectId]);
   const update = (index: number, patch: Partial<WorkflowCheck>) => setChecks(checks.map((check, position) => position === index ? { ...check, ...patch } : check));
-  return <form className="workflow-settings" onSubmit={(event) => {
+  return <div className="workflow-settings-layout"><WorkflowTabs id="project-settings" label="项目设置分类" value={settingsTab} onChange={setSettingsTab} tabs={[{ id: "workflow", label: "编排" }, { id: "documents", label: "文档位置" }]} />
+  <form hidden={settingsTab !== "workflow"} role="tabpanel" id="project-settings-panel-workflow" aria-labelledby="project-settings-tab-workflow" className="workflow-settings" onSubmit={(event) => {
     event.preventDefault(); setBusy(true); setError("");
     void socketClient.send("workflow.configure", { projectId, targetBranch: branch, concurrency, checks }).then(onSaved).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
   }}>
     <h3 className="text-sm font-semibold mb-2">1. 仓库与集成主线</h3>
     <p className="text-sm text-mute break-all">{info ? info.isGit ? `仓库：${info.repository}` : "目录不是可用的 Git 仓库。请先在项目中建立仓库，再配置。" : "正在检查仓库…"}</p>
-    {info?.dirty?.length ? <details className="mt-2 text-sm"><summary>原目录有 {info.dirty.length} 个改动，不会复制到新工作区；合入前需自行处理</summary><pre className="workflow-code">{info.dirty.join("\n")}</pre></details> : null}
+    {info?.dirty?.length ? <details className="mt-2 text-sm"><summary>原目录有 {info.dirty.length} 个改动</summary><p className="mt-2">新工作区以已提交代码和确认设计为依据。合入时会单独核对这些文件。</p><pre className="workflow-code">{info.dirty.join("\n")}</pre></details> : null}
     <div className="mt-3 flex flex-wrap gap-4">
       <label className="text-sm">集成分支<select aria-label="集成分支" className="field ml-2" value={branch} onChange={(event) => setBranch(event.target.value)} required>
         <option value="">选择本地分支</option>{info?.branches?.map((name) => <option key={name}>{name}</option>)}
       </select></label>
     </div>
     <h3 className="mt-4 text-sm font-semibold">2. 项目检查</h3>
-    {info?.suggestedChecks?.length ? <div className="workflow-detected-checks"><p className="text-sm">检测到 {info.suggestedChecks.length} 个仓库脚本。应用后请审阅命令，并按需要补充依赖安装与环境要求；保存设置不会立即执行。</p><button type="button" className="btn btn-secondary mt-2" onClick={() => setChecks([...checks, ...info.suggestedChecks!.filter((suggestion) => !checks.some((check) => check.id === suggestion.id || check.command === suggestion.command))])}>应用检测到的检查</button></div> : null}
-    <p className="mt-1 text-sm text-mute">命令在交付或集成的工作区执行。依赖安装也应写入检查命令。临时目录独立；共享端口或数据库的检查填写相同的独占资源名，进入串行队列。请通过环境变量提供凭据。</p>
+    {info?.suggestedChecks?.length ? <div className="workflow-detected-checks"><p className="text-sm">检测到 {info.suggestedChecks.length} 个检查脚本，添加后可修改。</p><button type="button" className="btn btn-secondary mt-2" onClick={() => setChecks([...checks, ...info.suggestedChecks!.filter((suggestion) => !checks.some((check) => check.id === suggestion.id || check.command === suggestion.command))])}>应用检测到的检查</button></div> : null}
+    <p className="mt-1 text-sm text-mute">封存与集成时运行这些命令，保存设置不会执行。</p>
+    <details className="mt-2 text-sm text-mute"><summary>检查环境与共享资源</summary><p className="mt-2">需要安装依赖时，将安装步骤加入命令。使用同一端口或数据库的检查填写相同的独占资源名；凭据通过环境变量提供。</p></details>
     {checks.map((check, index) => <fieldset className="workflow-check-config" key={check.id}>
       <legend className="sr-only">检查 {index + 1}</legend>
       <label>名称<input className="field w-full" value={check.name} onChange={(event) => update(index, { name: event.target.value })} required maxLength={120} /></label>
@@ -164,11 +168,11 @@ function WorkflowSettings({ projectId, state, onSaved, onOpenStandard }: { proje
       <button type="submit" className="btn btn-primary" disabled={busy || !info?.isGit}>{busy ? "正在保存…" : "保存编排设置"}</button></div>
     {config ? <button type="button" className="btn btn-ghost mt-3" disabled={busy} onClick={onOpenStandard}>项目文件与规范</button> : null}
     {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
-  </form>;
+  </form><section role="tabpanel" id="project-settings-panel-documents" aria-labelledby="project-settings-tab-documents" hidden={settingsTab !== "documents"}><DocumentSettings projectId={projectId} state={state} /></section></div>;
 }
 
 export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, onStop, onConversation, onArchive, onRefresh }: {
-  state: WorkflowProjectState; items: WorkItemSummary[]; onSelect: (item: WorkItemSummary) => void;
+  state: WorkflowProjectState; items: WorkItemSummary[]; onSelect: (item: WorkItemSummary, panel?: string) => void;
   onCreate: () => void; onStart: (id: string) => void; onStop: (id: string) => void;
   onConversation: (item: WorkItemSummary) => void; onArchive: (id: string) => void; onRefresh: () => Promise<void>;
 }) {
@@ -225,7 +229,7 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
       </button>
       <div className="workflow-item-actions">
         {item.state === "archived" ? <button className="btn btn-secondary" disabled={busy} onClick={() => void send("workItem.reopen", { id: item.id })}>恢复需求</button>
-          : <><button className="btn btn-secondary" onClick={() => onSelect(item)}>{["delivery", "merged"].includes(status.lane) ? "查看交付" : running ? "进入对话" : "进入工作区"}</button>
+          : <><button className="btn btn-secondary" onClick={() => running ? onConversation(item) : onSelect(item, ["delivery", "merged"].includes(status.lane) ? "delivery" : undefined)}>{["delivery", "merged"].includes(status.lane) ? "查看交付" : running ? "进入对话" : "进入工作区"}</button>
             <WorkflowMenu label={`${item.title} 的更多操作`} actions={[
               { label: running ? "停止本轮" : item.state === "completed" ? "重新打开" : "开始执行", disabled: busy || (!running && item.state === "open" && !planningReady(state, item.id)), run: () => running ? onStop(item.id) : item.state === "completed" ? void send("workItem.reopen", { id: item.id }) : onStart(item.id) },
               ...(item.taskId && !state.workspaces.some((entry) => entry.itemId === item.id && entry.removedAt) ? [{ label: "专注对话", run: () => onConversation(item) }] : []),
@@ -248,15 +252,15 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
   </section>;
 }
 
-function IntegrationQueue({ state, items, onRefresh, onSelect }: { state: WorkflowProjectState; items: WorkItemSummary[]; onRefresh: () => Promise<void>; onSelect: (item: WorkItemSummary) => void }) {
+function IntegrationQueue({ state, items, onRefresh, onSelect }: { state: WorkflowProjectState; items: WorkItemSummary[]; onRefresh: () => Promise<void>; onSelect: (item: WorkItemSummary, panel?: string) => void }) {
   const queue = state.integrations.filter((attempt) => !["merged", "cancelled", "stale"].includes(attempt.status));
   const [error, setError] = useState("");
   return queue.length ? <section className="workflow-integration-queue" aria-label="集成队列"><h3 className="sr-only">集成队列 · 与实施顺序独立</h3>
     <ol>{queue.map((attempt, index) => <li key={attempt.id} className="workflow-integration-card">
-      <span className="workflow-queue-number">{index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><button className="font-medium" onClick={() => { const item = items.find((entry) => entry.id === attempt.itemId); if (item) onSelect(item); }}>{items.find((item) => item.id === attempt.itemId)?.title ?? "历史需求"}</button><span className="workflow-integration-status">{attemptLabels[attempt.status]}</span></div>
+      <span className="workflow-queue-number">{index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><button className="font-medium" onClick={() => { const item = items.find((entry) => entry.id === attempt.itemId); if (item) onSelect(item, "delivery"); }}>{items.find((item) => item.id === attempt.itemId)?.title ?? "历史需求"}</button><span className="workflow-integration-status">{attemptLabels[attempt.status]}</span></div>
         <p className="mt-2 text-xs text-mute">{attempt.targetBranch} · 基线 {attempt.baseline?.slice(0, 8) ?? "等待准备"} · 候选 {attempt.candidate?.slice(0, 8) ?? "等待生成"}</p>
         {attempt.error ? <p className="mt-2 text-xs text-danger">{attempt.error}</p> : null}</div>
-      <button className="btn btn-secondary" onClick={() => { const item = items.find((entry) => entry.id === attempt.itemId); if (item) onSelect(item); }}>{attempt.status === "conflicts" || attempt.status === "failed" ? "处理集成" : attempt.status === "ready" ? "审阅候选" : "查看进展"}</button>
+      <button className="btn btn-secondary" onClick={() => { const item = items.find((entry) => entry.id === attempt.itemId); if (item) onSelect(item, "delivery"); }}>{attempt.status === "conflicts" || attempt.status === "failed" ? "处理集成" : attempt.status === "ready" ? "审阅候选" : "查看进展"}</button>
       {attempt.status === "queued" && index > 0 && queue[index - 1]?.status === "queued" ? <button className="btn btn-ghost" onClick={() => void socketClient.send("workflow.integration.reorder", { id: attempt.id, beforeId: queue[index - 1]!.id }).then(onRefresh).catch((reason) => setError(message(reason)))}>上移</button> : null}
     </li>)}</ol>{error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}</section> : null;
 }
@@ -303,7 +307,7 @@ export function RequirementWorkflow({ state, item, items, onRefresh, view = "del
       <button className="btn btn-secondary" disabled={busy || active || loadingChanges} onClick={() => { setError(""); setLoadingChanges(true); void socketClient.send<{ paths: string[] }>("workflow.changes", { id: item.id }).then((value) => { setPaths(value.paths); setSelected([]); }).catch((reason) => setError(message(reason))).finally(() => setLoadingChanges(false)); }}>{loadingChanges ? "正在读取改动…" : "查看本次待封存改动"}</button>
       {paths ? <div className="mt-3 rounded-lg border border-line p-3 text-sm">
         <label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={paths.length > 0 && selected.length === paths.length} onChange={(event) => setSelected(event.target.checked ? paths : [])} />确认全部改动属于本需求</label>
-        {paths.map((file) => <label key={file} className="mt-2 flex items-center gap-2 break-all"><input type="checkbox" checked={selected.includes(file)} onChange={(event) => setSelected(event.target.checked ? [...selected, file] : selected.filter((entry) => entry !== file))} />{file}</label>)}
+        {paths.map((file) => <label key={file} className="mt-2 flex min-w-0 items-center gap-2"><input type="checkbox" aria-label={file} className="shrink-0" checked={selected.includes(file)} onChange={(event) => setSelected(event.target.checked ? [...selected, file] : selected.filter((entry) => entry !== file))} /><span className="truncate font-mono text-xs" title={file}>{file.replaceAll(/([a-f0-9]{8})-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/g, "$1…")}</span></label>)}
         {!paths.length ? <p className="mt-2 text-mute">没有新文件差异，可封存当前代码树以重新验证。</p> : null}
         <label className="mt-3 block">本轮实现的行为<textarea className="field mt-1 w-full" rows={3} value={behaviors} maxLength={6000} onChange={(event) => setBehaviors(event.target.value)} placeholder="描述用户可观察的结果，提交后仍需人工验收。" /></label>
         <details className="mt-3"><summary>补充交付信息</summary>
@@ -408,57 +412,7 @@ function VerificationDetails({ result }: { result: Verification | undefined }) {
   </div>;
 }
 
-export function WorkflowHistory({ state, items, onlyItemId, onSelect, onRefresh, expanded = false }: { expanded?: boolean; state: WorkflowProjectState; items: WorkItemSummary[]; onlyItemId?: string; onSelect?: (item: WorkItemSummary) => void; onRefresh?: () => Promise<void> }) {
-  const replayRequest = useRef(0);
-  const replayRef = useRef<HTMLElement>(null);
-  const [transcript, setTranscript] = useState<{ messages: TimelineMessage[]; tools: ToolExecution[] } | null>(null);
-  const [itemFilter, setItemFilter] = useState(onlyItemId ?? "");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [selected, setSelected] = useState<WorkflowEvent | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const selectEvent = (event: WorkflowEvent | null) => { if (replayRef.current) replayRef.current.scrollTop = 0; replayRequest.current++; setSelected(event); setTranscript(null); setError(""); setBusy(false); };
-  const events = state.events.filter((event) => (!itemFilter || event.itemId === itemFilter) && (!typeFilter || event.type.startsWith(typeFilter))).slice().reverse();
-  const attempt = selected?.facts?.integration ?? state.integrations.find((entry) => entry.id === selected?.subjectId);
-  const delivery = state.deliveries.find((entry) => entry.id === selected?.subjectId || entry.id === attempt?.deliveryId);
-  const acceptance = state.acceptances.find((entry) => entry.id === selected?.subjectId);
-  const ticket = selected?.facts?.ticket ?? state.tickets.find((entry) => entry.id === selected?.subjectId);
-  const scopeId = delivery?.scopeId ?? ticket?.scopeId ?? acceptance?.scopeId;
-  const scope = state.scopes.find((entry) => entry.id === scopeId || entry.id === selected?.subjectId);
-  const verification = state.verifications.find((entry) => entry.id === selected?.subjectId || entry.id === delivery?.verificationId || entry.id === attempt?.verificationId);
-  return <details open={expanded || undefined} className="workflow-history mt-4 border-t border-line pt-3"><summary className="text-sm font-semibold">{onlyItemId ? "需求历史与只读回放" : "项目演进时间线"} · {events.length}</summary>
-    {!onlyItemId ? <MainlineHistory state={state} items={items} onSelect={onSelect} /> : null}
-    <div className="mt-3 flex flex-wrap gap-2">{!onlyItemId ? <select className="field text-sm" aria-label="按需求筛选历史" value={itemFilter} onChange={(event) => { setItemFilter(event.target.value); selectEvent(null); }}><option value="">全部需求</option>{items.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select> : null}
-      <select className="field text-sm" aria-label="按事件筛选历史" value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); selectEvent(null); }}><option value="">全部事件</option><option value="scope.">范围变更</option><option value="run.">执行</option><option value="delivery.">交付与验收</option><option value="integration.">集成</option><option value="verification.">验证</option><option value="main.">主线变化</option></select></div>
-    <div className="workflow-history-layout"><ol className="workflow-timeline mt-3">{events.filter((event) => event.type !== "delivery.request").map((event) => <li key={event.id}>
-      <button className="w-full text-left text-sm" aria-pressed={selected?.id === event.id} onClick={() => selectEvent(event)}><time className="block text-xs text-mute">#{event.sequence} · {date(event.createdAt)} · {items.find((item) => item.id === event.itemId)?.title ?? "项目"}</time><span className="mt-1 block">{event.message}</span></button>
-    </li>)}</ol>
-    {selected ? <section ref={replayRef} className="workflow-replay mt-3" aria-label="只读历史回放"><div className="flex justify-between gap-2"><h4 className="font-medium">只读回放 · #{selected.sequence}</h4><button className="btn btn-ghost" onClick={() => selectEvent(null)}>关闭回放</button></div>
-      <p className="mt-2 text-sm">{selected.message}</p>
-      {scope ? <pre className="workflow-code">范围 v{scope.version}{"\n"}{scope.title}{"\n\n"}{scope.description}{"\n\n"}{scope.acceptanceCriteria}</pre> : null}
-      {ticket ? <pre className="workflow-code">{ticket.phase === "integration" ? "集成处理" : "需求实施"}{"\n"}执行记录：{ticket.runId ?? "尚未开始"}{"\n"}{ticket.instruction}</pre> : null}
-      {delivery ? <><p className="mt-2 text-sm">交付 {delivery.commit} · 执行记录 {delivery.runId ?? "无"}</p><pre className="workflow-code">{delivery.patch || "无差异"}</pre></> : null}
-      {attempt ? <><p className="mt-2 text-sm">主线节点：{attempt.mergedCommit ?? attempt.candidate ?? "尚无候选"} · {attemptLabels[attempt.status]}</p><pre className="workflow-code">{attempt.patch || "无差异"}</pre></> : null}
-      {attempt?.includedItemIds?.length ? <p className="mt-2 text-sm">该版本已包含：{attempt.includedItemIds.map((id) => items.find((item) => item.id === id)?.title ?? id).join("、")}</p> : null}
-      {acceptance ? <p className="mt-2 text-sm">{acceptance.decision === "accepted" ? "验收通过" : "需返工"} · {acceptance.note}</p> : null}
-      {verification ? <VerificationDetails result={verification} /> : null}
-      {(ticket?.runId || delivery?.runId || selected.type === "conversation.captured") ? <button className="btn btn-secondary mt-3" disabled={busy} onClick={() => {
-        setBusy(true); setError(""); const request = ++replayRequest.current;
-        void socketClient.send<{ messages: TimelineMessage[]; tools: ToolExecution[] }>("workflow.transcript", { runId: ticket?.runId ?? delivery?.runId ?? selected.subjectId })
-          .then((value) => { if (request === replayRequest.current) setTranscript(value); }).catch((reason) => { if (request === replayRequest.current) setError(message(reason)); }).finally(() => { if (request === replayRequest.current) setBusy(false); });
-      }}>只读回放本轮对话</button> : null}
-      {transcript ? <div className="mt-3">{transcript.messages.map((entry) => <article className="mt-3" key={entry.id}><p className="text-sm font-medium">{entry.role === "user" ? "用户" : entry.role === "assistant" ? "助手" : entry.role}</p><pre className="workflow-code">{entry.text}</pre></article>)}
-        <details className="mt-3 text-sm"><summary>本轮保存的工具记录 · {transcript.tools.length}</summary>{transcript.tools.map((tool) => <pre className="workflow-code" key={tool.toolCallId}>{tool.toolName} · {tool.status}{"\n"}{JSON.stringify(tool, null, 2)}</pre>)}</details></div> : null}
-      {selected.type === "main.merged" && attempt?.status === "merged" ? <button className="btn btn-secondary mt-3" disabled={busy} onClick={() => {
-        setBusy(true); setError("");
-        void socketClient.send("workflow.revert", { integrationId: attempt.id }).then(onRefresh).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
-      }}>创建撤销需求，保留后续主线</button> : null}
-      {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
-      {onSelect && selected.itemId ? <button className="btn btn-secondary mt-3" onClick={() => { const item = items.find((entry) => entry.id === selected.itemId); if (item) onSelect(item); }}>打开当前需求工作间</button> : null}
-    </section> : <div className="workflow-empty"><h3>选择一个节点，回看当时的交付</h3><p>范围、对话、代码差异与检查证据按发生时的版本保留。</p></div>}
-    </div>
-  </details>;
-}
+export { WorkflowHistory } from "./WorkflowHistory";
 
 function BaselineRelationship({ state, item, items }: { state: WorkflowProjectState; item: WorkItemSummary; items: WorkItemSummary[] }) {
   const relation = state.baselineRelations?.[item.id];

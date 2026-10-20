@@ -34,7 +34,7 @@ type Props = {
   onFastMode?: (enabled: boolean) => void;
 };
 
-type GearOption<T extends string> = { value: T; label: string };
+type GearOption<T extends string> = { value: T; label: string; description?: string };
 
 function GearSlider<T extends string>({
   label,
@@ -92,12 +92,14 @@ function GearSlider<T extends string>({
             className="pressable"
             disabled={disabled}
             aria-pressed={value === item.value}
+            title={item.description}
             onClick={() => onChange(item.value)}
           >
             {item.label}
           </button>
         ))}
       </div>
+      {options[index]?.description ? <p className="policy-picker-help">{options[index]!.description}</p> : null}
     </div>
   );
 }
@@ -376,6 +378,7 @@ export function ComposerCapsules({
             <p className="model-picker-empty">暂无模型</p>
           ) : intensityLevels.length > 1 ? (
             <div>
+              <p className="policy-picker-label">思考强度</p>
               <div className="model-picker-slider-wrap">
               <div
                 className="model-picker-track"

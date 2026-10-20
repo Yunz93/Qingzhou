@@ -503,7 +503,7 @@ export function InspectorPanel({
                             }`}
                             onClick={() => setExpandedGitPath(open ? null : entry.path)}
                           >
-                            <span className="min-w-0 flex-1 break-all text-[12px] leading-4 text-ink">{entry.path}</span>
+                            <span title={entry.path} className="min-w-0 flex-1 truncate text-[12px] leading-4 text-ink">{entry.path}</span>
                             {isNew ? <span className="shrink-0 text-[11px] text-success">新</span> : null}
                             {counts.added > 0 ? (
                               <span className="shrink-0 font-mono text-[11px] text-success tabular">+{counts.added}</span>

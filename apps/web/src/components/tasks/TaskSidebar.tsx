@@ -21,6 +21,8 @@ type Props = {
   pinned?: boolean;
   onPinToggle?: () => void;
   workTaskIds?: Set<string>;
+  waitingInputTaskIds?: ReadonlySet<string>;
+  groupNames?: ReadonlyMap<string, string>;
   onOpenBoard?: () => void;
   onReorder?: (cwd: string, taskIds: string[]) => void;
 };
@@ -42,6 +44,8 @@ export function TaskSidebar({
   pinned = true,
   onPinToggle,
   workTaskIds = EMPTY_WORK_TASK_IDS,
+  waitingInputTaskIds = EMPTY_WORK_TASK_IDS,
+  groupNames,
   onOpenBoard,
   onReorder,
 }: Props) {
@@ -152,13 +156,14 @@ export function TaskSidebar({
         ) : (
           groups.map(([cwd, items]) => (
             <section key={cwd} className="mb-2">
-              <h2><button type="button" className="pressable sidebar-project" title={cwd} aria-expanded={searching || !collapsed.has(cwd)} onClick={() => toggleProject(cwd)}><ChevronRight size={11} className={searching || !collapsed.has(cwd) ? "rotate-90" : ""} /><span className="min-w-0 flex-1 truncate">{folderName(cwd)}</span><span className="tabular">{items.length}</span></button></h2>
+              <h2><button type="button" className="pressable sidebar-project" title={`${groupNames?.get(cwd) ?? folderName(cwd)}\n${cwd}`} aria-expanded={searching || !collapsed.has(cwd)} onClick={() => toggleProject(cwd)}><ChevronRight size={11} className={searching || !collapsed.has(cwd) ? "rotate-90" : ""} /><span className="min-w-0 flex-1 truncate">{groupNames?.get(cwd) ?? folderName(cwd)}</span><span className="tabular">{items.length}</span></button></h2>
               <ul hidden={!searching && collapsed.has(cwd)}>
                 {items.map((task) => {
                   const active = task.id === activeTaskId;
                   return (
                     <li
                       key={task.id}
+                      data-task-id={task.id}
                       className="relative"
                       draggable={!searching && Boolean(onReorder) && items.length > 1 && editingId !== task.id}
                       onDragStart={() => setDragId(task.id)}
@@ -190,7 +195,7 @@ export function TaskSidebar({
                               commitRename(task);
                             }}
                           >
-                            <PiStatusRing status={task.status} size={11} />
+                            <PiStatusRing status={waitingInputTaskIds.has(task.id) ? "waiting_approval" : task.status} size={11} />
                             <input
                               autoFocus
                               value={draft}
@@ -225,7 +230,7 @@ export function TaskSidebar({
                                 ) : null}
                               </span>
                               <span className="block truncate text-[11px] text-mute">
-                                {taskStatusLabel(task.status)}
+                                {waitingInputTaskIds.has(task.id) ? "等待回答" : taskStatusLabel(task.status)}
                               </span>
                             </span>
                             {task.unreadCount > 0 && !active ? (

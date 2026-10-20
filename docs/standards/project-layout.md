@@ -16,7 +16,7 @@ docs/
   templates/                      # 可复用文档模板
   prd/                            # 轻舟已有 PRD，保留历史链接
   qingzhou/
-    project.json                  # 标准版本和固定文档路径
+    project.json                  # 标准版本、导航与可选 documentPaths
     requirements/<需求 ID>.json   # 兼容已有设计 JSON，保留依据版本
     requirements/<需求 ID>/
       AGENTS.md                   # 本需求文档的编辑规则
@@ -29,6 +29,10 @@ docs/
 ```
 
 ## 权责与唯一来源
+
+本轮 [Markdown 存储修订](../requirements/document-review-simplification/PRD.md) 已实施、待验收：新文档默认写入 `docs/requirements/<名称-需求ID>/PRD.md` 和 `docs/modules/<名称-模块ID>.md`；项目可配置两个相对目录。每份正文旁的 `.versions/` 保存不可变版本，需求内 `modules/` 保存提案，已有绑定路径保持不变。上方旧 `qingzhou/requirements` 布局继续用于未迁移需求与既有封存交付。
+
+新建或显式导入后的 Markdown 是正文唯一编辑入口，状态保存路径和 hash，JSON 是只读依据。下列双入口规则仅适用于未导入的旧需求。新目录的创建、保存、导入与 Git 衔接保留恢复日志，冲突时不覆盖用户文件；配置只影响之后的新文档。
 
 | 信息 | 权威来源 | Agent 的行为 |
 | --- | --- | --- |

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
@@ -15,7 +15,9 @@ import { WorkflowDesign } from "./workflow-design.js";
 import { WorkflowStore } from "./workflow-store.js";
 import { changedPaths, workflowArtifact, redactWorkflowLog, repositoryInfo, safeWorkflowPath, workflowGit as git } from "./workflow-git.js";
 import type { WorkItemStore } from "./work-item-store.js";
-import { moduleDocumentContent } from "./workflow-module-docs.js";
+import { moduleDocument, moduleDocumentContent } from "./workflow-module-docs.js";
+import { ProjectDocuments } from "./project-documents.js";
+import { readWorkspaceText } from "./workspace-files.js";
 
 type Host = {
   dataDir: string;
@@ -32,6 +34,7 @@ const errorText = (error: unknown) => redactWorkflowLog(error instanceof Error ?
 export class WorkflowService {
   readonly store: WorkflowStore;
   readonly design: WorkflowDesign;
+  readonly documents: ProjectDocuments;
   readonly ready: Promise<void>;
   private pumping = false;
   private pumpAgain = false;
@@ -49,20 +52,25 @@ export class WorkflowService {
   constructor(private readonly host: Host) {
     this.store = new WorkflowStore(host.dataDir);
     this.design = new WorkflowDesign(this.store, host.items);
+    this.documents = new ProjectDocuments(this.store, host.items, host.dataDir);
     this.ready = this.load();
     // Retain startup errors for RPC callers without an unhandled rejection.
     void this.ready.catch(() => {});
   }
   private async load(): Promise<void> {
     await this.store.load(this.host.items);
+    await this.documents.recover();
     for (const attempt of this.store.state.integrations) {
       if (attempt.status === "merging") {
         const config = this.config(attempt.projectId);
         const head = config ? await git(config.repository, ["rev-parse", `refs/heads/${attempt.targetBranch}`]).catch(() => "") : "";
         if (config && attempt.candidate && head === attempt.candidate) {
+          if (await git(config.repository, ["write-tree"]) !== attempt.tree) attempt.documentIndexTree = await this.documents.reconcileMerge(attempt.id, attempt.projectId, attempt.candidate, attempt.baseline!, true);
           await this.syncCheckedOutTree(config, attempt).catch((error) => { attempt.error = errorText(error); });
           await this.markMerged(attempt);
+          await this.documents.completeMerge(attempt.id);
         } else {
+          if (attempt.candidate && attempt.baseline) await this.documents.reconcileMerge(attempt.id, attempt.projectId, attempt.candidate, attempt.baseline, false);
           attempt.status = "failed";
           attempt.error = "合入中断，真实分支未指向候选；请重新准备。";
         }
@@ -193,6 +201,9 @@ export class WorkflowService {
     const head = config ? await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]).catch(() => null) : null;
     const tree = head && config ? await git(config.repository, ["rev-parse", `${head}^{tree}`]).catch(() => "") : "";
     const state = this.store.state;
+    let documentPaths: WorkflowProjectState["documentPaths"];
+    let documentPathsError: string | undefined;
+    try { documentPaths = await this.documents.paths(projectId); } catch (error) { documentPathsError = errorText(error); }
     const designBaselines: NonNullable<WorkflowProjectState["designBaselines"]> = {};
     const ancestry = new Map<string, boolean>();
     const mainDesignBaseline = config && head && items[0] ? await this.designBaseline(items[0].id, head, ancestry) : undefined;
@@ -229,9 +240,10 @@ export class WorkflowService {
       } catch (error) { baselineRelations[workspace.itemId] = { behind: true, includedItemIds, error: errorText(error) }; }
     }));
     return structuredClone({
-      designBaselines, mainDesignBaseline,
+      designBaselines, mainDesignBaseline, documentPaths, documentPathsError,
       queue: { running, verifying, reserved, used: running + verifying + reserved, limit: config?.concurrency ?? 1, reasons, resourceWaits: Object.fromEntries(this.resourceWaits) }, baselineRelations,
       ...state,
+      documentFiles: state.documentFiles?.filter((entry) => entry.projectId === projectId),
       proposals: state.proposals?.filter((entry) => ids.has(entry.itemId)), cycles: state.cycles?.filter((entry) => ids.has(entry.itemId)),
       plans: state.plans?.filter((entry) => ids.has(entry.itemId)), prds: state.prds?.filter((entry) => ids.has(entry.itemId)),
       modules: state.modules?.filter((entry) => entry.projectId === projectId),
@@ -248,6 +260,35 @@ export class WorkflowService {
       events: state.events.filter((entry) => entry.projectId === projectId), head, mainVerification, workspaceStates,
     });
   }
+  private async importPrd(id: string, workspace?: string) {
+    return this.lock(`documents:${this.item(id).projectId}`, async () => {
+      const current = this.design.prd(id);
+      if (!current) throw new Error("请先建立 PRD");
+      let result: { prd: RequirementPrd; changed: boolean };
+      if (workspace) result = await this.design.importFile(id, workspace, true);
+      else {
+        if (!current.document) throw new Error("请先在项目设置中导入旧版文档");
+        const repository = this.documents.repository(this.item(id).projectId);
+        const content = await this.documents.hydrateCurrent(current);
+        const changes = await Promise.all(current.moduleChanges.map(async (change) => ({ ...change,
+          content: change.document ? await readWorkspaceText(repository, change.document.path) : change.content,
+        })));
+        if (changes.some((change) => change.content === null)) throw new Error("模块提案文件缺失，请恢复后同步");
+        const moduleChanges = changes as RequirementPrd["moduleChanges"];
+        if (this.design.matches({ content, moduleChanges }, current)) return { prd: current, changed: false };
+        if (!content.trim() || content.length > 16000) throw new Error("PRD 正文不能为空且不能超过 16000 字符");
+        result = { ...this.design.save({ id, scopeId: current.scopeId, expectedPrdId: current.id, content, moduleChanges, reason: "同步项目 Markdown 文件修改" }, true), changed: true };
+      }
+      if (result.changed) {
+        if (workspace && !current.document) {
+          this.design.commitPrd(result.prd); await this.changed(); return result;
+        }
+        const journal = await this.documents.persistPrd(result.prd, !workspace);
+        this.design.commitPrd(result.prd); await this.changed(); await this.documents.complete(journal);
+      }
+      return result;
+    });
+  }
   async handle(command: ClientCommand): Promise<unknown> {
     await this.ready;
     switch (command.type) {
@@ -259,17 +300,35 @@ export class WorkflowService {
       case "workflow.prd.save":
       case "workflow.prd.confirm": return this.lock(`item:${command.payload.id}`, async () => {
         this.assertDesignEditable(command.payload.id);
+        if (command.type === "workflow.prd.save") return this.lock(`documents:${this.item(command.payload.id).projectId}`, async () => {
+          const result = this.design.save(command.payload, true);
+          const journal = await this.documents.persistPrd(result.prd);
+          this.design.commitPrd(result.prd); await this.changed(); await this.documents.complete(journal); return result;
+        });
+        if (command.type === "workflow.prd.confirm") await this.documents.assertCurrent(this.design.prd(command.payload.id)!);
         const result = command.type === "workflow.scope.confirm" ? this.design.confirmScope(command.payload.id, command.payload.scopeId)
-          : command.type === "workflow.prd.save" ? this.design.save(command.payload) : this.design.confirm(command.payload.id, command.payload.prdId, await this.designBaseline(command.payload.id));
+          : this.design.confirm(command.payload.id, command.payload.prdId, await this.designBaseline(command.payload.id));
         await this.changed(); return result ?? { ok: true };
       });
       case "workflow.prd.import": return this.lock(`item:${command.payload.id}`, async () => {
         const id = command.payload.id; this.assertDesignEditable(id);
         const workspace = this.store.state.workspaces.find((entry) => entry.itemId === id && !entry.removedAt);
-        if (!workspace) throw new Error("需求还没有实施工作区");
-        const result = await this.design.importFile(id, workspace.path);
+        const source = command.payload.source ?? (workspace ? "workspace" : "project");
+        if (source === "workspace" && !workspace) throw new Error("需求还没有实施工作区");
+        const result = await this.importPrd(id, source === "workspace" ? workspace!.path : undefined);
         this.store.event(this.item(id).projectId, id, "prd.file.synced", result.prd.id, result.changed ? "已读取工作区设计变更，等待确认新 PRD。" : "工作区设计内容与当前 PRD 一致。");
         await this.changed(); return result;
+      });
+      case "workflow.documents.inspect": return this.documents.inspect(command.payload.projectId);
+      case "workflow.documents.configure":
+      case "workflow.documents.import": return this.lock(`documents:${command.payload.projectId}`, async () => {
+        const projectId = command.payload.projectId;
+        if (this.used(projectId) || this.store.state.tickets.some((entry) => entry.projectId === projectId && entry.status === "queued") || this.store.state.integrations.some((entry) => entry.projectId === projectId && active(entry))) throw new Error("请先结束项目执行、验证和集成，再调整或导入文档");
+        if (command.type === "workflow.documents.configure") {
+          const journal = await this.documents.configure(projectId, command.payload.paths);
+          await this.changed(); await this.documents.complete(journal);
+        } else await this.documents.importLegacy(projectId);
+        await this.changed(); return { ok: true };
       });
       case "workflow.standard.inspect": {
         const config = this.requireConfig(command.payload.projectId); await this.repository(config);
@@ -282,9 +341,11 @@ export class WorkflowService {
         this.store.event(config.projectId, null, "project.standard.initialized", null, `补齐 ${result.created.length} 个标准文件，保留 ${result.preserved.length} 个现有文件；改动未自动提交。`);
         await this.changed(); return result;
       });
-      case "workflow.module.create": return this.lock(`modules:${command.payload.projectId}`, async () => {
-        const result = this.design.createModule(command.payload.projectId, command.payload.name, command.payload.content);
-        await this.changed(); return result;
+      case "workflow.module.create": return this.lock(`documents:${command.payload.projectId}`, async () => {
+        const result = this.design.createModule(command.payload.projectId, command.payload.name, command.payload.content, true);
+        const journal = await this.documents.persistModule(result.module, result.revision);
+        this.design.commitModule(result.module, result.revision);
+        await this.changed(); await this.documents.complete(journal); return result;
       });
       case "workflow.inspect": {
         const project = this.host.items.getProject(command.payload.projectId);
@@ -463,23 +524,32 @@ export class WorkflowService {
   private async workspace(item: WorkItem): Promise<string> {
     const config = this.requireConfig(item.projectId);
     await this.repository(config);
-    const existing = this.store.state.workspaces.find((entry) => entry.itemId === item.id);
-    if (existing) {
-      if (existing.removedAt) throw new Error("工作区已清理；历史交付仍可回放，继续开发请新建需求。");
-      const info = await repositoryInfo(existing.path);
-      if (info.commonDir !== config.commonDir || info.branch !== existing.branch) throw new Error("需求工作区身份或分支被外部修改，请检查现场");
-      return existing.path;
+    let workspace = this.store.state.workspaces.find((entry) => entry.itemId === item.id);
+    if (workspace) {
+      if (workspace.removedAt) throw new Error("工作区已清理；历史交付仍可回放，继续开发请新建需求。");
+      const exists = await lstat(workspace.path).then(() => true, (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      const created = this.store.state.events.some((entry) => entry.itemId === item.id && entry.type === "workspace.created");
+      if (exists || created) {
+        const info = await repositoryInfo(workspace.path);
+        if (info.commonDir !== config.commonDir || info.branch !== workspace.branch) throw new Error("需求工作区身份或分支被外部修改，请检查现场");
+        return workspace.path;
+      }
+    } else {
+      const baseline = this.design.prd(item.id)?.codeBaseline?.commit ?? await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]);
+      workspace = { itemId: item.id, path: path.join(this.host.dataDir, "worktrees", item.id),
+        branch: `qingzhou/requirement/${item.id}`, baseline, originalPath: item.cwd, createdAt: now(), removedAt: null };
+      // Journal intent before Git side effects; explicit retry can finish creation if no directory was created.
+      this.store.state.workspaces.push(workspace);
+      await this.changed();
     }
-    const baseline = this.design.prd(item.id)?.codeBaseline?.commit ?? await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]);
-    const cwd = path.join(this.host.dataDir, "worktrees", item.id);
-    const branch = `qingzhou/requirement/${item.id}`;
-    // Journal intent before Git side effects, allowing interrupted creation to be inspected.
-    this.store.state.workspaces.push({ itemId: item.id, path: cwd, branch, baseline, originalPath: item.cwd, createdAt: now(), removedAt: null });
-    await this.changed();
-    await mkdir(path.dirname(cwd), { recursive: true });
-    await git(config.repository, ["worktree", "add", "-b", branch, cwd, baseline]);
-    this.store.event(item.projectId, item.id, "workspace.created", null, `独立工作区已建立，基线 ${baseline.slice(0, 8)}；原目录未提交改动未复制。`);
-    await this.changed(); return cwd;
+    await mkdir(path.dirname(workspace.path), { recursive: true });
+    // -b also refuses an existing branch; recovery never resets an unknown Git reference.
+    await git(config.repository, ["worktree", "add", "-b", workspace.branch, workspace.path, workspace.baseline]);
+    this.store.event(item.projectId, item.id, "workspace.created", null, `独立工作区已建立，基线 ${workspace.baseline.slice(0, 8)}；原目录未提交改动未复制。`);
+    await this.changed(); return workspace.path;
   }
   private async launch(ticket: WorkflowTicket): Promise<void> {
     try {
@@ -495,7 +565,10 @@ export class WorkflowService {
         if (!previous && head !== prd.codeBaseline.commit) throw new Error("工作区代码已偏离确认的 PRD 基线，请重新审阅并确认新 PRD");
         await git(cwd, ["merge-base", "--is-ancestor", prd.codeBaseline.commit, head]);
       }
-      if (ticket.phase === "implementation") await this.design.materialize(item.id, cwd);
+      if (ticket.phase === "implementation") {
+        if (prd) { await this.documents.assertCurrent(prd); await this.documents.copyPrd(cwd, prd); }
+        await this.design.materialize(item.id, cwd);
+      }
       this.store.event(item.projectId, item.id, "run.started", ticket.id, ticket.phase === "integration" ? "在原需求对话中处理集成候选。" : ticket.phase === "discussion" ? "开始只读讨论，尚未启动实施。" : "开始实施已固定范围的需求。");
       await this.changed();
       await this.host.launch(item.id, cwd, ticket.kind, ticket.instruction, ticket.imageIds);
@@ -518,7 +591,7 @@ export class WorkflowService {
     if (ticket.phase === "implementation" && ticket.prdId) {
       const workspace = this.store.state.workspaces.find((entry) => entry.itemId === itemId && !entry.removedAt);
       if (workspace) {
-        try { await this.design.importFile(itemId, workspace.path); }
+        try { await this.importPrd(itemId, workspace.path); }
         catch (error) { this.store.event(ticket.projectId, itemId, "prd.sync.failed", ticket.prdId, errorText(error)); }
       }
     }
@@ -615,12 +688,15 @@ export class WorkflowService {
       const ticket = this.store.state.tickets.filter((entry) => entry.itemId === id && entry.phase === "implementation").at(-1);
       const scope = this.store.scope(item);
       const prd = this.design.assertReady(item);
+      if (prd) await this.documents.assertCurrent(prd);
       if (prd && ticket?.prdId !== prd.id) throw new Error("PRD 已调整，请按当前确认的版本实施后重新封存");
       if (!ticket || ticket.scopeId !== scope.id) throw new Error("当前范围尚未执行，请先开始本轮需求");
       const changes = await this.changes(id);
       await this.design.assertFileCurrent(id, changes.cwd);
       await this.design.assertSnapshot(id, changes.cwd, undefined, ticket.documentationVersion);
       await this.design.assertModuleDocuments(id, changes.cwd);
+      await this.documents.assertImmutable(item.projectId, changes.cwd, changes.baseline);
+      await this.documents.assertOtherSnapshots(item.projectId, id, changes.cwd, changes.baseline);
       const selected = new Set(paths.map(safeWorkflowPath));
       if (prd && !selected.has(requirementDesignPath(id)) && !(await git(changes.cwd, ["ls-files", "--", requirementDesignPath(id)]))) throw new Error("PRD 设计文件未纳入交付；请检查 Git 忽略规则，刷新并确认设计文件后重新封存");
       if (changes.paths.some((file) => !selected.has(file)) || [...selected].some((file) => !changes.paths.includes(file))) throw new Error("交付文件已变化，请刷新并明确选择本次全部改动；来源不明的文件请先处理");
@@ -638,10 +714,12 @@ export class WorkflowService {
       const tree = await git(changes.cwd, ["rev-parse", "HEAD^{tree}"]);
       if (prd) {
         const document = workspaceDesignSchema.parse(JSON.parse(await git(changes.cwd, ["show", `${commit}:${requirementDesignPath(id)}`])));
-        if (document.prdId !== prd.id || document.content !== prd.content || JSON.stringify(document.moduleChanges) !== JSON.stringify(prd.moduleChanges)) throw new Error("封存的 PRD 与确认版本不一致，请重新核对工作区");
+        if (document.prdId !== prd.id || !this.design.matches(document, prd)) throw new Error("封存的 PRD 与确认版本不一致，请重新核对工作区");
       }
       await this.design.assertSnapshot(id, changes.cwd, commit, ticket.documentationVersion);
       await this.design.assertModuleDocuments(id, changes.cwd, commit);
+      await this.documents.assertImmutable(item.projectId, changes.cwd, changes.baseline, commit);
+      await this.documents.assertOtherSnapshots(item.projectId, id, changes.cwd, changes.baseline, commit);
       if (review) for (const file of review.artifactPaths) await workflowArtifact(changes.cwd, commit, safeWorkflowPath(file));
       const deliveryId = randomUUID();
       await git(changes.cwd, ["update-ref", `refs/qingzhou/deliveries/${deliveryId}`, commit]);
@@ -846,7 +924,7 @@ export class WorkflowService {
   }
   async accept(id: string, decision: "accepted" | "rejected", note = "", evidence?: DeliveryAcceptance["evidence"]): Promise<{ ok: true }> {
     const delivery = this.delivery(id);
-    return this.lock(`item:${delivery.itemId}`, async () => {
+    return this.lock(`item:${delivery.itemId}`, () => this.lock(`documents:${this.item(delivery.itemId).projectId}`, async () => {
       this.assertEditable(delivery.itemId);
       if (this.design.prd(delivery.itemId)?.frozenAt) {
         if (decision === "accepted" && this.design.prd(delivery.itemId)?.deliveryId === id) return { ok: true };
@@ -863,13 +941,19 @@ export class WorkflowService {
       }
       const previous = this.store.state.acceptances.filter((entry) => entry.deliveryId === id).at(-1);
       if (previous?.decision === decision && previous.note === note) return { ok: true };
-      if (decision === "accepted") this.design.finalize(delivery);
+      const journals: string[] = [];
+      if (decision === "accepted") await this.design.finalize(delivery, async (revisions) => {
+        for (const revision of revisions) {
+          const module = this.store.state.modules!.find((entry) => entry.id === revision.moduleId)!;
+          journals.push(await this.documents.persistModule(module, revision, false));
+        }
+      });
       const record = { id: randomUUID(), itemId: delivery.itemId, deliveryId: id, scopeId: delivery.scopeId, decision, note, evidence, createdAt: now() };
       this.store.state.acceptances.push(record);
       this.store.event(this.item(delivery.itemId).projectId, delivery.itemId, `delivery.${decision}`, record.id,
         decision === "accepted" ? "已验收这个交付版本，尚未合入主线。" : `需要返工：${note}`);
-      await this.changed(); return { ok: true };
-    });
+      await this.changed(); for (const journal of journals) await this.documents.complete(journal); return { ok: true };
+    }));
   }
   private accepted(delivery: Delivery): boolean { return this.store.state.acceptances.filter((entry) => entry.deliveryId === delivery.id).at(-1)?.decision === "accepted"; }
   private repoKey(config: WorkflowConfig): string { return `${config.commonDir}\0refs/heads/${config.targetBranch}`; }
@@ -1008,7 +1092,7 @@ export class WorkflowService {
   }
   async merge(id: string): Promise<{ attempt: IntegrationAttempt }> {
     const attempt = this.attempt(id);
-    return this.lock(`integration:${id}`, () => this.lock(`repository:${attempt.repositoryKey}`, () => this.lock(`project:${attempt.projectId}`, async () => {
+    return this.lock(`integration:${id}`, () => this.lock(`repository:${attempt.repositoryKey}`, () => this.lock(`project:${attempt.projectId}`, () => this.lock(`documents:${attempt.projectId}`, async () => {
       if (attempt.status === "merged") return { attempt: structuredClone(attempt) };
       if (attempt.status !== "ready" || !attempt.candidate || !attempt.tree || !attempt.baseline || !attempt.workspace) throw new Error("候选尚未完成有效验证");
       const config = this.requireConfig(attempt.projectId);
@@ -1022,20 +1106,37 @@ export class WorkflowService {
       if ((await changedPaths(attempt.workspace)).length || await git(attempt.workspace, ["rev-parse", "HEAD"]) !== attempt.candidate) throw new Error("集成候选被修改，请重新验证");
       const info = await repositoryInfo(config.repository);
       if (info.branch !== config.targetBranch) throw new Error("原项目目录未检出集成分支，请先在 Git 中切换后再合入");
-      if (info.dirty.length) throw new Error(`原项目目录有未提交改动，合入已停止：${info.dirty.join("、")}`);
       if (info.head !== attempt.baseline) { attempt.status = "stale"; attempt.error = "主线已变化，过期候选不会合入，请重新准备。"; await this.changed(); this.kickIntegrations(); throw new Error(attempt.error); }
-      attempt.status = "merging"; attempt.updatedAt = now(); await this.changed();
+      attempt.status = "merging"; attempt.error = null; attempt.updatedAt = now(); await this.changed();
       try {
+        const transitions: Record<string, { from: string; to: string }> = {};
+        const prd = this.store.state.prds?.find((entry) => entry.id === delivery.prdId);
+        for (const change of prd?.moduleChanges ?? []) {
+          const module = this.store.state.modules?.find((entry) => entry.id === change.moduleId);
+          const base = this.store.state.moduleRevisions?.find((entry) => entry.id === change.baseRevisionId);
+          // A new module's uncommitted initial baseline may advance to its confirmed proposal.
+          // Existing tracked documents and external edits still require an exact candidate match.
+          if (module?.documentPath && base && !base.sourcePrdId && !base.documentError && !(await git(config.repository, ["cat-file", "-e", `${attempt.baseline}:${module.documentPath}`]).then(() => true, () => false))) {
+            transitions[module.documentPath] = { from: base.content, to: moduleDocument(module, prd!, change.content) };
+          }
+        }
+        const documents = await this.documents.stageOwnedForMerge(attempt.projectId, attempt.candidate, info.dirty, attempt.id, attempt.baseline, transitions);
+        attempt.documentIndexTree = documents.tree; await this.changed();
         // Verify source and CAS target in one Git reference transaction, including external writers.
         const source = this.store.state.workspaces.find((entry) => entry.itemId === attempt.itemId)!;
         await git(config.repository, ["update-ref", "-m", `qingzhou integrate ${attempt.id}`, "--stdin"],
           `start\nverify refs/heads/${source.branch} ${delivery.commit}\nverify refs/qingzhou/integrations/${attempt.id} ${attempt.candidate}\nupdate refs/heads/${config.targetBranch} ${attempt.candidate} ${attempt.baseline}\nprepare\ncommit\n`);
-      } catch (error) { attempt.status = "stale"; attempt.error = errorText(error); await this.changed(); this.kickIntegrations(); throw error; }
+      } catch (error) {
+        const recovery = await this.documents.reconcileMerge(attempt.id, attempt.projectId, attempt.candidate, attempt.baseline, false).then(() => "", errorText);
+        const head = await git(config.repository, ["rev-parse", `refs/heads/${config.targetBranch}`]);
+        attempt.status = head === attempt.baseline ? "ready" : "stale";
+        attempt.error = [errorText(error), recovery].filter(Boolean).join("；"); await this.changed(); throw error;
+      }
       // read-tree refuses to overwrite unstaged/untracked changes. A crash here is reconciled on restart.
       await this.syncCheckedOutTree(config, attempt).catch((error) => { attempt.error = `分支已合入，工作目录同步受阻：${errorText(error)}`; });
       await this.markMerged(attempt);
-      await this.changed(); this.kickIntegrations(); this.kick(); return { attempt: structuredClone(attempt) };
-    })));
+      await this.changed(); await this.documents.completeMerge(attempt.id); this.kickIntegrations(); this.kick(); return { attempt: structuredClone(attempt) };
+    }))));
   }
   private async syncCheckedOutTree(config: WorkflowConfig, attempt: IntegrationAttempt): Promise<void> {
     const branch = await git(config.repository, ["branch", "--show-current"]);
@@ -1043,21 +1144,26 @@ export class WorkflowService {
     const indexTree = await git(config.repository, ["write-tree"]);
     if (indexTree === attempt.tree) return;
     const oldTree = await git(config.repository, ["rev-parse", `${attempt.baseline}^{tree}`]);
-    if (indexTree !== oldTree) throw new Error("索引已被外部修改，未覆盖；请手动核对 Git 工作目录。");
-    await git(config.repository, ["read-tree", "-u", "-m", attempt.baseline!, attempt.candidate!]);
+    if (indexTree !== oldTree && indexTree !== attempt.documentIndexTree) throw new Error("索引已被外部修改，未覆盖；请手动核对 Git 工作目录。");
+    await git(config.repository, ["read-tree", "-u", "-m", indexTree, attempt.candidate!]);
   }
   private async markMerged(attempt: IntegrationAttempt): Promise<void> {
-    attempt.status = "merged"; attempt.mergedCommit = attempt.candidate; attempt.updatedAt = now();
     const config = this.requireConfig(attempt.projectId);
     const prd = this.store.state.prds?.find((entry) => entry.id === this.delivery(attempt.deliveryId).prdId);
     for (const change of prd?.codeBaseline ? prd.moduleChanges : []) {
       const module = this.store.state.modules?.find((entry) => entry.id === change.moduleId);
       if (!module?.documentPath || this.store.state.moduleRevisions?.some((entry) => entry.moduleId === module.id && entry.integrationId === attempt.id)) continue;
-      const content = moduleDocumentContent(await git(config.repository, ["show", `${attempt.candidate}:${module.documentPath}`]));
+      const content = moduleDocumentContent(await git(config.repository, ["show", `${attempt.candidate}:${module.documentPath}`]), module.documentFormat === "markdown");
       const previous = this.store.state.moduleRevisions?.filter((entry) => entry.moduleId === module.id).at(-1);
-      (this.store.state.moduleRevisions ??= []).push({ id: randomUUID(), moduleId: module.id, version: (previous?.version ?? 0) + 1,
-        previousId: change.baseRevisionId, integrationId: attempt.id, sourcePrdId: prd!.id, deliveryId: attempt.deliveryId, content, createdAt: now() });
+      const revision = { id: randomUUID(), moduleId: module.id, version: (previous?.version ?? 0) + 1,
+        previousId: change.baseRevisionId, integrationId: attempt.id, sourcePrdId: prd!.id, deliveryId: attempt.deliveryId, content, createdAt: now() };
+      const journal = await this.documents.persistModule(module, revision, false);
+      (this.store.state.moduleRevisions ??= []).push(revision);
+      const file = await readWorkspaceText(config.repository, module.documentPath);
+      if (file !== null && moduleDocumentContent(file, module.documentFormat === "markdown").trimEnd() === content) this.documents.record(module.projectId, module.documentPath, file);
+      await this.changed(); await this.documents.complete(journal);
     }
+    attempt.status = "merged"; attempt.mergedCommit = attempt.candidate; attempt.updatedAt = now();
     const included = await Promise.all(this.store.state.integrations.filter((entry) => entry.repositoryKey === attempt.repositoryKey && entry.status === "merged" && entry.mergedCommit).map(async (entry) => {
       try { await git(config.repository, ["merge-base", "--is-ancestor", entry.mergedCommit!, attempt.candidate!]); return entry.itemId; }
       catch { return null; }
@@ -1076,6 +1182,8 @@ export class WorkflowService {
     await git(attempt.workspace, ["merge-base", "--is-ancestor", attempt.baseline!, attempt.candidate]);
     const ticket = this.store.state.tickets.find((entry) => entry.id === delivery.ticketId);
     await this.design.assertSnapshot(attempt.itemId, attempt.workspace, attempt.candidate, ticket?.documentationVersion);
+    await this.documents.assertImmutable(attempt.projectId, attempt.workspace, attempt.baseline!, attempt.candidate);
+    await this.documents.assertOtherSnapshots(attempt.projectId, attempt.itemId, attempt.workspace, attempt.baseline!, attempt.candidate);
     if (delivery.prdId) {
       const file = requirementDesignPath(attempt.itemId);
       if (await git(attempt.workspace, ["show", `${attempt.candidate}:${file}`]) !== await git(attempt.workspace, ["show", `${delivery.commit}:${file}`])) throw new Error("集成候选改写了固化设计 JSON，请恢复源交付设计；设计变化通过关联子需求处理");
@@ -1084,9 +1192,18 @@ export class WorkflowService {
       .filter((file) => file !== requirementDesignPath(attempt.itemId) && !file.startsWith(`docs/qingzhou/requirements/${attempt.itemId}/`));
     if (otherDesigns.length) throw new Error("集成候选修改了其他需求的设计快照，请恢复原始设计");
     const prd = this.store.state.prds?.find((entry) => entry.id === delivery.prdId);
+    for (const other of this.store.state.prds?.filter((entry) => entry.itemId !== attempt.itemId) ?? []) {
+      for (const source of [other.document, ...other.moduleChanges.map((entry) => entry.document)]) if (source) {
+        for (const file of [source.path, source.revisionPath]) {
+          const before = await git(attempt.workspace, ["rev-parse", `${attempt.baseline}:${file}`]).catch(() => null);
+          const after = await git(attempt.workspace, ["rev-parse", `${attempt.candidate}:${file}`]).catch(() => null);
+          if (before !== after) throw new Error("集成候选修改了其他需求的设计快照，请恢复原始设计");
+        }
+      }
+    }
     for (const change of prd?.codeBaseline ? prd.moduleChanges : []) {
       const module = this.store.state.modules?.find((entry) => entry.id === change.moduleId);
-      if (module?.documentPath) moduleDocumentContent(await git(attempt.workspace, ["show", `${attempt.candidate}:${module.documentPath}`]));
+      if (module?.documentPath) moduleDocumentContent(await git(attempt.workspace, ["show", `${attempt.candidate}:${module.documentPath}`]), module.documentFormat === "markdown");
     }
   }
   async reviewCandidate(input: Extract<ClientCommand, { type: "workflow.integration.review" }>["payload"]): Promise<{ attempt: IntegrationAttempt }> {

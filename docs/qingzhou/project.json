@@ -3,6 +3,7 @@
   "standard": "qingzhou-project",
   "paths": {
     "index": "docs/README.md",
+    "layout": "docs/standards/project-layout.md",
     "overview": "docs/project/overview.md",
     "architecture": "docs/project/architecture.md",
     "verification": "docs/project/verification.md",
@@ -10,7 +11,10 @@
     "roles": "docs/agents/roles.md",
     "modules": "docs/modules/README.md",
     "requirements": "docs/requirements/README.md",
-    "decisions": "docs/decisions/README.md",
-    "layout": "docs/standards/project-layout.md"
+    "decisions": "docs/decisions/README.md"
+  },
+  "documentPaths": {
+    "prds": "docs/requirements",
+    "modules": "docs/modules"
   }
 }

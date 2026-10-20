@@ -219,7 +219,8 @@ export function BoardPage() {
             {workflow.state ? <ProjectWorkflow key={`overview:${project.id}`} projectId={project.id} state={workflow.state} items={projectItems} onRefresh={workflow.refresh} onSelect={openDetails}>
               <WorkflowDashboard key={`requirements:${project.id}`} state={workflow.state} items={projectItems} onSelect={openDetails} onCreate={() => setCreating(true)} onStart={startItem} onStop={stopItem} onConversation={openConversation} onArchive={archiveItem} onRefresh={workflow.refresh} />
             </ProjectWorkflow> : null}
-            {!workflow.state?.configs.length ? <WorkDashboard
+            {!workflow.state?.configs.length && !projectItems.length ? <section className="workflow-empty"><h2>记录第一项工作</h2><p>先记录目标，之后可配置 PRD、检查和合入流程。</p><button className="btn btn-primary" disabled={connection !== "open"} onClick={() => setCreating(true)}>新建任务</button></section> : null}
+            {!workflow.state?.configs.length && projectItems.length > 0 ? <WorkDashboard
               items={projectItems}
               tasks={tasks}
               pendingApprovals={pendingApprovals}

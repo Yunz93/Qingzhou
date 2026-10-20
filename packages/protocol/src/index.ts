@@ -175,3 +175,4 @@ export * from "./workflow.js";
 export * from "./design.js";
 
 export * from "./project-standard.js";
+export { documentSourceSchema, documentPathsSchema, DEFAULT_DOCUMENT_PATHS, type DocumentPaths, type DocumentSource, type DocumentInspection } from "./documents.js";

@@ -322,6 +322,14 @@ describe("agent store transcripts", () => {
     expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
     expect(useAgentStore.getState().activeTaskId).toBe(keep.id);
     expect(useAgentStore.getState().archivingByTask[gone.id]).toBe(true);
+    const snapshot = {
+      tasks: [gone, keep], activeTaskId: gone.id, messages: [], tools: [], approval: null,
+      models: [], thinkingLevels: [], stats: null, piVersion: null, piAvailable: false, piError: null,
+      mutations: "approval" as const, allowedRoots: [], dataDir: "/tmp", maxProcesses: 8,
+    };
+    store.applySnapshot(snapshot);
+    expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
+    expect(useAgentStore.getState().activeTaskId).toBe(keep.id);
     store.applyEvent(
       event({
         taskId: gone.id,
@@ -331,6 +339,10 @@ describe("agent store transcripts", () => {
       }),
     );
     expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([keep.id]);
+    store.clearArchivingTask(gone.id);
+    store.applySnapshot(snapshot);
+    expect(useAgentStore.getState().tasks.map((item) => item.id)).toEqual([gone.id, keep.id]);
+    store.removeTaskOptimistic(gone.id);
     store.applyEvent(
       event({
         taskId: gone.id,

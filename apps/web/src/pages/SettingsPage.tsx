@@ -24,7 +24,7 @@ type PiLatest = {
 
 export function SettingsPage() {
   const location = useLocation();
-  const returnPath = settingsReturnPath(location.state);
+  const [returnPath] = useState(() => settingsReturnPath(location.state));
   const [setupLoading, setSetupLoading] = useState(true);
   const [setupError, setSetupError] = useState("");
   const [trustError, setTrustError] = useState("");
@@ -308,7 +308,7 @@ export function SettingsPage() {
   const activeDraft = activeItem ? (keyDrafts[activeItem.id] ?? "") : "";
   const activeFlash = activeItem && flash?.id === activeItem.id ? flash : flash?.id === "sync" ? flash : null;
   const envEntries = envAuthEntries(authEntries);
-  const connectedEntries = connectedAuthEntries(authEntries, authMode);
+  const connectedEntries = connectedAuthEntries(authEntries, authMode).filter((entry) => entry.id !== activeEntry?.id);
   const engineDetail = piVersion ? `已就绪（Pi ${piVersion}）` : (piError ?? "还没准备好");
   let updateDetail: string | null = null;
   if (piLatest?.error) updateDetail = piLatest.error;
@@ -318,11 +318,11 @@ export function SettingsPage() {
     updateDetail = "已是最新";
   }
   return (
-    <div className="flex min-h-dvh flex-col bg-canvas text-ink">
+    <div className="settings-page flex h-dvh flex-col bg-canvas text-ink">
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>
-      <header className="titlebar app-drag traffic-inline flex items-center gap-2 border-b border-line px-3">
+      <header className="titlebar app-drag traffic-inline flex shrink-0 items-center gap-2 border-b border-line px-3">
         <Link
           to={returnPath}
           className="pressable app-no-drag inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[13px] text-accent"
@@ -335,7 +335,7 @@ export function SettingsPage() {
           <UpdateBanner />
         </div>
       </header>
-      <main id="main-content" className="flex-1 overflow-y-auto px-5 py-8">
+      <main id="main-content" className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
         <div className="settings-shell space-y-7">
           <nav className="settings-nav" aria-label="设置分组">{[["auth", "账号与认证"], ["engine", "模型与引擎"], ["project", "项目"], ["appearance", "外观"], ["about", "关于与更新"]].map(([id, label]) => <a key={id} className="pressable hover-fill" href={`#settings-${id}`}>{label}</a>)}</nav>
           {setupLoading ? <p role="status" className="settings-load-note">正在读取设置…</p> : setupError ? <div className="settings-load-note text-danger" role="alert"><span>{setupError}</span><button type="button" className="pressable text-accent" onClick={() => void loadSetup()}>重试</button></div> : null}
@@ -377,7 +377,7 @@ export function SettingsPage() {
                     <div className="min-w-0">
                       <p className="text-[13px] text-ink">环境变量</p>
                       <p className="mt-0.5 text-[12px] text-mute">
-                        检测服务启动时读取的环境变量。修改系统环境或 .env 后，请重启应用或服务；刷新状态只重新检测当前进程，不会重新载入这些修改。
+                        修改系统环境或 .env 后需重启应用；刷新只检测当前进程。
                       </p>
                     </div>
                     <button
@@ -536,7 +536,7 @@ export function SettingsPage() {
 
                   {connectedEntries.length > 0 ? (
                     <div className="settings-row flex-col items-stretch gap-2">
-                      <p className="text-[12px] text-mute">已连接</p>
+                      <p className="text-[12px] text-mute">其他已连接账号</p>
                       <ul className="m-0 list-none space-y-1 p-0">
                         {connectedEntries.map((entry) => (
                           <li key={entry.id} className="flex items-center justify-between gap-2 text-[13px] text-ink">
@@ -631,7 +631,7 @@ export function SettingsPage() {
               <div className="settings-row items-center">
                 <div className="min-w-0 pr-3">
                   <p className="text-[13px] text-ink">信任默认工作区</p>
-                  <p className="mt-0.5 text-[12px] text-mute">仅作用于下方默认文件夹；其它会话目录不受此开关影响。</p>
+                  <p className="mt-0.5 text-[12px] text-mute">仅信任下方的默认工作文件夹。</p>
                 </div>
                 <label className="mac-toggle">
                   <input
@@ -639,7 +639,7 @@ export function SettingsPage() {
                     checked={trustProject}
                     disabled={trustBusy || setupLoading || Boolean(setupError)}
                     onChange={(event) => void toggleTrust(event.target.checked)}
-                    aria-label="信任当前项目"
+                    aria-label="信任默认工作区"
                   />
                   <span />
                 </label>
@@ -649,7 +649,7 @@ export function SettingsPage() {
                 <div className="min-w-0">
                   <p className="text-[13px] text-ink">默认工作文件夹</p>
                   <p className="mt-0.5 text-[12px] text-mute">
-                    新建对话或任务时的默认目录，不是唯一可用项目。主界面每个会话仍可选用其它文件夹。
+                    新对话默认使用此目录，可在会话中切换。
                   </p>
                   <p className="mt-1 break-all font-mono text-[11px] text-mute">
                     {workspaceRoot ?? allowedRoots[0] ?? "—"}
@@ -659,7 +659,7 @@ export function SettingsPage() {
               <div className="settings-row">
                 <div className="min-w-0">
                   <p className="text-[13px] text-ink">应用数据目录</p>
-                  <p className="mt-0.5 text-[12px] text-mute">轻舟自己的会话与配置存放处，不是你的代码项目。</p>
+                  <p className="mt-0.5 text-[12px] text-mute">会话和应用配置保存在此。</p>
                   <p className="mt-1 break-all font-mono text-[11px] text-mute">{dataDir}</p>
                 </div>
               </div>

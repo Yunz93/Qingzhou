@@ -2,6 +2,9 @@
 
 | 需求 | PRD 与当前状态 | 涉及模块 |
 | --- | --- | --- |
+| 文档审阅与 Markdown 存储 | [PRD](document-review-simplification/PRD.md)、[实施](document-review-simplification/IMPLEMENTATION.md)、[验证](document-review-simplification/VERIFICATION.md)，实施验证中 | PRD、模块、目录配置、项目历史、安全合入 |
+| 全量 UI 与交互检视 | [PRD](ui-experience-review/PRD.md)、[实施](ui-experience-review/IMPLEMENTATION.md)、[验证](ui-experience-review/VERIFICATION.md)，实施验证中 | 对话、详情、设置、向导、工作台与关键弹窗 |
+| 工作流端到端与中断恢复 | [PRD](workflow-recovery-case/PRD.md)、[实施](workflow-recovery-case/IMPLEMENTATION.md)、[验证](workflow-recovery-case/VERIFICATION.md)，待确认 | 工作区创建、中断恢复、真实需求全链路 |
 | 前端信息精简 | [PRD](frontend-simplification/PRD.md)、[实施](frontend-simplification/IMPLEMENTATION.md)、[验证](frontend-simplification/VERIFICATION.md)，待验收 | 项目总览、需求工作区、PRD、交付与集成 |
 | Agent 工作流闭环补全 | [PRD](workflow-completeness/PRD.md)、[实施](workflow-completeness/IMPLEMENTATION.md)、[验证](workflow-completeness/VERIFICATION.md) | 候选复审、模块基线与文档、设计提案、自动验证修复 |
 | 项目标准与 Agent 规范 | [PRD](project-standards/PRD.md)、[实施](project-standards/IMPLEMENTATION.md)、[验证](project-standards/VERIFICATION.md) | 需求设计、编排、Agent 执行 |

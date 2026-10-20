@@ -51,12 +51,27 @@ test("project workflow seals, verifies, accepts and merges independent requireme
   await expect(page.getByText(/当前范围检查有效 2 · 当前范围已合入 2/)).toBeHidden();
   await page.getByText("运行详情", { exact: true }).click();
   await expect(page.getByText(/当前范围检查有效 2 · 当前范围已合入 2/)).toBeVisible();
-  await page.getByRole("tab", { name: "演进与回放" }).click();
+  await page.getByRole("tab", { name: "项目历史" }).click();
+  await page.locator(".workflow-history-group > summary").first().click();
+  const firstHistory = page.locator(".workflow-history-group").first();
+  await firstHistory.getByRole("button").filter({ hasText: "必需检查通过。" }).first().click();
+  const checkReplay = page.getByRole("region", { name: "只读历史回放" });
+  await expect(checkReplay.getByRole("heading", { name: "需求 A", exact: true })).toBeVisible();
+  await checkReplay.getByRole("button", { name: "文件变化", exact: true }).click();
+  await expect(checkReplay.getByRole("button", { name: "b.txt", exact: true })).toBeVisible();
+  await checkReplay.getByRole("button", { name: "当时对话", exact: true }).click();
+  await expect(checkReplay.getByText("完整对话与工具记录", { exact: false })).toBeVisible();
   await page.getByRole("button").filter({ hasText: "已合入 integration" }).first().click();
   await expect(page.getByRole("region", { name: "只读历史回放" })).toBeVisible();
+  await checkReplay.getByRole("button", { name: "文件变化", exact: true }).click();
+  await expect(checkReplay.getByRole("button", { name: "a.txt", exact: true })).toBeVisible();
+  await expect(checkReplay.getByRole("button", { name: "b.txt", exact: true })).toHaveCount(0);
+  await page.getByText("更多操作", { exact: true }).click();
   await expect(page.getByRole("button", { name: "创建撤销需求，保留后续主线" })).toBeVisible();
-  await page.getByRole("button", { name: "只读回放本轮对话" }).click();
-  await expect(page.getByText("本轮保存的工具记录", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "当时对话", exact: true }).click();
+  await expect(page.getByText("完整对话与工具记录", { exact: false })).toBeVisible();
+  await expect(page.getByRole("region", { name: "只读历史回放" }).getByText("完整执行指令", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "只读历史回放" }).locator("section > details > pre").first()).toBeHidden();
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("workflow-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "编排设置" })).toBeVisible();
@@ -82,9 +97,16 @@ test("authorized implementation verifies automatically and stops for human accep
   await expect(review.getByRole("heading", { name: "封存产物" })).toHaveCount(0);
   await expect(room.getByRole("button", { name: "准备合入这个交付" })).toHaveCount(0);
   await expect(room.getByText(/PRD v1 已固化/)).toHaveCount(0);
-  expect(await git(repository, ["status", "--porcelain"])).toBe("");
+  expect(await git(repository, ["diff", "--name-only"])).toBe("");
+  expect(await git(repository, ["ls-files", "--others", "--exclude-standard"])).toContain("docs/requirements/");
   await expect(readFile(path.join(repository, "auto-result.txt"))).rejects.toThrow();
   await page.screenshot({ path: testInfo.outputPath("automatic-cycle-awaiting-acceptance.png"), fullPage: true });
+  await room.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("link", { name: "对话", exact: true }).click();
+  const group = page.getByRole("complementary", { name: "会话", exact: true }).getByRole("button", { name: "迭代与集成验证 · 自动闭环需求 1", exact: true });
+  await expect(group).toBeVisible();
+  await expect(group).toHaveAttribute("title", /自动闭环需求\n.*worktrees\//);
+  await page.screenshot({ path: testInfo.outputPath("readable-workspace-group.png"), fullPage: true });
 });
 
 test("structured discussion proposals become reviewable drafts without confirming the PRD", async ({ page }, testInfo) => {
@@ -108,11 +130,11 @@ test("structured discussion proposals become reviewable drafts without confirmin
   await history.focus(); await page.keyboard.press("Enter");
   await expect(room.getByRole("region", { name: "需求设计与 PRD", exact: true }).getByText("是否保留原入口？", { exact: true })).toBeVisible();
   await expect(room.getByRole("button", { name: "采用结构化提案为草稿" })).toBeDisabled();
-  await page.keyboard.press("Enter");
-  await page.keyboard.press("Tab");
-  await expect(room.locator("summary").filter({ hasText: /^工作区文档$/ })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(room.getByLabel("PRD 正文", { exact: true })).toBeFocused();
+  await room.getByRole("button", { name: "阅读", exact: true }).click();
+  await expect(room.getByLabel("PRD 正文", { exact: true })).toBeHidden();
+  await expect(room.locator(".workflow-design-section > .workflow-document-reader").getByRole("heading", { name: "结构化方案", exact: true })).toBeVisible();
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  await expect(room.getByLabel("PRD 正文", { exact: true })).toContainText("结构化方案");
   await room.locator(".workflow-inspector-scroll").evaluate((element) => { element.scrollTop = 0; });
   await page.screenshot({ path: testInfo.outputPath("structured-design-proposal.png"), fullPage: true });
 });
@@ -142,6 +164,36 @@ async function setupWorkflowProject(page: Page) {
   return repository;
 }
 
+test("document directory validation names the invalid field and preserves inputs before sending", async ({ page }) => {
+  await setupWorkflowProject(page);
+  const configurationRequests: string[] = [];
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    route.onMessage((message) => {
+      if (JSON.parse(String(message)).type === "workflow.documents.configure") configurationRequests.push(String(message));
+      server.send(message);
+    });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "编排设置", exact: true }).click();
+  await page.getByRole("tab", { name: "文档位置", exact: true }).click();
+  const prds = page.getByLabel("PRD 目录", { exact: true });
+  const modules = page.getByLabel("模块目录", { exact: true });
+  await prds.fill("");
+  await page.getByRole("button", { name: "保存文档位置", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("PRD 目录：目录不能为空");
+  await expect(prds).toHaveValue("");
+  await expect(modules).toHaveValue("docs/modules");
+  await prds.fill("docs");
+  await page.getByRole("button", { name: "保存文档位置", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("文档目录：PRD 与模块目录不能相同或相互嵌套");
+  expect(configurationRequests).toHaveLength(0);
+  await prds.fill("design/requirements");
+  await page.getByRole("button", { name: "保存文档位置", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("文档位置已保存；已有文件路径不变。");
+  expect(configurationRequests).toHaveLength(1);
+});
+
 async function createRequirement(page: Page, title: string, description: string) {
   await page.getByRole("button", { name: "新建需求", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "新建需求" });
@@ -161,6 +213,7 @@ async function confirmRequirementDesign(page: Page) {
   const room = page.getByRole("dialog").first();
   await room.getByRole("tab", { name: "设计与 PRD", exact: true }).click();
   if (await room.getByRole("button", { name: "确认这个需求范围", exact: true }).isVisible()) await room.getByRole("button", { name: "确认这个需求范围", exact: true }).click();
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("本次设计变更说明").fill("确认交互与实现方案");
   await room.getByRole("button", { name: "保存 PRD 新版本", exact: true }).click();
   await room.getByRole("button", { name: /^确认 PRD v/ }).click();
@@ -316,7 +369,7 @@ test("preparation discussion, focus layouts and shared drafts keep the requireme
   await room.getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("link", { name: "对话", exact: true }).click();
   const sidebar = page.getByRole("complementary", { name: "会话", exact: true });
-  await sidebar.getByRole("button").filter({ hasText: "连续对话需求" }).first().click();
+  await sidebar.getByRole("listitem").getByRole("button", { name: /^连续对话需求 需求对话 / }).click();
   await expect(page.getByRole("textbox", { name: "输入消息" })).toHaveValue("同一个需求的跨布局草稿");
   await expect(page.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "返回需求", exact: true }).click();
@@ -408,8 +461,9 @@ test("pending integration decisions and revised scope use the same state in inbo
   room = page.getByRole("dialog", { name: "版本状态需求第二阶段", exact: true });
   await expect(room.getByText(/子需求来源：版本状态需求/)).toBeVisible();
   await room.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("tab", { name: "演进与回放" }).click();
+  await page.getByRole("tab", { name: "项目历史" }).click();
   await page.getByRole("button", { name: "比较版本", exact: true }).click();
+  await page.getByRole("dialog", { name: "比较主线版本", exact: true }).getByRole("button", { name: "比较版本", exact: true }).click();
   await expect(page.getByText(/^两个主线版本的实际差异 · \d+ 个文件$/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("mainline-version-review.png"), fullPage: true, animations: "disabled" });
 });
@@ -488,7 +542,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await moduleDialog.getByLabel("模块名称").fill("需求编排");
   await moduleDialog.getByLabel("当前设计基线").fill("原始设计：按顺序实施需求");
   await moduleDialog.getByRole("button", { name: "保存模块基线" }).click();
-  await expect(page.getByRole("heading", { name: "需求编排 · 当前设计 v1", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "需求编排 · 初始设计基线 v1", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "为此模块创建子需求", exact: true }).click();
   let child = page.getByRole("dialog", { name: "创建关联子需求", exact: true });
   await child.getByLabel("子需求标题").fill("编排设计迭代");
@@ -498,6 +552,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   let room = page.getByRole("dialog", { name: "编排设计迭代", exact: true });
   await expect(room.getByRole("button", { name: "开始执行", exact: true })).toHaveCount(0);
   await room.getByRole("button", { name: "确认这个需求范围" }).click();
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("# 编排设计\n支持串行和并行的实施与独立验收。");
   await expect(room.getByRole("checkbox", { name: /需求编排 · 代码基线 v1/ })).toBeChecked();
   await room.getByLabel("需求编排完成后的完整设计").fill("模块设计：支持串行与并行实施");
@@ -509,6 +564,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await room.getByRole("tab", { name: "设计与 PRD", exact: true }).click();
   await room.getByRole("button", { name: "将草稿带入对话讨论" }).click();
   await expect(room.getByLabel("本轮目的")).toHaveValue("discussion");
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("# 编排设计修订\n支持串行、并行，增加中断恢复入口。");
   await room.getByLabel("需求编排完成后的完整设计").fill("模块设计：串行与并行实施，支持中断恢复");
   await room.getByLabel("本次设计变更说明").fill("实施后调整恢复交互并同步 PRD");
@@ -526,6 +582,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await room.getByRole("checkbox", { name: "交付文件正确", exact: true }).check();
   await room.getByRole("checkbox", { name: "我已审阅这个交付的代码、检查证据与需人工确认的结果，并确认 PRD 与模块设计已同步", exact: true }).check();
   await room.getByRole("tab", { name: "设计与 PRD", exact: true }).click();
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("尚未保存的设计调整");
   await room.getByRole("tab", { name: /^交付/ }).click();
   await expect(room.getByRole("button", { name: "验收并固化 PRD", exact: true })).toBeDisabled();
@@ -547,19 +604,20 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await page.screenshot({ path: testInfo.outputPath("frozen-prd-mobile.png"), fullPage: true, animations: "disabled" });
   await page.setViewportSize({ width: 1440, height: 900 });
   await room.getByRole("button", { name: "关闭", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "需求编排 · 当前设计 v2", exact: true })).toBeVisible();
-  await expect(page.getByText("对应交付尚未合入", { exact: false }).first()).toBeVisible();
-  await expect(page.getByRole("region", { name: "模块设计文档" })).toContainText("模块设计：串行与并行实施，支持中断恢复");
+  await expect(page.getByRole("heading", { name: "需求编排 · 初始设计基线 v1", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "模块设计文档" })).toContainText("已验收，尚未合入");
+  await expect(page.getByRole("region", { name: "模块设计文档" }).locator(".workflow-design-section").first()).toContainText("原始设计：按顺序实施需求");
   await page.screenshot({ path: testInfo.outputPath("living-module-design.png"), fullPage: true, animations: "disabled" });
   await page.getByRole("button", { name: "为此模块创建子需求", exact: true }).click();
   child = page.getByRole("dialog", { name: "创建关联子需求", exact: true });
   await child.getByLabel("子需求标题").fill("下一轮模块优化");
   await child.getByRole("button", { name: "创建子需求并开始讨论" }).click();
   room = page.getByRole("dialog", { name: "下一轮模块优化", exact: true });
-  await expect(room.getByText(/子需求来源：编排设计迭代/)).toBeVisible();
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await expect(room.getByLabel("需求编排完成后的完整设计")).toHaveValue("原始设计：按顺序实施需求");
   await room.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("button", { name: /来源：编排设计迭代 · 固化 PRD v2/ }).click();
+  await page.getByText(/编排设计迭代 · PRD v2 · 已验收，尚未合入/).click();
+  await page.getByRole("button", { name: "进入需求设计", exact: true }).click();
   await expect(page.getByRole("heading", { name: "PRD v2 已固化", exact: true })).toBeVisible();
 });
 
@@ -594,15 +652,18 @@ test("project standards preview missing files, preserve existing rules and read 
   await page.getByRole("button").filter({ has: page.getByText("标准需求 Markdown 同步", { exact: true }) }).click();
   const room = page.getByRole("dialog", { name: "标准需求 Markdown 同步", exact: true });
   const itemId = new URL(page.url()).searchParams.get("item")!;
-  const cwd = path.resolve(".qingzhou-test/e2e/worktrees", itemId);
+  const cwd = path.join(String(testInfo.config.metadata.e2eData), "worktrees", itemId);
   expect(await readFile(path.join(cwd, "AGENTS.md"), "utf8")).toBe(custom);
-  const files = requirementFiles(itemId);
+  await room.getByRole("tab", { name: "设计与 PRD", exact: true }).click();
+  const files = requirementFiles(itemId, (await room.locator(".workflow-document-path code").textContent())!);
   const updated = "# Markdown 修订方案\n实施后调整恢复入口，保留关联版本。";
   await writeFile(path.join(cwd, files.prd), updated);
   await room.getByRole("tab", { name: "设计与 PRD", exact: true }).click();
   await expect(room.getByRole("button", { name: "从工作区同步 PRD", exact: true })).toBeHidden();
   await room.getByText("工作区文档", { exact: true }).click();
   await room.getByRole("button", { name: "从工作区同步 PRD", exact: true }).click();
+  await expect(room.locator(".workflow-design-section > .workflow-document-reader").getByRole("heading", { name: "Markdown 修订方案", exact: true })).toBeVisible();
+  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await expect(room.getByLabel("PRD 正文", { exact: true })).toHaveValue(updated);
   await expect(room.getByRole("button", { name: "确认 PRD v2", exact: true })).toBeVisible();
   await expect(room.getByRole("button", { name: "开始新一轮", exact: true })).toHaveCount(0);

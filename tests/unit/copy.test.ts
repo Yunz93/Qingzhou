@@ -95,3 +95,8 @@ describe("running status copy", () => {
     expect(toolNameLabel("bash")).toBe("运行命令");
   });
 });
+
+it("shows a user question as waiting and translates the tool awaiting approval", () => {
+  expect(runStatusStage("running", [], false, null, null, false, true)).toEqual({ label: "等待回答", detail: "回答当前问题后继续", kind: "wait" });
+  expect(runStatusStage("waiting_approval", [{ toolCallId: "write-1", toolName: "write", status: "waiting_approval" }], false)?.detail).toBe("写入文件");
+});

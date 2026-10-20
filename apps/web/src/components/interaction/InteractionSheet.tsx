@@ -48,7 +48,7 @@ export function InteractionSheet({ interaction, onRespond, context }: Props) {
               <li key={option}>
                 <button
                   type="button"
-                  className="pressable btn btn-ghost h-8 w-full justify-start px-3 text-left text-[13px]"
+                  className="pressable btn interaction-choice w-full justify-start px-3 text-left text-[13px]"
                   onClick={() => onRespond({ value: option })}
                 >
                   {option}
@@ -68,14 +68,14 @@ export function InteractionSheet({ interaction, onRespond, context }: Props) {
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  onRespond({ value });
+                  if (value.trim()) onRespond({ value });
                 }
               }}
             />
           </label>
         )}
       </div>
-      <div className="dialog-actions dialog-actions-split">
+      <div className={`dialog-actions ${interaction.method === "input" ? "dialog-actions-split" : ""}`}>
         <button type="button" className="pressable btn btn-ghost" onClick={() => onRespond({ cancelled: true })}>
           取消
         </button>
@@ -88,9 +88,7 @@ export function InteractionSheet({ interaction, onRespond, context }: Props) {
           >
             确定
           </button>
-        ) : (
-          <span />
-        )}
+        ) : null}
       </div>
     </div>
   );

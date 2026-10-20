@@ -262,11 +262,11 @@ test("settings distinguishes load failure, retries, and failed trust save", asyn
   await page.route("**/api/setup", (route) => route.fulfill({ status: 503, json: { error: "offline" } }));
   await page.goto("/settings");
   await expect(page.getByRole("alert")).toContainText("读取设置失败");
-  await expect(page.getByLabel("信任当前项目")).toBeDisabled();
+  await expect(page.getByLabel("信任默认工作区")).toBeDisabled();
   await expect(page.getByText("暂时无法读取", { exact: true })).toBeVisible();
   await page.unroute("**/api/setup");
   await page.getByRole("button", { name: "重试", exact: true }).click();
-  const trust = page.getByLabel("信任当前项目");
+  const trust = page.getByLabel("信任默认工作区");
   await expect(trust).toBeEnabled();
   const previous = await trust.isChecked();
   await page.route("**/api/setup/trust", (route) => route.fulfill({ status: 503, json: { error: "无法保存项目权限" } }));
@@ -297,21 +297,26 @@ test("sliders expose all choices and settings fits narrow light and dark views",
   await page.getByRole("button", { name: "模型和思考", exact: true }).click();
   const model = page.getByRole("dialog", { name: "模型和思考" });
   await expect(model.getByRole("slider", { name: "滑动选择思考强度" })).toBeVisible();
-  await expect(model.getByText("思考强度", { exact: true })).toHaveCount(0);
+  await expect(model.getByText("思考强度", { exact: true })).toBeVisible();
   await model.getByRole("slider", { name: "滑动选择思考强度" }).fill("3");
   await expect(page.getByRole("button", { name: "模型和思考" })).toContainText("中");
   await page.keyboard.press("Escape");
   await page.goto("/settings");
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
   await expect(page.getByText(/修改系统环境或 .env 后/)).toBeVisible();
-  await expect(page.getByText("默认工作文件夹")).toBeVisible();
-  await expect(page.getByText("新建对话或任务时的默认目录")).toBeVisible();
+  await expect(page.getByText("默认工作文件夹", { exact: true })).toBeVisible();
+  await expect(page.getByText("新对话默认使用此目录，可在会话中切换。")).toBeVisible();
   await page.setViewportSize({ width: 533, height: 600 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(533);
-  await page.screenshot({ path: "/tmp/qingzhou-settings-after-light.png", fullPage: true });
+  await page.getByRole("link", { name: "外观", exact: true }).click();
+  await page.getByRole("button", { name: "浅色", exact: true }).click();
+  await page.screenshot({ path: ".qingzhou-test/ui-audit/51-settings-narrow-light.png", fullPage: true });
   await page.getByRole("button", { name: "深色", exact: true }).click();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(533);
-  await page.screenshot({ path: "/tmp/qingzhou-settings-after-dark.png", fullPage: true });
+  await page.screenshot({ path: ".qingzhou-test/ui-audit/52-settings-narrow-dark.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await page.screenshot({ path: ".qingzhou-test/ui-audit/53-settings-mobile.png", fullPage: true });
 });
 
 test("a rejected objective save keeps the draft available for retry", async ({ page }) => {
@@ -384,4 +389,36 @@ test("a pending send keeps typing available and disables duplicate submission un
   await expect(page.getByText("Echo: request held for acknowledgment", { exact: true })).toBeVisible();
   await expect(page.getByLabel("输入消息")).toHaveValue("keep typing while send pending");
   await expect(page.getByRole("button", { name: "发送", exact: true })).toBeEnabled();
+});
+
+test("settings section navigation preserves the work return target and keeps navigation visible", async ({ page }) => {
+  await page.goto("/board");
+  await page.getByRole("link", { name: "设置", exact: true }).click();
+  await expect(page.getByRole("link", { name: "返回工作", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "设置分组" }).getByRole("link", { name: "关于与更新", exact: true }).click();
+  await expect(page.getByRole("link", { name: "返回工作", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "设置分组" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "更新详情", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "立即检查", exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "更新详情", exact: true }).click();
+  await expect(page.getByRole("button", { name: "收起详情", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("link", { name: "返回工作", exact: true }).click();
+  await expect(page).toHaveURL(/\/board/);
+});
+
+test("a question displays waiting feedback and empty Enter cannot bypass a disabled confirmation", async ({ page }) => {
+  await createConversation(page, "Question clarity");
+  await page.getByLabel("输入消息").fill("INPUT:填写本轮说明");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  const dialog = page.getByTestId("interaction-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "会话", exact: true })).toContainText("等待回答");
+  await expect(page.getByText("回答当前问题后继续", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "确定", exact: true })).toBeDisabled();
+  await dialog.getByRole("textbox").press("Enter");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("textbox").fill("已检查当前实现");
+  await dialog.getByRole("textbox").press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText("Input: 已检查当前实现", { exact: true })).toBeVisible();
 });

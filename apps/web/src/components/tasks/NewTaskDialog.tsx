@@ -130,8 +130,8 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
           </div>
 
           {sessions.length > 0 ? (
-            <div>
-              <p className="text-sm text-mute">继续本机上的 Pi 会话</p>
+            <details>
+              <summary className="cursor-pointer text-sm text-mute">继续已有会话</summary>
               <ul className="mt-2 max-h-40 space-y-1 overflow-auto">
                 {sessions.slice(0, 12).map((session) => (
                   <li key={session.path}>
@@ -150,7 +150,7 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
                   </li>
                 ))}
               </ul>
-            </div>
+            </details>
           ) : null}
         </div>
 

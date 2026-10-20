@@ -3,6 +3,7 @@ import { approvalPolicySchema, interactionModeSchema, thinkingLevelSchema } from
 import { workSourceSchema } from "./work-items.js";
 import { moduleChangeSchema } from "./design.js";
 import { workflowCheckSchema, deliveryReviewSchema, criterionEvidenceSchema } from "./workflow.js";
+import { documentPathsSchema } from "./documents.js";
 
 export const PROMPT_MESSAGE_MAX = 100_000;
 
@@ -27,6 +28,9 @@ const promptPayloadSchema = z
   });
 
 export const clientCommandSchema = z.discriminatedUnion("type", [
+  z.object({ ...commandBase, type: z.literal("workflow.documents.inspect"), payload: z.object({ projectId: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.documents.configure"), payload: z.object({ projectId: z.string().uuid(), paths: documentPathsSchema }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.documents.import"), payload: z.object({ projectId: z.string().uuid() }) }),
   z.object({ ...commandBase, operationId: z.string().uuid(), type: z.literal("workflow.cycle.start"), payload: z.object({ id: z.string().uuid(), maxRepairs: z.number().int().min(0).max(3) }) }),
   z.object({ ...commandBase, type: z.literal("workflow.cycle.cancel"), payload: z.object({ id: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.integration.review"), payload: z.object({ id: z.string().uuid(), candidate: z.string(), decision: z.enum(["compatible", "design_changed"]), note: z.string().trim().min(1).max(4000) }) }),
@@ -36,7 +40,7 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
     id: z.string().uuid(), scopeId: z.string().uuid(), expectedPrdId: z.string().uuid().nullable(),
     content: z.string().max(16000), reason: z.string().min(1).max(2000), moduleChanges: z.array(moduleChangeSchema).max(8),
   }) }),
-  z.object({ ...commandBase, type: z.literal("workflow.prd.import"), payload: z.object({ id: z.string().uuid() }) }),
+  z.object({ ...commandBase, type: z.literal("workflow.prd.import"), payload: z.object({ id: z.string().uuid(), source: z.enum(["project", "workspace"]).optional() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.prd.confirm"), payload: z.object({ id: z.string().uuid(), prdId: z.string().uuid() }) }),
   z.object({ ...commandBase, type: z.literal("workflow.module.create"), payload: z.object({ projectId: z.string().uuid(), name: z.string().min(1).max(200), content: z.string().max(12000) }) }),
   z.object({ ...commandBase, type: z.literal("workflow.standard.inspect"), payload: z.object({ projectId: z.string().uuid() }) }),

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useUpdateStore, RELEASES_PAGE_URL } from "../../stores/update-store";
 import { getDesktop } from "../../desktop-bridge";
 import { UpdateProgressPanel } from "./UpdateProgressPanel";
+import { AssistantMarkdown } from "../timeline/AssistantMarkdown";
 
 function formatTimestamp(value: string | null): string | null {
   if (!value) return null;
@@ -50,7 +51,7 @@ export function AppUpdateSection() {
   let status = "尚未检查";
   let statusTone: "mute" | "danger" | "success" = "mute";
   if (error) {
-    status = error;
+    status = /fetch failed|failed to fetch|ENOTFOUND|ECONN|ETIMEDOUT/i.test(error) ? "无法检查更新，请检查网络后重试。" : error;
     statusTone = "danger";
   } else if (notice) {
     status = notice;
@@ -79,9 +80,10 @@ export function AppUpdateSection() {
       <div className="settings-card">
         <div className="settings-row items-center">
           <div className="min-w-0"><p className="text-[13px] text-ink">轻舟 <span className="ml-2 font-mono text-mute">{current || "—"}</span></p><p className={`mt-1 text-[12px] ${statusTone === "danger" ? "text-danger" : "text-mute"}`}>{busy ? "正在检查…" : status}</p></div>
-          <button type="button" className="pressable btn btn-ghost shrink-0" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "收起详情" : "更新详情"}</button>
+          <div className="flex shrink-0 items-center gap-2">{updateAvailable && canUpdate && !expanded && !installing ? <button type="button" className="pressable btn btn-primary" disabled={busy} onClick={() => void install()}>{installLabel}</button> : null}<button type="button" className="pressable btn btn-ghost" disabled={installing} aria-expanded={expanded || installing} onClick={() => setExpanded(!expanded)}>{installing ? "安装进度" : expanded ? "收起详情" : "更新详情"}</button></div>
         </div>
-        <div hidden={!expanded && !updateAvailable && !installing}>
+        <div hidden={!expanded && !installing}>
+        {error && status !== error ? <details className="px-4 pt-3 text-[12px] text-mute"><summary>错误详情</summary><pre className="mt-2 whitespace-pre-wrap break-words">{error}</pre></details> : null}
         <p className="px-4 pt-3 text-[12px] text-mute">上次检查：{lastCheckedLabel || "尚未检查更新"}</p>
 
         <div className="settings-row items-center">
@@ -143,12 +145,6 @@ export function AppUpdateSection() {
             ) : null}
           </div>
 
-          {progress.phase === "idle" ? (
-            <p className={`text-[12px] ${statusTone === "danger" ? "text-danger" : statusTone === "success" ? "text-success" : "text-mute"}`}>
-              {status}
-            </p>
-          ) : null}
-
           <UpdateProgressPanel progress={progress} version={latest ?? undefined} />
         </div>
 
@@ -167,12 +163,7 @@ export function AppUpdateSection() {
               {publishedLabel ? <span className="ml-3">发布于 {publishedLabel}</span> : null}
             </p>
             {notes ? (
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-mute">发布说明</p>
-                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-fill px-3 py-3 text-[12px] leading-6 text-ink">
-                  {notes}
-                </pre>
-              </div>
+              <details className="settings-release-notes"><summary>发布说明</summary><AssistantMarkdown text={notes} /></details>
             ) : null}
           </div>
         ) : null}
