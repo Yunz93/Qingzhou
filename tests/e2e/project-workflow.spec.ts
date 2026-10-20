@@ -77,6 +77,12 @@ test("project workflow seals, verifies, accepts and merges independent requireme
   await expect(page.getByRole("button", { name: "编排设置" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("workflow-mobile.png"), fullPage: true });
+  const bHistory = page.locator(".workflow-history-group").filter({ has: page.locator("summary").filter({ hasText: /^需求 B/ }) });
+  await bHistory.locator(":scope > summary").click();
+  await bHistory.getByRole("button").filter({ hasText: "必需检查通过。" }).first().click();
+  await checkReplay.getByRole("button", { name: "文件变化", exact: true }).click();
+  await expect(checkReplay.getByText("源交付相对实施基线的变化", { exact: true })).toBeVisible();
+  await expect(checkReplay.getByRole("button", { name: "b.txt", exact: true })).toBeVisible();
 });
 
 test("authorized implementation verifies automatically and stops for human acceptance", async ({ page }, testInfo) => {
