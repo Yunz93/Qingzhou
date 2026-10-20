@@ -114,3 +114,15 @@ Windows 二次只验证中，已调整的快照用例实际 12.3 秒通过，另
 | 中断事实与无重放 | 重启前后事件数均 28，5 个检查 ID / 状态完全一致；早先 interrupted 原样保留 | after-merge-before-restart.json、restart-persistence-result.json |
 
 原生最后合入和重启阅读已完成，之前锁屏阶段的未覆盖项现已关闭。原生测试仅使用 `.qingzhou-test/document-flow/` 的隔离项目；日常应用和主仓库平台验收事实没有被替换。当前补充仅更新实施与验证记录，运行时代码与以上已通过门禁的提交一致；正式发布结果以 GitHub 标签、工作流及产物读回为准。
+
+## 正式产物读回与确切版本原生复跑
+
+[v0.1.25 正式版](https://github.com/Yunz93/Qingzhou/releases/tag/v0.1.25) 绑定 `ef165fe693b1bc35663d93f3fec949426bdb67f9`；[标签 CI](https://github.com/Yunz93/Qingzhou/actions/runs/39437924087) 和 [三平台构建及发布](https://github.com/Yunz93/Qingzhou/actions/runs/39437924094) 均 completed / success，Release 为非草稿、非预发布并已设为 latest。中文说明已逐字读回。
+
+全部 15 个已发布资源已下载并匹配 GitHub SHA256 摘要，校验清单中的 13 项全部匹配；latest.json 的版本、三个目标平台 URL、SHA256 和更新说明与发布内容一致。两个 macOS zip 均包含 16899 个条目，应用及 fd / rg 架构分别为 arm64 和 x64，包内 Pi 为 1.3.0；三平台 ASAR 均为 0.1.25，包含最终文档、私有索引保护和 PTY 资源，无本地数据。Windows 安装版与便携版的完整应用载荷相同（16745 个条目），应用及两个搜索工具均为 x64。读回结果保留在 `.qingzhou-test/published-v0.1.25/`。
+
+版本核对发现：截图 75–77 的原生进程仍使用较早的本地开发构建，不能作为最后一批发布修复的原生证据。因此从已发布 macOS arm64 zip 启动隔离实例，仅调整应用身份以区分日常应用；代码及资源未修改，ASAR SHA256 为 `be6789e835b521ff8afed111fda849da09c7734d7adb6209a436f967dcbb1db4`，与发布前隔离打包产物相同。
+
+在该确切正式包中，通过原生 UI 完成“补齐问候兼容性回归”子需求：确认范围、保存自定义目录 Markdown、确认 PRD v1、真实 Pi 实施、封存、检查、逐项验收固化、候选检查、行为复审与明确合入。源交付 `ebebc69a` 和候选 `002550a4` 的 tree 均为 `6a565a4a`，两轮必需检查各 9 项通过；合入后原目录再次 9 项通过，索引为空，greet.js 与依赖未改动。截图 78 为合入结果，79 为 greet.test.js 单文件回放。
+
+正式包重启后，模块主线 v5、固化 PRD 来源、自定义路径正文、两条聚合需求历史均可读；已逐项读取 Markdown 设计、当时对话及 V1 → V2 的 14 文件比较。51 条事件、10 个检查 ID / 状态及全部文档绑定与重启前完全一致，旧 interrupted 记录保留，未自动重跑或合入。截图 80 为重启后历史，published-before-restart.json 与 published-restart-result.json 为持久化对照。此次仅补充验证记录，发布源码和产物没有变化。
