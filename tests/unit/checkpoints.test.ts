@@ -2,9 +2,18 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CheckpointStore } from "../../apps/server/src/tasks/checkpoints.ts";
+import { CheckpointStore, checkpointSnapshotPath } from "../../apps/server/src/tasks/checkpoints.ts";
 
 describe("checkpoints", () => {
+  it.each([
+    { label: "POSIX absolute legacy path", api: path.posix, root: "/data/checkpoints/task/id", file: "/project/src/note.ts", expected: "/data/checkpoints/task/id/project/src/note.ts" },
+    { label: "Windows drive path", api: path.win32, root: "C:\\data\\checkpoints\\task\\id", file: "D:\\project\\src\\note.ts", expected: "C:\\data\\checkpoints\\task\\id\\project\\src\\note.ts" },
+    { label: "Windows UNC legacy path", api: path.win32, root: "C:\\data\\checkpoints\\task\\id", file: "\\\\server\\share\\src\\note.ts", expected: "C:\\data\\checkpoints\\task\\id\\server\\share\\src\\note.ts" },
+    { label: "Windows relative path", api: path.win32, root: "C:\\data\\checkpoints\\task\\id", file: "src\\note.ts", expected: "C:\\data\\checkpoints\\task\\id\\src\\note.ts" },
+  ])("stores $label under the checkpoint directory", ({ api, root, file, expected }) => {
+    expect(checkpointSnapshotPath(root, file, api)).toBe(expected);
+  });
+
   it("saves a file and restores it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-check-"));
     const project = path.join(root, "project");

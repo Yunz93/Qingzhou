@@ -7,7 +7,8 @@ import path from "node:path";
 const exec = promisify(execFile);
 const hooksDirectory = mkdtemp(path.join(os.tmpdir(), "qingzhou-empty-hooks-"));
 export async function workflowGit(cwd: string, args: string[], input?: string, indexFile?: string): Promise<string> {
-  const execution = exec("git", ["--literal-pathspecs", "-c", "core.quotePath=false", "-c", `core.hooksPath=${await hooksDirectory}`,
+  // Requirement and module baseline paths can exceed Windows' legacy MAX_PATH.
+  const execution = exec("git", ["--literal-pathspecs", "-c", "core.longpaths=true", "-c", "core.quotePath=false", "-c", `core.hooksPath=${await hooksDirectory}`,
     "-c", "commit.gpgsign=false", "-c", "user.name=Qingzhou", "-c", "user.email=qingzhou@local", ...args], {
     cwd, timeout: 30_000, maxBuffer: 8 * 1024 * 1024,
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_MERGE_AUTOEDIT: "no", GIT_EDITOR: "true", GIT_OPTIONAL_LOCKS: "0", ...(indexFile ? { GIT_INDEX_FILE: indexFile } : {}) },

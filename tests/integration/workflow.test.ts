@@ -21,6 +21,7 @@ async function fixture(concurrency = 2, checks = defaultChecks) {
   const repository = path.join(root, "repo"); const dataDir = path.join(root, "data");
   await mkdir(repository); await mkdir(dataDir);
   await git(repository, ["init", "-b", "develop"]);
+  await git(repository, ["config", "core.autocrlf", "false"]);
   await writeFile(path.join(repository, "shared.txt"), base);
   await git(repository, ["add", "."]); await git(repository, ["commit", "-m", "initial"]);
   const baseline = await git(repository, ["rev-parse", "HEAD"]);
@@ -72,6 +73,21 @@ async function planned(f: Awaited<ReturnType<typeof fixture>>, item: WorkItem, m
 }
 
 describe("project requirement workflow with real Git", () => {
+  it("delivers long baseline paths without changing repository Git settings", async () => {
+    const f = await fixture();
+    await git(f.repository, ["config", "core.longpaths", "false"]);
+    const item = await f.create("long baseline"); const work = await f.start(item);
+    const file = `docs/fixtures/requirements/${randomUUID()}/baselines/history/${randomUUID()}/${randomUUID()}-${randomUUID()}.md`;
+    expect(path.join(work.cwd, file).length).toBeGreaterThan(260);
+    await mkdir(path.dirname(path.join(work.cwd, file)), { recursive: true });
+    await writeFile(path.join(work.cwd, file), "baseline\n");
+    await f.finish(item); const delivery = await f.deliver(item);
+    const integration = await f.integrate(delivery.id); expect(integration.status).toBe("ready");
+    await f.service.merge(integration.id);
+    expect(await readFile(path.join(f.repository, file), "utf8")).toBe("baseline\n");
+    expect(await git(f.repository, ["config", "--local", "--get", "core.longpaths"])).toBe("false");
+  });
+
   it("isolates parallel requirements and supports B merging before A on a non-default branch", async () => {
     const f = await fixture();
     const a = await f.create("A"); const b = await f.create("B");

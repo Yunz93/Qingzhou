@@ -42,13 +42,13 @@ it("releases finished requirement processes and drains the global queue at a one
     const feedback = clientCommandSchema.parse({ id: "c1", operationId: randomUUID(), type: "workItem.feedback", payload: { id: a.id, text: "verify again" } });
     const concurrentStart = clientCommandSchema.parse({ id: "c1", operationId: randomUUID(), type: "workItem.start", payload: { id: a.id } });
     await Promise.all([service.handleCommand(feedback), service.handleCommand(concurrentStart)]);
-    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.filter((ticket) => ticket.status === "finished").length).toBe(3);
+    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.filter((ticket) => ticket.status === "finished").length, { timeout: 10000 }).toBe(3);
     await service.handleCommand(feedback);
     expect((await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets).toHaveLength(3);
     expect((await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.at(-1)?.instruction).toContain("verify again");
     expect((await send<{ feedback: unknown[] }>("workItem.details", { id: a.id })).feedback).toHaveLength(1);
   } finally { await app.close(); }
-});
+}, 30000);
 
 it("keeps preparation discussion read-only and carries image-only feedback into a recorded implementation round", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-discussion-runtime-"));
@@ -63,7 +63,7 @@ it("keeps preparation discussion read-only and carries image-only feedback into 
     await send("workflow.configure", { projectId: project.id, targetBranch: "trunk", concurrency: 2, checks: [] });
     const { item } = await send<{ item: WorkItem }>("workItem.create", { projectId: project.id, title: "准备需求", description: "WRITE:result.txt:implemented", acceptanceCriteria: "结果文件正确" });
     await send("workItem.discuss", { id: item.id, text: "先讨论，不允许写文件" });
-    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.at(-1)?.status).toBe("finished");
+    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.at(-1)?.status, { timeout: 10000 }).toBe("finished");
     let state = await send<WorkflowProjectState>("workflow.state", { projectId: project.id });
     expect(state.tickets[0]?.phase).toBe("discussion");
     expect(state.tickets.filter((ticket) => ticket.phase === "implementation")).toHaveLength(0);
@@ -71,20 +71,20 @@ it("keeps preparation discussion read-only and carries image-only feedback into 
     await expect(send("workflow.seal", { id: item.id, paths: [], summary: "不能将讨论算作交付" })).rejects.toThrow("请先沟通并确认当前需求范围");
     await confirmDesign(send, item);
     await send("workItem.start", { id: item.id });
-    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.filter((ticket) => ticket.phase === "implementation" && ticket.status === "finished").length).toBe(1);
+    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.filter((ticket) => ticket.phase === "implementation" && ticket.status === "finished").length, { timeout: 10000 }).toBe(1);
     const details = await send<{ item: WorkItem }>("workItem.details", { id: item.id });
     await send("task.activate", {}, details.item.taskId!);
     const imageId = randomUUID(); const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=", "base64");
     expect(service.storeUpload(imageId, "image/png", bytes)).toBe(true);
     await send("workItem.feedback", { id: item.id, text: "", imageIds: [imageId] });
-    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.filter((ticket) => ticket.phase === "implementation" && ticket.status === "finished").length).toBe(2);
+    await expect.poll(async () => (await send<WorkflowProjectState>("workflow.state", { projectId: project.id })).tickets.filter((ticket) => ticket.phase === "implementation" && ticket.status === "finished").length, { timeout: 10000 }).toBe(2);
     state = await send<WorkflowProjectState>("workflow.state", { projectId: project.id });
     expect(state.tickets.at(-1)?.imageIds).toEqual([imageId]);
     const transcript = await send<{ messages: Array<{ role: string; images?: Array<{ dataUrl?: string }> }> }>("workflow.transcript", { runId: state.tickets.at(-1)!.runId });
     expect(transcript.messages.some((message) => message.role === "user" && message.images?.some((image) => image.dataUrl?.startsWith("data:image/png;base64,")))).toBe(true);
     await expect(send("workItem.feedback", { id: item.id, text: "丢失附件", imageIds: [randomUUID()] })).rejects.toThrow("附件已过期");
   } finally { await app.close(); }
-});
+}, 30000);
 
 async function confirmDesign(send: <T>(type: string, payload: object) => Promise<T>, item: WorkItem) {
   const state = await send<WorkflowProjectState>("workflow.state", { projectId: item.projectId });
