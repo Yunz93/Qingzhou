@@ -10,7 +10,8 @@ export default defineConfig({
   test: {
     include: ["tests/integration/**/*.test.ts"],
     environment: "node",
-    testTimeout: 20_000,
+    // Hosted Windows runners have higher variance in Git subprocess and filesystem I/O.
+    testTimeout: process.platform === "win32" ? 45_000 : 20_000,
     hookTimeout: 20_000,
     fileParallelism: false,
   },

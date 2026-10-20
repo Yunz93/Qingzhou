@@ -1161,7 +1161,7 @@ it("rejects candidate edits to another frozen requirement's custom execution sna
   await f.service.recheck(ia.id); await f.service.idle();
   expect(ia.status).toBe("failed"); expect(ia.error).toMatch(/其他需求|快照/);
   expect(await readFile(path.join(f.repository, context), "utf8")).toBe(before);
-}, 45_000); // Two full Git lifecycles plus rejected source/candidate edits need more time on Windows.
+});
 
 it("preserves structured proposal bodies when an agent copies server document metadata", async () => {
   const f = await fixture(); const { module, revision } = await f.command("workflow.module.create", { projectId: f.project.id, name: "提案模块", content: "基线" }) as ReturnType<WorkflowService["design"]["createModule"]>;
