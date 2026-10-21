@@ -1,3 +1,7 @@
+import { ReviewActions } from "./ReviewActions";
+import { WorkflowCycle } from "./WorkflowCycle";
+import { AcceptanceEvidence } from "./AcceptanceEvidence";
+import { PatchDiff } from "../diff/PatchDiff";
 import { useSearchParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { verificationIsValid, type DeliveryAcceptance, type WorkflowProjectState, type WorkflowCheck, type WorkItemSummary, type IntegrationAttempt, type Verification } from "@qingzhou/protocol";
@@ -265,9 +269,15 @@ function IntegrationQueue({ state, items, onRefresh, onSelect }: { state: Workfl
     </li>)}</ol>{error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}</section> : null;
 }
 
-export function RequirementWorkflow({ state, item, items, onRefresh, view = "delivery", scopeContent }: { scopeContent?: ReactNode; view?: "delivery" | "scope" | "history" | "design"; state: WorkflowProjectState; item: WorkItemSummary; items: WorkItemSummary[]; onRefresh: () => Promise<void> }) {
+export function RequirementWorkflow({ state, item, items, onRefresh, view = "delivery", scopeContent, onViewChange, actionsTarget, settingsOpen, onCloseSettings, canStart }: {
+  onViewChange?: (view: "delivery" | "design" | "modules" | "acceptance" | "history") => void; actionsTarget?: HTMLElement | null;
+  settingsOpen?: boolean; onCloseSettings?: () => void; canStart?: boolean; scopeContent?: ReactNode;
+  view?: "delivery" | "acceptance" | "history" | "design" | "modules"; state: WorkflowProjectState; item: WorkItemSummary; items: WorkItemSummary[]; onRefresh: () => Promise<void>;
+}) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState("");
+  const [selectedTestPath, setSelectedTestPath] = useState("");
   const [paths, setPaths] = useState<string[] | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -285,13 +295,20 @@ export function RequirementWorkflow({ state, item, items, onRefresh, view = "del
   const send = async (type: Parameters<typeof socketClient.send>[0], payload: object) => {
     if (sendPending.current) return;
     sendPending.current = true; setError(""); setBusy(true);
-    try { await socketClient.send(type, payload); setPaths(null); setSelected([]); await onRefresh(); } catch (reason) { setError(message(reason)); } finally { sendPending.current = false; setBusy(false); }
+    try { await socketClient.send(type, payload); setPaths(null); setSelected([]); if (type === "workflow.seal") setSelectedDeliveryId(""); await onRefresh(); if (type === "workflow.integrate") onViewChange?.("delivery"); } catch (reason) { setError(message(reason)); } finally { sendPending.current = false; setBusy(false); }
   };
   const active = ["running", "queued"].includes(status.ticket?.status ?? "") || ["running", "queued"].includes(status.verification?.status ?? "");
-  return <section className="work-panel-section" aria-label="交付与集成">
-    {error ? <p role="alert" className="mt-2 text-sm text-danger">{error}</p> : null}
-    {status.verification && state.queue?.resourceWaits[status.verification.id] ? <p className="mt-2 text-sm text-mute">等待独占验证资源：{state.queue.resourceWaits[status.verification.id]}</p> : null}
-    <div hidden={view !== "scope"} role="tabpanel" id="requirement-panel-scope" aria-labelledby="requirement-tab-scope">{scopeContent}<details open className="mt-3 text-sm"><summary>范围版本与前置需求</summary>
+  const delivery = deliveries.find((entry) => entry.id === selectedDeliveryId) ?? deliveries[0];
+  const deliveryIndex = delivery ? deliveries.indexOf(delivery) : -1;
+  const attempt = attempts.find((entry) => entry.deliveryId === delivery?.id);
+  const activeCandidate = attempt && !["merged", "cancelled", "stale"].includes(attempt.status);
+  const selectDelivery = (id: string) => { setSelectedDeliveryId(id); setSelectedTestPath(""); };
+  const versions = delivery ? <select className="review-version-select" aria-label="交付版本" value={delivery.id} onChange={(event) => selectDelivery(event.target.value)}>{deliveries.map((entry, index) => <option value={entry.id} key={entry.id}>交付 {deliveries.length - index} · {entry.commit.slice(0, 8)}</option>)}</select> : null;
+  return <section className="work-panel-section review-workflow" aria-label={view === "acceptance" ? "需求验收" : view === "design" ? "需求范围设置" : view === "history" ? "需求历史与回放" : "交付与集成"}>
+    {error ? <p role="alert" className="review-blocker text-danger">{error}</p> : null}
+    {status.verification && state.queue?.resourceWaits[status.verification.id] ? <p className="review-blocker">等待独占验证资源：{state.queue.resourceWaits[status.verification.id]}</p> : null}
+    {settingsOpen ? <WorkflowModal title="需求设置" closeLabel="关闭需求设置" onClose={() => onCloseSettings?.()}>
+    <div className="workflow-scope-settings">{scopeContent}<details open className="mt-3 text-sm"><summary>范围版本与前置需求</summary>
       {scopes.map((scope) => <details key={scope.id} className="mt-2"><summary>范围 v{scope.version} · {date(scope.createdAt)}</summary><pre className="workflow-code">{scope.title}{"\n\n"}{scope.description}{"\n\n验收标准\n"}{scope.acceptanceCriteria}</pre></details>)}
       {status.ticket?.status === "queued" ? <button className="btn btn-secondary mt-3" disabled={busy} onClick={() => void send("workItem.stop", { id: item.id })}>停止排队以调整依赖</button> : null}
       <fieldset className="mt-3 space-y-2" disabled={active || busy}><legend className="mb-2">前置需求合入后才能开工</legend>
@@ -301,8 +318,11 @@ export function RequirementWorkflow({ state, item, items, onRefresh, view = "del
     {workspace ? <details className="mt-3 text-sm"><summary>工作区与基线</summary><pre className="workflow-code">{workspace.path}{"\n"}{workspace.branch}{"\n基线 "}{workspace.baseline}{workspace.removedAt ? "\n已清理，历史仍保留" : ""}</pre>
       {!workspace.removedAt && status.merged ? <button className="btn btn-secondary" disabled={busy || active} onClick={() => void send("workflow.cleanup", { id: item.id })}>清理已合入且无改动的工作区</button> : null}
     </details> : null}
-    </div><div hidden={view !== "delivery"} role="tabpanel" id="requirement-panel-delivery" aria-labelledby="requirement-tab-delivery">
-    <BaselineRelationship state={state} item={item} items={items} />
+    </div>
+      <WorkflowCycle state={state} itemId={item.id} canStart={!!canStart} onRefresh={onRefresh} />
+    </WorkflowModal> : null}
+    <div hidden={view !== "delivery"} className="review-delivery" role="tabpanel" id="requirement-panel-delivery" aria-labelledby="requirement-tab-delivery">
+      <div className="review-toolbar"><h3>本次交付</h3><div className="review-toolbar-actions">{delivery ? <span className="review-hint">{delivery.files.length} 个变更文件</span> : null}{versions}</div></div>
     {workspace && !workspace.removedAt && item.state === "open" && !prdFor(state, item.id)?.frozenAt ? <div className="mt-4">
       <button className="btn btn-secondary" disabled={busy || active || loadingChanges} onClick={() => { setError(""); setLoadingChanges(true); void socketClient.send<{ paths: string[] }>("workflow.changes", { id: item.id }).then((value) => { setPaths(value.paths); setSelected([]); }).catch((reason) => setError(message(reason))).finally(() => setLoadingChanges(false)); }}>{loadingChanges ? "正在读取改动…" : "查看本次待封存改动"}</button>
       {paths ? <div className="mt-3 rounded-lg border border-line p-3 text-sm">
@@ -314,23 +334,32 @@ export function RequirementWorkflow({ state, item, items, onRefresh, view = "del
         <label className="mt-3 block">交付说明<textarea className="field mt-1 w-full" rows={2} value={summary} onChange={(event) => setSummary(event.target.value)} /></label>
         <label className="mt-3 block">未完成与需人工检查<textarea className="field mt-1 w-full" rows={2} value={unresolved} maxLength={6000} onChange={(event) => setUnresolved(event.target.value)} placeholder="列出未验证的行为、限制及尚需决定的事项。" /></label>
         <label className="mt-3 block">保存到交付的产物路径<textarea className="field mt-1 w-full font-mono" rows={2} value={artifactPaths} onChange={(event) => setArtifactPaths(event.target.value)} placeholder="每行一个仓库内文件，如 screenshots/result.png。文件须已纳入本次提交，预览读取封存版本。" /></label>
-        </details><button className="btn btn-primary mt-3" disabled={busy || selected.length !== paths.length} onClick={() => void send("workflow.seal", { id: item.id, paths: selected, summary, review: { behaviors, unresolved, artifactPaths: artifactPaths.split("\n").map((file) => file.trim()).filter(Boolean) } })}>封存所选改动并验证</button>
+        </details>
       </div> : null}
     </div> : null}
-    <div className="mt-4 space-y-3">{deliveries.map((delivery, index) => <details key={delivery.id} open={index === 0} className="workflow-delivery"><summary>交付 {deliveries.length - index} · {delivery.commit.slice(0, 8)} · {date(delivery.createdAt)}</summary>
-      <DeliveryReview state={state} delivery={delivery} previous={deliveries[index + 1]} />
-      <VerificationDetails result={state.verifications.find((result) => result.id === delivery.verificationId)} />
-      <details className="mt-2 text-sm"><summary>封存差异（只读）· {delivery.files.length} 个文件</summary><pre className="workflow-code">{delivery.patch || "无文件差异"}</pre></details>
-      <DeliveryActions key={`${delivery.id}:${delivery.scopeId}`} state={state} deliveryId={delivery.id} current={index === 0 && status.valid} busy={busy} send={send} />
-    </details>)}</div>
-    {attempts.map((attempt) => <IntegrationDetails key={`${attempt.id}:${attempt.candidate}:${attempt.verificationId}`} state={state} attempt={attempt} busy={busy} send={send} />)}
-    {!deliveries.length && !workspace ? <div className="workflow-empty"><h3>交付从一次执行开始</h3><p>Agent 完成本轮后，在这里核对改动、运行检查并验收交付。</p></div> : null}
-    </div><div hidden={view !== "history"} role="tabpanel" id="requirement-panel-history" aria-labelledby="requirement-tab-history"><WorkflowHistory state={state} items={items} onlyItemId={item.id} onRefresh={onRefresh} expanded /></div>
+
+      {delivery ? <>
+        <PatchDiff key={`${delivery.id}:${selectedTestPath}`} layout="workspace" initialPath={selectedTestPath} patch={delivery.patch} beforeLabel={`实施基线 · ${delivery.baseline.slice(0, 8)}`} afterLabel={`封存交付 · ${delivery.commit.slice(0, 8)}`} fallback="无文件差异" />
+        <details className="review-delivery-notes"><summary>交付说明与产物</summary><DeliveryReview key={delivery.id} state={state} delivery={delivery} previous={deliveries[deliveryIndex + 1]} /><BaselineRelationship state={state} item={item} items={items} /></details>
+        {attempt ? <IntegrationDetails key={`${attempt.id}:${attempt.candidate}:${attempt.verificationId}`} state={state} attempt={attempt} busy={busy} send={send} actionsTarget={view === "delivery" && paths === null ? actionsTarget : null} /> : null}
+      </> : <p className="workflow-empty">实施结束后，核对本次改动并封存交付。</p>}
+      {!activeCandidate || paths !== null ? <ReviewActions target={view === "delivery" ? actionsTarget : null}><span className="review-hint">{paths !== null ? `待封存 · ${paths.length} 个文件` : delivery ? `实施基线 → 交付 ${delivery.commit.slice(0, 8)}` : "尚无封存交付"}</span><div className="review-action-buttons">{paths !== null ? <button className="btn btn-primary mt-3" disabled={busy || selected.length !== paths.length} onClick={() => void send("workflow.seal", { id: item.id, paths: selected, summary, review: { behaviors, unresolved, artifactPaths: artifactPaths.split("\n").map((file) => file.trim()).filter(Boolean) } })}>封存所选改动并验证</button> : delivery ? <button className="btn btn-primary" onClick={() => onViewChange?.("acceptance")}>审阅测试与验收 →</button> : <button className="btn btn-secondary" onClick={() => onViewChange?.("design")}>回到设计与实施</button>}</div></ReviewActions> : null}
+    </div>
+    <div hidden={view !== "acceptance"} className="review-acceptance" role="tabpanel" id="requirement-panel-acceptance" aria-labelledby="requirement-tab-acceptance">
+      <div className="review-toolbar"><h3>当前交付的验收</h3>{versions}</div>
+      {delivery ? <div className="review-acceptance-body">
+        <AcceptanceEvidence delivery={delivery} verification={state.verifications.find((result) => result.id === delivery.verificationId)} onViewFile={(path) => { setSelectedTestPath(path); onViewChange?.("delivery"); }} />
+        <details className="review-check-logs"><summary>全部检查与日志</summary><VerificationDetails result={state.verifications.find((result) => result.id === delivery.verificationId)} /></details>
+        <DeliveryActions key={`${delivery.id}:${delivery.scopeId}`} state={state} deliveryId={delivery.id} current={deliveryIndex === 0 && status.valid} busy={busy} send={send} actionsTarget={view === "acceptance" ? actionsTarget : null} />
+      </div> : <p className="workflow-empty">封存交付后，在这里查看测试变更、检查结果并验收。</p>}
+    </div>
+    <div hidden={view !== "history"} role="tabpanel" id="requirement-panel-history" aria-labelledby="requirement-tab-history"><WorkflowHistory state={state} items={items} onlyItemId={item.id} onRefresh={onRefresh} expanded /></div>
+    <ReviewActions target={view === "history" ? actionsTarget : null}><span className="review-hint">历史记录只读</span><button className="btn btn-secondary" onClick={() => onViewChange?.("design")}>回到当前设计</button></ReviewActions>
   </section>;
 }
 
 type Send = (type: Parameters<typeof socketClient.send>[0], payload: object) => Promise<void>;
-function DeliveryActions({ state, deliveryId, current, busy, send }: { state: WorkflowProjectState; deliveryId: string; current: boolean; busy: boolean; send: Send }) {
+function DeliveryActions({ state, deliveryId, current, busy, send, actionsTarget }: { actionsTarget?: HTMLElement | null; state: WorkflowProjectState; deliveryId: string; current: boolean; busy: boolean; send: Send }) {
   const delivery = state.deliveries.find((entry) => entry.id === deliveryId)!;
   const prd = prdFor(state, delivery.itemId);
   const unsavedDesign = (() => { try { return !!prd && hasPrdDraftChanges(sessionStorage.getItem(`qingzhou:prd-draft:${delivery.itemId}`), prd); } catch { return false; } })();
@@ -346,31 +375,35 @@ function DeliveryActions({ state, deliveryId, current, busy, send }: { state: Wo
   const [evidence, setEvidence] = useState<NonNullable<DeliveryAcceptance["evidence"]>>(() => criteria.map((criterion) => ({ criterion, note: "", checkIds: [], artifactPaths: [] })));
   const updateEvidence = (index: number, patch: Partial<NonNullable<DeliveryAcceptance["evidence"]>[number]>) => setEvidence((current) => current.map((row, position) => index === position ? { ...row, ...patch } : row));
   return <div className="mt-3 text-sm">
-    {acceptance ? <p>{acceptance.decision === "accepted" ? "这个版本已验收，验收不会自动合入。" : "这个版本需返工。"} · {date(acceptance.createdAt)} {acceptance.note}</p> : null}
+    {acceptance ? acceptance.decision === "accepted" ? <details className="review-hint"><summary>验收记录 · {date(acceptance.createdAt)}</summary><p className="mt-2">{acceptance.note}</p></details> : <p className="text-danger">这个版本需返工。 · {date(acceptance.createdAt)} {acceptance.note}</p> : null}
     {current && acceptance?.decision !== "accepted" ? <><p className="mt-2 font-medium">人工验收当前范围</p>{criteria.map((criterion, index) => <div className="workflow-criterion" key={index}><label className="mt-2 flex items-start gap-2"><input type="checkbox" checked={checked.includes(index)} onChange={(event) => setChecked(event.target.checked ? [...checked, index] : checked.filter((entry) => entry !== index))} />{criterion}</label>
         <details className="mt-2"><summary>记录这条标准的验收依据</summary><label className="block mt-2">人工观察<textarea aria-label={`验收依据 ${index + 1}`} className="field w-full mt-1" rows={2} maxLength={2000} value={evidence[index]?.note ?? ""} onChange={(event) => updateEvidence(index, { note: event.target.value })} placeholder="记录观察到的行为，或引用检查和封存产物。" /></label>
         {verification?.checks.map((check) => <label className="flex items-start gap-2 mt-2" key={check.id}><input type="checkbox" checked={evidence[index]?.checkIds.includes(check.id) ?? false} onChange={(event) => updateEvidence(index, { checkIds: event.target.checked ? [...evidence[index]!.checkIds, check.id] : evidence[index]!.checkIds.filter((id) => id !== check.id) })} />引用检查：{check.name} · {check.status === "passed" ? "通过" : "未通过"}</label>)}
         {delivery.review?.artifactPaths.map((file) => <label className="flex items-start gap-2 mt-2" key={file}><input type="checkbox" checked={evidence[index]?.artifactPaths.includes(file) ?? false} onChange={(event) => updateEvidence(index, { artifactPaths: event.target.checked ? [...evidence[index]!.artifactPaths, file] : evidence[index]!.artifactPaths.filter((path) => path !== file) })} />引用产物：{file}</label>)}
         </details></div>)}
-      {unsavedDesign ? <p className="workflow-design-note mt-3" role="alert">有未保存的 PRD 草稿，请回到“设计与 PRD”保存并确认，或明确放弃草稿后再验收。</p> : null}
+      {unsavedDesign ? <p className="workflow-design-note mt-3" role="alert">有未保存的 PRD 草稿，请回到“设计”保存并确认，或明确放弃草稿后再验收。</p> : null}
       <label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />我已审阅这个交付的代码、检查证据与需人工确认的结果{prd ? "，并确认 PRD 与模块设计已同步" : ""}</label>
-      <button className="btn btn-primary mt-3" disabled={busy || unsavedDesign || !reviewed || checked.length !== criteria.length} onClick={() => void send("workflow.accept", { deliveryId, decision: "accepted", note: "已逐条人工确认当前范围验收标准", evidence: evidence.map((row) => ({ ...row, note: row.note.trim() || "用户已逐条人工确认，未补充文字观察。" })) })}>{prdFor(state, delivery.itemId) ? "验收并固化 PRD" : "验收这个版本"}</button>
+      <ReviewActions target={actionsTarget}><span className="review-hint">验收后固化本次设计</span><div className="review-action-buttons">      <button className="btn btn-primary mt-3" disabled={busy || unsavedDesign || !reviewed || checked.length !== criteria.length} onClick={() => void send("workflow.accept", { deliveryId, decision: "accepted", note: "已逐条人工确认当前范围验收标准", evidence: evidence.map((row) => ({ ...row, note: row.note.trim() || "用户已逐条人工确认，未补充文字观察。" })) })}>{prdFor(state, delivery.itemId) ? "验收并固化 PRD" : "验收这个版本"}</button>
       <button className="btn btn-ghost mt-3 ml-2" aria-expanded={rejecting} onClick={() => setRejecting(!rejecting)}>需要调整</button>
+</div></ReviewActions>
       {rejecting ? <div className="mt-3 rounded-lg border border-line p-3"><label className="block">验收反馈<textarea className="field mt-1 w-full" rows={3} value={note} onChange={(event) => { setNote(event.target.value); setConfirmContinue(false); }} placeholder="记录未达到的标准与需要调整的结果。" /></label><p className="mt-2 text-xs text-mute">可仅记录意见，或审阅下面的反馈后直接开始新一轮实施。</p><button className="btn btn-secondary mt-3" disabled={busy || !note.trim()} onClick={() => { setReviewed(false); setChecked([]); void send("workflow.accept", { deliveryId, decision: "rejected", note: note.trim() }); }}>记录返工意见</button><button className="btn btn-primary mt-3 ml-2" disabled={busy || !note.trim()} onClick={() => setConfirmContinue(true)}>反馈并继续</button>
         {confirmContinue ? <div className="workflow-feedback-confirm mt-3"><strong>确认按以下反馈开始新一轮实施</strong><p className="whitespace-pre-wrap mt-2">{note.trim()}</p><button className="btn btn-primary mt-3" disabled={busy} onClick={() => { void send("workItem.feedback", { id: delivery.itemId, text: note.trim(), expectedDeliveryId: delivery.id }); }}>确认反馈并开始实施</button><button className="btn btn-ghost mt-3" disabled={busy} onClick={() => setConfirmContinue(false)}>返回修改</button></div> : null}
       </div> : null}</> : null}
     {acceptance?.evidence?.length ? <details className="mt-3"><summary>已保存的逐条验收依据</summary>{acceptance.evidence.map((row, index) => <div className="mt-2" key={index}><strong>{row.criterion}</strong><p>{row.note}</p><p className="text-mute">{row.checkIds.map((id) => verification?.checks.find((check) => check.id === id)?.name ?? id).join("、")}{row.artifactPaths.length ? ` · 产物 ${row.artifactPaths.join("、")}` : ""}</p></div>)}</details> : null}
-    {current && acceptance?.decision === "accepted" && !state.integrations.some((entry) => entry.deliveryId === deliveryId && ["queued", "preparing", "conflicts", "verifying", "ready", "merging", "merged"].includes(entry.status)) ? <button className="btn btn-primary mt-3" disabled={busy} onClick={() => void send("workflow.integrate", { deliveryId })}>准备合入这个交付</button> : null}
+    <ReviewActions target={acceptance?.decision === "accepted" || !current ? actionsTarget : null}><span className="review-hint">{acceptance?.decision === "accepted" ? "当前交付已验收" : "只读交付 · 验证通过后可验收最新版本"}</span>    {current && acceptance?.decision === "accepted" && !state.integrations.some((entry) => entry.deliveryId === deliveryId && ["queued", "preparing", "conflicts", "verifying", "ready", "merging", "merged"].includes(entry.status)) ? <button className="btn btn-primary mt-3" disabled={busy} onClick={() => void send("workflow.integrate", { deliveryId })}>准备合入这个交付</button> : null}</ReviewActions>
   </div>;
 }
 
-function IntegrationDetails({ state, attempt, busy, send }: { state: WorkflowProjectState; attempt: IntegrationAttempt; busy: boolean; send: Send }) {
+function IntegrationDetails({ state, attempt, busy, send, actionsTarget }: { actionsTarget?: HTMLElement | null; state: WorkflowProjectState; attempt: IntegrationAttempt; busy: boolean; send: Send }) {
   const [reviewed, setReviewed] = useState(false);
   const [instruction, setInstruction] = useState("");
-  const [reviewNote, setReviewNote] = useState("");
-  const [reviewDecision, setReviewDecision] = useState("compatible");
+  const savedReviewNote = attempt.review?.note ?? "";
+  const savedReviewDecision = attempt.review?.decision ?? "compatible";
+  const [reviewNote, setReviewNote] = useState(savedReviewNote);
+  const [reviewDecision, setReviewDecision] = useState(savedReviewDecision);
+  const reviewDirty = reviewNote.trim() !== savedReviewNote || reviewDecision !== savedReviewDecision;
   const candidateReviewed = attempt.review?.candidate === attempt.candidate && attempt.review?.tree === attempt.tree && attempt.review?.decision === "compatible";
-  useEffect(() => { setReviewed(false); setReviewNote(""); }, [attempt.candidate, attempt.verificationId]);
+  useEffect(() => { setReviewed(false); setReviewNote(savedReviewNote); setReviewDecision(savedReviewDecision); }, [attempt.candidate, attempt.verificationId, savedReviewNote, savedReviewDecision]);
   const repairable = ["conflicts", "failed", "ready"].includes(attempt.status);
   const config = state.configs[0];
   const delivery = state.deliveries.find((entry) => entry.id === attempt.deliveryId);
@@ -384,19 +417,23 @@ function IntegrationDetails({ state, attempt, busy, send }: { state: WorkflowPro
     {attempt.workspace ? <details className="mt-2 text-sm"><summary>隔离集成目录</summary><pre className="workflow-code">{attempt.workspace}</pre></details> : null}
     {attempt.verificationId && state.queue?.resourceWaits[attempt.verificationId] ? <p className="mt-2 text-sm text-mute">等待独占验证资源：{state.queue.resourceWaits[attempt.verificationId]}</p> : null}
     <VerificationDetails result={state.verifications.find((entry) => entry.id === attempt.verificationId)} />
-    <details className="mt-2 text-sm"><summary>候选相对源交付的组合变化（含主线与冲突修复）</summary><pre className="workflow-code">{attempt.patch || "尚无已封存候选差异"}</pre></details>
+    <details className="mt-2 text-sm"><summary>候选相对源交付的组合变化（含主线与冲突修复）</summary><PatchDiff patch={attempt.patch} beforeLabel="源交付" afterLabel="集成候选" fallback="尚无已封存候选差异" /></details>
     {repairable ? <details className="mt-3" open={attempt.status !== "ready"}><summary className="text-sm">{attempt.status === "ready" ? "需要调整候选？展开修复操作" : "处理集成候选"}</summary><div className="mt-3"><label className="text-sm">集成反馈<textarea className="field mt-1 w-full" rows={2} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="需要产品取舍时说明处理方向" /></label>
       <div className="mt-2 flex flex-wrap gap-2"><button className="btn btn-secondary" disabled={busy} onClick={() => void send("workflow.integration.repair", { id: attempt.id, instruction })}>在原对话处理候选</button><button className="btn btn-secondary" disabled={busy} onClick={() => void send("workflow.integration.recheck", { id: attempt.id })}>封存候选并重新验证</button></div></div></details> : null}
     {attempt.status === "ready" && !readyCurrent ? <p className="mt-3 text-sm text-danger" role="status">候选依据已变化。请取消旧候选后基于最新主线重新准备；当前候选不能直接合入。</p> : null}
     {attempt.status === "ready" && readyCurrent ? <div className="mt-3">
       {attempt.review ? <p role="status" className="text-sm mt-2">{candidateReviewed ? "当前候选复审通过" : "设计发生变化，请取消集成并在设计面板创建关联子需求"}：{attempt.review.note}</p> : null}
-      <details className="mt-2" open={!attempt.review}><summary>{attempt.review ? "修改复审" : "候选行为复审"}</summary>
-      <label className="block text-sm">复审结论<select aria-label="候选复审结论" className="field w-full" value={reviewDecision} onChange={(event) => setReviewDecision(event.target.value)}><option value="compatible">符合已确认设计，保留各需求有效行为</option><option value="design_changed">涉及设计变化，需要关联子需求</option></select></label>
-      <label className="block text-sm">复审依据<textarea aria-label="候选复审依据" className="field w-full" rows={2} maxLength={4000} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></label>
-      <button className="btn btn-secondary mt-2" disabled={busy || !reviewNote.trim()} onClick={() => void send("workflow.integration.review", { id: attempt.id, candidate: attempt.candidate, decision: reviewDecision, note: reviewNote })}>记录候选复审</button>
+      <details key={attempt.review?.createdAt ?? "new"} className="mt-2" open={!attempt.review}><summary>{attempt.review ? "修改复审" : "候选行为复审"}</summary>
+      <label className="block text-sm">复审结论<select aria-label="候选复审结论" className="field w-full" value={reviewDecision} onChange={(event) => { setReviewDecision(event.target.value as typeof reviewDecision); setReviewed(false); }}><option value="compatible">符合已确认设计，保留各需求有效行为</option><option value="design_changed">涉及设计变化，需要关联子需求</option></select></label>
+      <label className="block text-sm">复审依据<textarea aria-label="候选复审依据" className="field w-full" rows={2} maxLength={4000} value={reviewNote} onChange={(event) => { setReviewNote(event.target.value); setReviewed(false); }} /></label>
+
       </details>
-      <label className="flex items-start gap-2 text-sm mt-3"><input type="checkbox" checked={reviewed} disabled={!candidateReviewed} onChange={(event) => setReviewed(event.target.checked)} />我已审阅组合后的候选与验证结果，确认将此版本合入主线</label>
-      <button className="btn btn-primary mt-3" disabled={busy || !reviewed || !candidateReviewed} onClick={() => void send("workflow.integration.merge", { id: attempt.id })}>确认合入 {attempt.targetBranch}</button></div> : null}
+      <label className="flex items-start gap-2 text-sm mt-3"><input type="checkbox" checked={reviewed} disabled={!candidateReviewed || reviewDirty} onChange={(event) => setReviewed(event.target.checked)} />我已审阅组合后的候选与验证结果，确认将此版本合入主线</label>
+</div> : null}
+    {!["merged", "cancelled", "stale"].includes(attempt.status) ? <ReviewActions target={actionsTarget}><span className="review-hint">{candidateReviewed ? `候选 ${attempt.candidate?.slice(0, 8)}` : `集成候选 · ${attemptLabels[attempt.status]}`}</span><div className="review-action-buttons">{attempt.status === "ready" && readyCurrent ? <>
+      {!attempt.review || reviewDirty ? <button className="btn btn-secondary" disabled={busy || !reviewNote.trim()} onClick={() => void send("workflow.integration.review", { id: attempt.id, candidate: attempt.candidate, decision: reviewDecision, note: reviewNote.trim() })}>{attempt.review ? "更新候选复审" : "记录候选复审"}</button> : null}
+      {candidateReviewed ? <button className="btn btn-primary" disabled={busy || !reviewed || reviewDirty} onClick={() => void send("workflow.integration.merge", { id: attempt.id })}>确认合入 {attempt.targetBranch}</button> : null}
+    </> : null}</div></ReviewActions> : null}
     {!["merged", "merging", "preparing", "verifying", "cancelled"].includes(attempt.status) ? <button className="btn btn-ghost mt-3" disabled={busy} onClick={() => void send("workflow.integration.cancel", { id: attempt.id })}>取消集成，保留现场</button> : null}
     {["stale", "failed", "cancelled"].includes(attempt.status) ? <button className="btn btn-secondary mt-3" disabled={busy} onClick={() => void send("workflow.integrate", { deliveryId: attempt.deliveryId })}>基于最新主线重新准备</button> : null}
   </details>;

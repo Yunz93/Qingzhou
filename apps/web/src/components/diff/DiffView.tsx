@@ -1,75 +1,33 @@
-import { diffFromApproval, gitDiffBlocks, type DiffLine } from "@qingzhou/protocol";
+import { useMemo, useState } from "react";
+import { diffFromApproval, type DiffLine } from "@qingzhou/protocol";
+import { splitDiffRows, type DiffCell } from "../../lib/split-diff";
 
 type Props = {
-  oldText?: string;
-  newText?: string;
-  content?: string;
-  lines?: DiffLine[] | null;
-  fallback?: string;
-  /** Cursor-style review: line numbers, skip bars, full-bleed add/remove. */
-  review?: boolean;
+  oldText?: string; newText?: string; content?: string; lines?: DiffLine[] | null;
+  fallback?: string; review?: boolean; beforeLabel?: string; afterLabel?: string;
 };
 
-function lineClass(line: DiffLine): string {
-  if (line.type === "add") return "bg-success/15 text-ink";
-  if (line.type === "remove") return "bg-danger/15 text-ink";
-  if (line.text.startsWith("@@")) return "bg-accent-soft text-accent";
-  return "text-mute";
+function Cell({ cell, side }: { cell: DiffCell | null; side: "before" | "after" }) {
+  return <div className={`split-diff-cell${!cell ? " split-diff-blank" : cell.changed ? ` split-diff-${side}` : ""}`}>
+    <span className="split-diff-number">{cell?.line ?? ""}</span>
+    <span className="split-diff-sign" aria-hidden="true">{cell?.changed ? side === "before" ? "−" : "+" : ""}</span>
+    <code>{cell?.text || " "}</code>
+  </div>;
 }
 
-function reviewRowClass(type: DiffLine["type"]): string {
-  if (type === "add") return "bg-success/18 text-ink";
-  if (type === "remove") return "bg-danger/18 text-ink";
-  return "text-ink";
-}
-
-function ReviewDiff({ lines }: { lines: DiffLine[] }) {
-  const blocks = gitDiffBlocks(lines);
-  const visible = blocks.length > 400 ? blocks.slice(0, 400) : blocks;
-  return (
-    <div className="overflow-x-auto rounded-md border border-line/80 bg-canvas font-mono text-[11px] leading-[1.55]">
-      <div className="min-w-full w-max">{visible.map((block, index) =>
-        block.kind === "skip" ? (
-          <div
-            key={`skip-${index}`}
-            className="flex items-center gap-2 border-y border-line/70 bg-fill px-2 py-1 text-[11px] text-mute"
-          >
-            <span className="inline-block h-px min-w-3 flex-1 bg-line" />
-            {block.count} 行未改
-            <span className="inline-block h-px min-w-3 flex-1 bg-line" />
-          </div>
-        ) : (
-          <div key={`${block.type}-${index}`} className={`flex ${reviewRowClass(block.type)}`}>
-            <span className="w-8 shrink-0 select-none pr-1.5 text-right text-[10px] text-mute tabular">
-              {block.lineNo ?? ""}
-            </span>
-            <span className="w-3 shrink-0 select-none text-center text-mute">
-              {block.type === "add" ? "+" : block.type === "remove" ? "-" : ""}
-            </span>
-            <span className="flex-1 whitespace-pre px-1">{block.text || " "}</span>
-          </div>
-        ),
-      )}
-      {blocks.length > 400 ? <div className="px-2 py-1 text-mute">还有 {blocks.length - 400} 行</div> : null}</div>
+export function DiffView({ oldText, newText, content, lines: provided, fallback, beforeLabel = "修改前", afterLabel = "修改后" }: Props) {
+  const rows = useMemo(() => splitDiffRows(provided ?? diffFromApproval({ oldText, newText, content }) ?? [], !!provided), [provided, oldText, newText, content]);
+  const [limit, setLimit] = useState(400);
+  if (!rows.length) return <p className="text-sm text-mute">{fallback ?? "还没有差异。"}</p>;
+  return <section className="split-diff" aria-label="左右分屏差异">
+    <div className="split-diff-scroll" tabIndex={0} role="region" aria-label="差异内容，可横向滚动">
+      <div className="split-diff-table">
+        <div className="split-diff-heading"><span>{beforeLabel}</span><span>{afterLabel}</span></div>
+        {rows.slice(0, limit).map((row, index) => row.kind === "hunk"
+          ? <div className="split-diff-hunk" key={index}>差异片段 · {row.text}</div>
+          : <div className="split-diff-row" key={index}><Cell cell={row.before} side="before" /><Cell cell={row.after} side="after" /></div>)}
+      </div>
     </div>
-  );
-}
-
-export function DiffView({ oldText, newText, content, lines: provided, fallback, review }: Props) {
-  const lines = provided ?? diffFromApproval({ oldText, newText, content });
-  if (!lines || lines.length === 0) {
-    return <p className="text-sm text-mute">{fallback ?? "还没有差异。"}</p>;
-  }
-  if (review) return <ReviewDiff lines={lines} />;
-  const visible = lines.length > 200 ? lines.slice(0, 200) : lines;
-  return (
-    <pre className="overflow-auto rounded-md bg-canvas p-2 font-mono text-[11px] leading-5">
-      {visible.map((line, index) => (
-        <div key={`${line.type}-${index}`} className={lineClass(line)}>
-          {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "} {line.text}
-        </div>
-      ))}
-      {lines.length > 200 ? <div className="text-mute">…还有 {lines.length - 200} 行</div> : null}
-    </pre>
-  );
+    {rows.length > limit ? <button className="btn btn-secondary mt-2" onClick={() => setLimit(limit + 400)}>继续显示 · 还有 {rows.length - limit} 行</button> : null}
+  </section>;
 }

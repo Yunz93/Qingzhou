@@ -1,6 +1,7 @@
 export type DiffLine = {
   type: "equal" | "add" | "remove";
   text: string;
+  hunk?: { oldStart: number; newStart: number };
 };
 
 function at(grid: number[][], row: number, col: number): number {
@@ -8,10 +9,27 @@ function at(grid: number[][], row: number, col: number): number {
 }
 
 export function unifiedDiff(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
+  return diffLines(oldText === "" ? [] : oldText.split("\n"), newText === "" ? [] : newText.split("\n"));
+}
+
+function diffLines(oldLines: string[], newLines: string[]): DiffLine[] {
+  if (oldLines.length === newLines.length && oldLines.every((line, index) => line === newLines[index])) return oldLines.map((text) => ({ type: "equal", text }));
+  let prefix = 0;
+  while (prefix < oldLines.length && prefix < newLines.length && oldLines[prefix] === newLines[prefix]) prefix++;
+  let suffix = 0;
+  while (suffix < oldLines.length - prefix && suffix < newLines.length - prefix && oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]) suffix++;
+  if (prefix || suffix) return [
+    ...oldLines.slice(0, prefix).map((text): DiffLine => ({ type: "equal", text })),
+    ...diffLines(oldLines.slice(prefix, oldLines.length - suffix), newLines.slice(prefix, newLines.length - suffix)),
+    ...oldLines.slice(oldLines.length - suffix).map((text): DiffLine => ({ type: "equal", text })),
+  ];
   const n = oldLines.length;
   const m = newLines.length;
+  // Keep all text while bounding synchronous memory use for large documents.
+  if ((n + 1) * (m + 1) > 1_000_000) return [
+    ...oldLines.map((text): DiffLine => ({ type: "remove", text })),
+    ...newLines.map((text): DiffLine => ({ type: "add", text })),
+  ];
   const dp: number[][] = Array.from({ length: n + 1 }, () => Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i -= 1) {
     for (let j = m - 1; j >= 0; j -= 1) {
@@ -63,6 +81,11 @@ export function diffFromApproval(input: {
 
 export type GitPatchFile = {
   path: string;
+  oldPath?: string;
+  newPath?: string;
+  changeType?: "added" | "deleted" | "renamed" | "modified";
+  oldMode?: string;
+  newMode?: string;
   lines: DiffLine[];
   binary?: boolean;
 };
@@ -90,10 +113,10 @@ export function gitDiffBlocks(lines: DiffLine[]): GitDiffBlock[] {
   let oldLine = 0;
   let seenHunk = false;
   for (const line of lines) {
-    const hunk = line.type === "equal" ? line.text.match(HUNK_HEADER) : null;
+    const hunk = line.hunk;
     if (hunk) {
-      const nextOld = Number(hunk[1]);
-      const nextNew = Number(hunk[2]);
+      const nextOld = hunk.oldStart;
+      const nextNew = hunk.newStart;
       if (seenHunk && nextNew > newLine + 1) {
         blocks.push({ kind: "skip", count: nextNew - newLine - 1 });
       } else if (!seenHunk && nextNew > 1) {
@@ -122,9 +145,25 @@ export function gitDiffBlocks(lines: DiffLine[]): GitDiffBlock[] {
 }
 
 function stripGitPathPrefix(value: string): string {
-  const trimmed = value.trim().replace(/^"(.*)"$/u, "$1");
+  const trimmed = decodeGitPath(value.trim());
   if (trimmed === "/dev/null") return trimmed;
   return trimmed.replace(/^[ab]\//u, "");
+}
+
+function decodeGitPath(value: string): string {
+  if (!value.startsWith('"')) return value;
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  for (const [token] of value.slice(1, -1).matchAll(/\\(?:[0-7]{1,3}|.)|[^\\]+/gs)) {
+    if (/^\\[0-7]/.test(token)) bytes.push(parseInt(token.slice(1), 8));
+    else {
+      const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+      const escaped = token.startsWith("\\") ? token.slice(1) : null;
+      if (escaped && escapes[escaped] !== undefined) bytes.push(escapes[escaped]!);
+      else bytes.push(...encoder.encode(escaped ?? token));
+    }
+  }
+  return new TextDecoder().decode(Uint8Array.from(bytes));
 }
 
 function pathFromDiffGitHeader(header: string): string {
@@ -144,11 +183,31 @@ export function parseGitPatch(diff: string): GitPatchFile[] {
   for (const line of raw) {
     if (line.startsWith("diff --git ")) {
       if (current) files.push(current);
-      current = { path: pathFromDiffGitHeader(line), lines: [] };
+      const paths = line.slice(11).match(/"(?:\\.|[^"\\])*"|\S+/g);
+      current = { path: pathFromDiffGitHeader(line), lines: [], changeType: "modified" };
+      if (paths?.length === 2) {
+        current.oldPath = stripGitPathPrefix(paths[0]!);
+        current.newPath = stripGitPathPrefix(paths[1]!);
+        current.path = current.newPath;
+      }
       inHeader = true;
       continue;
     }
     if (!current) continue;
+    if (inHeader && /^(?:new file mode|deleted file mode|old mode|new mode) /.test(line)) {
+      const mode = line.split(" ").at(-1)!;
+      if (line.startsWith("new file")) { current.changeType = "added"; current.oldPath = "/dev/null"; current.newMode = mode; }
+      else if (line.startsWith("deleted file")) { current.changeType = "deleted"; current.newPath = "/dev/null"; current.oldMode = mode; }
+      else if (line.startsWith("old mode")) current.oldMode = mode;
+      else current.newMode = mode;
+      continue;
+    }
+    if (inHeader && /^rename (?:from|to) /.test(line)) {
+      current.changeType = "renamed";
+      if (line.startsWith("rename from ")) current.oldPath = decodeGitPath(line.slice(12));
+      else { current.newPath = decodeGitPath(line.slice(10)); current.path = current.newPath; }
+      continue;
+    }
     if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
       current.binary = true;
       inHeader = false;
@@ -156,7 +215,14 @@ export function parseGitPatch(diff: string): GitPatchFile[] {
     }
     if (inHeader && line.startsWith("+++ ")) {
       const next = stripGitPathPrefix(line.slice(4));
+      current.newPath = next;
+      if (next === "/dev/null") current.changeType = "deleted";
       if (next && next !== "/dev/null") current.path = next;
+      continue;
+    }
+    if (inHeader && line.startsWith("--- ")) {
+      current.oldPath = stripGitPathPrefix(line.slice(4));
+      if (current.oldPath === "/dev/null") current.changeType = "added";
       continue;
     }
     if (
@@ -173,9 +239,10 @@ export function parseGitPatch(diff: string): GitPatchFile[] {
     ) {
       continue;
     }
-    if (line.startsWith("@@")) {
+    const hunk = line.match(HUNK_HEADER);
+    if (hunk) {
       inHeader = false;
-      current.lines.push({ type: "equal", text: line });
+      current.lines.push({ type: "equal", text: line, hunk: { oldStart: Number(hunk[1]), newStart: Number(hunk[2]) } });
       continue;
     }
     inHeader = false;

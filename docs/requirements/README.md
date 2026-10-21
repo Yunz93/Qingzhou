@@ -2,6 +2,7 @@
 
 | 需求 | PRD 与当前状态 | 涉及模块 |
 | --- | --- | --- |
+| 统一历史与分屏差异审阅 | [PRD v4](history-and-split-diff/PRD.md)、[实施](history-and-split-diff/IMPLEMENTATION.md)、[验证](history-and-split-diff/VERIFICATION.md)，自测通过待验收 | 需求五页签、模块设计变化、分层历史与统一左右 diff |
 | 文档审阅与 Markdown 存储 | [PRD](document-review-simplification/PRD.md)、[实施](document-review-simplification/IMPLEMENTATION.md)、[验证](document-review-simplification/VERIFICATION.md)，实施验证中 | PRD、模块、目录配置、项目历史、安全合入 |
 | 全量 UI 与交互检视 | [PRD](ui-experience-review/PRD.md)、[实施](ui-experience-review/IMPLEMENTATION.md)、[验证](ui-experience-review/VERIFICATION.md)，实施验证中 | 对话、详情、设置、向导、工作台与关键弹窗 |
 | 工作流端到端与中断恢复 | [PRD](workflow-recovery-case/PRD.md)、[实施](workflow-recovery-case/IMPLEMENTATION.md)、[验证](workflow-recovery-case/VERIFICATION.md)，待确认 | 工作区创建、中断恢复、真实需求全链路 |

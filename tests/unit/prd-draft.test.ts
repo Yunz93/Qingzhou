@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { hasPrdDraftChanges } from "../../apps/web/src/lib/prd-draft";
+import { hasPrdDraftChanges, isSavedPrdDraft } from "../../apps/web/src/lib/prd-draft";
 const prd = { id: "revision", content: "已确认方案", moduleChanges: [] };
 const draft = { expectedPrdId: prd.id, content: prd.content, moduleChanges: [], reason: "" };
 it("allows an exact saved design while blocking local body, module or revision changes at final acceptance", () => {
@@ -17,4 +17,12 @@ it("ignores storage metadata while retaining module content and basis changes", 
   expect(hasPrdDraftChanges(JSON.stringify(raw), stored)).toBe(false);
   expect(hasPrdDraftChanges(JSON.stringify({ ...raw, moduleChanges: [{ ...change, baseRevisionId: "other" }] }), stored)).toBe(true);
   expect(hasPrdDraftChanges(JSON.stringify({ ...raw, moduleChanges: [{ ...change, content: "本地修改" }] }), stored)).toBe(true);
+});
+
+it("refreshes untouched cached versions but retains unsaved or unknown drafts on reopening", () => {
+  const revisions = [prd];
+  expect(isSavedPrdDraft(JSON.stringify(draft), revisions)).toBe(true);
+  expect(isSavedPrdDraft(JSON.stringify({ ...draft, content: "未保存内容" }), revisions)).toBe(false);
+  expect(isSavedPrdDraft(JSON.stringify({ ...draft, reason: "待保存的变更说明" }), revisions)).toBe(false);
+  expect(isSavedPrdDraft(JSON.stringify({ ...draft, expectedPrdId: "unknown" }), revisions)).toBe(false);
 });

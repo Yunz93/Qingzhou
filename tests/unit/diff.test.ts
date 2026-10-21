@@ -55,7 +55,7 @@ Binary files a/logo.png and b/logo.png differ
     expect(files).toHaveLength(2);
     expect(files[0]?.path).toBe("note.txt");
     expect(files[0]?.lines).toEqual([
-      { type: "equal", text: "@@ -1,2 +1,2 @@" },
+      { type: "equal", text: "@@ -1,2 +1,2 @@", hunk: { oldStart: 1, newStart: 1 } },
       { type: "equal", text: "hello" },
       { type: "remove", text: "world" },
       { type: "add", text: "there" },
@@ -90,4 +90,34 @@ describe("gitDiffBlocks", () => {
       { kind: "line", type: "add", text: "new", lineNo: 10 },
     ]);
   });
+});
+
+it("preserves rename paths, mode changes and octal-quoted UTF-8 paths", () => {
+  const renamed = parseGitPatch('diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n')[0];
+  expect(renamed).toMatchObject({ oldPath: "old.txt", newPath: "new.txt", changeType: "renamed", lines: [] });
+  expect(parseGitPatch('diff --git a/run b/run\nold mode 100644\nnew mode 100755\n')[0]).toMatchObject({ oldMode: "100644", newMode: "100755" });
+  const quoted = '"a/\\350\\256\\276\\350\\256\\241.md"';
+  const target = '"b/\\350\\256\\276\\350\\256\\241.md"';
+  expect(parseGitPatch(`diff --git ${quoted} ${target}\n--- ${quoted}\n+++ ${target}\n@@ -1 +1 @@\n-a\n+b\n`)[0]?.path).toBe("设计.md");
+});
+
+it("distinguishes escaped backslashes from octal UTF-8 in quoted Git paths", () => {
+  const patch = String.raw`diff --git "a/literal\\350.txt" "b/literal\\350.txt"
+--- "a/literal\\350.txt"
++++ "b/literal\\350.txt"
+@@ -1 +1 @@
+-old
++new
+`;
+  expect(parseGitPatch(patch)[0]?.path).toBe(String.raw`literal\350.txt`);
+});
+
+it("bounds the line matrix while preserving all text in a large replacement", () => {
+  const old = Array.from({ length: 1100 }, (_, index) => index === 500 ? "shared middle" : `old ${index}`).join("\n");
+  const next = Array.from({ length: 1100 }, (_, index) => index === 500 ? "shared middle" : `new ${index}`).join("\n");
+  const lines = unifiedDiff(old, next);
+  expect(lines.filter((line) => line.type === "equal")).toHaveLength(0);
+  expect(lines.filter((line) => line.type !== "add").map((line) => line.text).join("\n")).toBe(old);
+  expect(lines.filter((line) => line.type !== "remove").map((line) => line.text).join("\n")).toBe(next);
+  expect(unifiedDiff("x\n".repeat(6000), "x\n".repeat(6000))).toHaveLength(6001);
 });

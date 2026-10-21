@@ -1,3 +1,4 @@
+import { PatchDiff } from "../diff/PatchDiff";
 import { useRef, useState } from "react";
 import type { WorkflowProjectState, WorkItemSummary } from "@qingzhou/protocol";
 import { socketClient } from "../../transport/socket-client";
@@ -35,7 +36,7 @@ export function MainlineHistory({ state, items, onSelect }: { state: WorkflowPro
     {versions.length > 1 ? <div className="workflow-version-compare"><h4 className="font-medium">比较主线版本</h4><div className="flex flex-wrap gap-2 mt-2"><label>从 <select className="field" aria-label="比较起始版本" value={from} onChange={(event) => change(setFrom, event.target.value)}>{versions.map((version) => <option key={version.commit} value={version.commit}>{version.label}</option>)}</select></label><label>到 <select className="field" aria-label="比较目标版本" value={to} onChange={(event) => change(setTo, event.target.value)}>{versions.map((version) => <option key={version.commit} value={version.commit}>{version.label}</option>)}</select></label><button className="btn btn-secondary" disabled={busy || from === to} onClick={() => {
       const request = ++generation.current; setBusy(true); setError(""); void socketClient.send<{ files: string[]; patch: string }>("workflow.compare", { projectId: state.configs[0]!.projectId, from, to }).then((value) => { if (generation.current === request) setComparison({ from, to, ...value }); }).catch((reason) => { if (generation.current === request) setError(reason instanceof Error ? reason.message : "版本比较失败"); }).finally(() => { if (generation.current === request) setBusy(false); });
     }}>{busy ? "正在比较…" : "比较版本"}</button></div>
-      {comparison && comparison.from === from && comparison.to === to ? <details open className="mt-3"><summary>两个主线版本的实际差异 · {comparison.files.length} 个文件</summary><pre className="workflow-code">{comparison.patch || "代码树无变化"}</pre></details> : null}
+      {comparison && comparison.from === from && comparison.to === to ? <details open className="mt-3"><summary>两个主线版本的实际差异 · {comparison.files.length} 个文件</summary><PatchDiff patch={comparison.patch} beforeLabel={`修改前 · ${from.slice(0, 8)}`} afterLabel={`修改后 · ${to.slice(0, 8)}`} fallback="代码树无变化" /></details> : null}
       {error ? <p className="text-danger mt-2" role="alert">{error}</p> : null}
     </div> : null}
   </section>;
