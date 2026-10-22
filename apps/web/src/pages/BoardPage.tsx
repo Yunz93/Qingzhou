@@ -241,7 +241,7 @@ export function BoardPage() {
           </div>
         ) : (
           <div className="mx-auto flex h-full max-w-[440px] flex-col items-center justify-center px-6 pb-16 text-center">
-            <p className="text-[22px] font-semibold tracking-tight text-ink">启动一个项目</p>
+            <h1 className="display-title text-[28px] text-ink">启动一个项目</h1>
             <button
               type="button"
               className="pressable btn btn-primary mt-7"

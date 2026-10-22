@@ -2,7 +2,7 @@ import { workPromptSummary } from "../../lib/work-prompt-summary";
 import { groupThinkingMessages } from "../../lib/thinking-groups";
 import { hasDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo, type ReactNode } from "react";
-import { Box, Info } from "lucide-react";
+import { ArrowUpRight, Box, Info } from "lucide-react";
 import { extractDesignProposal, stripModePrefix, type TimelineMessage, type ToolExecution } from "@qingzhou/protocol";
 import { ToolExecutionRow } from "./ToolExecutionRow";
 import { ToolGroupRow } from "./ToolGroupRow";
@@ -18,6 +18,7 @@ import {
   stepSearchIndex,
 } from "../../lib/conversation-search";
 import { useAgentStore } from "../../stores/agent-store";
+import { copyText } from "../../lib/clipboard";
 
 type Props = {
   contained?: boolean;
@@ -33,28 +34,6 @@ type Props = {
   onStarter?: (prompt: string) => void;
 };
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const el = document.createElement("textarea");
-      el.value = text;
-      el.setAttribute("readonly", "");
-      el.style.position = "fixed";
-      el.style.left = "-9999px";
-      document.body.appendChild(el);
-      el.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(el);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
-}
-
 function ThinkingBlock({ message, highlighted = false }: { message: TimelineMessage; highlighted?: boolean }) {
   const [open, setOpen] = useState(false);
   if (!message.thinking) return null;
@@ -67,6 +46,7 @@ function ThinkingBlock({ message, highlighted = false }: { message: TimelineMess
       <button
         type="button"
         className="pressable min-h-7 text-left text-[12px] text-mute"
+        aria-expanded={open || highlighted}
         onClick={() => setOpen((value) => !value)}
       >
         思考了 {duration ?? "片刻"} {open ? "▾" : "▸"}
@@ -128,7 +108,7 @@ function UserMessage({
   return (
     <article
       id={conversationMessageDomId(message.id)}
-      className={`flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-[16px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.6] tracking-[-0.01em] text-ink ${
+      className={`conversation-user flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-[16px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.6] tracking-[-0.01em] text-ink ${
         message.isError ? "opacity-70 ring-1 ring-danger/40" : ""
       } ${highlighted ? "conversation-search-hit" : ""}`}
     >
@@ -239,7 +219,7 @@ const AssistantMessage = memo(function AssistantMessage({
   return (
     <article
       id={conversationMessageDomId(message.id)}
-      className={`mr-auto w-full max-w-[90%] shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
+      className={`conversation-assistant mr-auto w-full min-w-0 shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
     >
       <ThinkingBlock message={message} highlighted={highlighted} />
       {proposal ? <div className="workflow-design-note"><strong>设计提案：{proposal.reason}</strong><p>可在“设计与 PRD”对照并采用为草稿，采用后仍需确认。</p>
@@ -498,7 +478,7 @@ export function ConversationTimeline({
   const log = (
     <div
       ref={rootRef}
-      className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-4 py-5 sm:px-6"
+      className="conversation-log mx-auto flex w-full max-w-[720px] flex-col gap-5 px-4 py-5 sm:px-6"
       role="log"
       aria-live="off"
       aria-relevant="additions"
@@ -532,7 +512,7 @@ export function ConversationTimeline({
                   className="pressable starter-prompt"
                   onClick={() => onStarter(item.prompt)}
                 >
-                  {item.label}
+                  {item.label}<ArrowUpRight size={14} aria-hidden="true" />
                 </button>
               ))}
             </div>

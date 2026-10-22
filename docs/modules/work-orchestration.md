@@ -63,3 +63,9 @@
 来源：[PRD v3](../requirements/history-and-split-diff/PRD.md)、[结构修订稿](../requirements/history-and-split-diff/STRUCTURE-v3.md)。此节记录本轮实现，不声明平台模块版本已确认或人工验收已通过。
 
 发布复核补充：缺少文件归属的 TAP 用例结果只作为日志和总体统计，不与变更清单按名称关联。候选复审修改后可重新保存；未保存修改清除最终确认并阻止合入，保存设计变化结论后不能合入。
+
+## 共享工作台视觉
+
+来源：[YiMu 风格视觉改造 PRD v2](../requirements/yimu-visual-refresh/PRD.md) 的共用视觉部分，随用户授权的 Git 合并同步。项目总览、需求卡片、工作区、文档、差异和设置采用纸白、森林绿与细边框，选中和键盘焦点保持清晰；深色及手机布局共用语义变量。项目与文档标题使用本机宋体回退，密集工具区保持紧凑。
+
+工作模式内嵌对话与自由对话共用阅读排版，具体规则见[对话模块](conversation.md)。现有五页签、PRD 确认、验收、集成及历史来源不变。实现位于 `styles/workflow.css`、`styles/app.css` 及共用主题入口；回归见 `project-workflow.spec.ts`、`visual-theme.spec.ts`，实际结果见本需求[验证记录](../requirements/yimu-visual-refresh/VERIFICATION.md)。本节不创建平台确认或验收事实。

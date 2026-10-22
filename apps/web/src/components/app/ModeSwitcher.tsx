@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { Sailboat } from "lucide-react";
 import { useAgentStore } from "../../stores/agent-store";
 import { WorkActivity } from "./WorkActivity";
 
@@ -16,7 +17,7 @@ export function ModeSwitcher() {
       else if (location.pathname === "/" && activeId && !linked) sessionStorage.setItem("qingzhou:last-free-conversation", activeId);
     } catch { /* Navigation remains available without persistence. */ }
   }, [location.pathname, location.search, activeId, linked]);
-  return <div className="mode-navigation"><nav className="seg app-no-drag shrink-0" aria-label="模式">
+  return <div className="mode-navigation"><span className="app-wordmark" aria-hidden="true"><Sailboat size={20} strokeWidth={1.5} />轻舟</span><nav className="seg app-no-drag shrink-0" aria-label="模式">
     <NavLink to="/" end title="按会话组织的探索、问答和临时操作；执行权限由输入框设置决定" aria-label="对话" onClick={() => {
       if (location.pathname === "/board" || linked) {
         const last = saved("qingzhou:last-free-conversation", "");

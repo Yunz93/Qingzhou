@@ -46,3 +46,13 @@
 来源：[PRD v4](../requirements/history-and-split-diff/PRD.md)。
 
 发布复核补充：Git hunk 元数据与正文分离，形似片段头的正文不会重置行号；全文比较限制矩阵分配并复用未变化文本。超预算时保留完整前后正文，以块替换展示。
+
+## 共享视觉与对话阅读
+
+来源：[YiMu 风格视觉改造与对话阅读 PRD v2](../requirements/yimu-visual-refresh/PRD.md)。本节随用户授权的 Git 合并同步当前实现，不声明平台模块版本或验收状态。
+
+对话、侧栏和输入区使用纸白、鼠尾草绿与森林绿，深色使用墨绿灰；品牌和少量页面标题使用本机宋体回退。用户轮次、助手正文、思考与工具过程分别呈现，正文标题、段落、列表、引用和表格保留独立间距。窄屏优先保留主要操作，长路径换行，宽代码和表格在各自区域滚动。
+
+流式和完成正文使用同一套稳定 Markdown 组件，生成阶段延后更新正文并跳过代码高亮，完成后高亮。代码块展示语言并支持复制原始代码。思考与成功只读操作按需展开，异步收到失败时自动展示输出，用户仍可收起。安全 URL、HTML 转义、工作区媒体边界和既有草稿、滚动、搜索及审批契约继续保留。
+
+代码入口：`components/timeline/AssistantMarkdown.tsx`、`ConversationTimeline.tsx`、`ToolExecutionRow.tsx`、`ToolGroupRow.tsx`、`lib/clipboard.ts` 和 `styles/app.css`。验证入口：`conversation-rendering.spec.ts`、`visual-theme.spec.ts` 及既有前端交互 / 工作台 E2E；完整结果和真实模型、原生桌面边界见[验证记录](../requirements/yimu-visual-refresh/VERIFICATION.md)。

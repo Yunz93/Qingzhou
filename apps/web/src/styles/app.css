@@ -3,27 +3,31 @@
 @import "./workflow.css";
 
 @theme {
-  --color-canvas: oklch(0.96 0.005 264);
-  /* Match conversation surface so the session rail reads as one sheet. */
-  --color-sidebar: oklch(0.99 0.002 264);
-  --color-surface: oklch(0.99 0.002 264);
-  --color-elevated: oklch(1 0 0);
-  --color-line: oklch(0.32 0.02 264 / 0.1);
-  --color-ink: oklch(0.24 0.02 264);
-  --color-mute: oklch(0.5 0.02 264);
-  --color-accent: oklch(0.57 0.19 250);
-  --color-accent-soft: oklch(0.57 0.19 250 / 0.12);
-  --color-snow: oklch(0.995 0.002 255);
-  --color-warn: oklch(0.75 0.14 70);
-  --color-success: oklch(0.62 0.15 155);
-  --color-danger: oklch(0.6 0.21 25);
-  --color-info: oklch(0.57 0.19 250);
-  --color-fill: oklch(0.32 0.02 264 / 0.05);
-  --color-fill-strong: oklch(0.32 0.02 264 / 0.08);
-  --color-bubble: oklch(0.57 0.19 250 / 0.1);
+  /* Paper, sage and forest tones adapted from YiMu. */
+  --color-canvas: #f7f8f5;
+  --color-sidebar: #f0f2ec;
+  --color-surface: #fdfefb;
+  --color-elevated: #ffffff;
+  --color-line: #dfe5da;
+  --color-ink: #29362e;
+  --color-mute: #606b5b;
+  --color-accent: #426650;
+  --color-accent-soft: #eaf0e7;
+  --color-on-accent: #ffffff;
+  --color-selection: #426650;
+  --color-selection-ink: #ffffff;
+  --color-snow: #ffffff;
+  --color-warn: #936620;
+  --color-success: #426b45;
+  --color-danger: #b5453e;
+  --color-info: #416b7c;
+  --color-fill: #f0f3ec;
+  --color-fill-strong: #e5ebdf;
+  --color-bubble: #eaf0e7;
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
     "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
   --font-mono: "Commit Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  --font-display: "Noto Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", "SimSun", serif;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
@@ -35,35 +39,35 @@
   --text-sm--line-height: 1.45;
   --text-base: 0.84375rem;
   --text-base--line-height: 1.6;
-  --shadow-card: 0 0.5px 0 0 oklch(0.32 0.02 264 / 0.12), 0 1px 1px oklch(0.32 0.02 264 / 0.04);
-  --shadow-dialog: 0 0 0 0.5px oklch(0.32 0.02 264 / 0.12), 0 22px 70px oklch(0.32 0.02 264 / 0.22);
-  --shadow-composer: 0 0 0 0.5px oklch(0.32 0.02 264 / 0.12), 0 1px 2px oklch(0.32 0.02 264 / 0.04),
-    0 8px 20px oklch(0.32 0.02 264 / 0.05);
+  --shadow-card: 0 1px 3px #29362e04;
+  --shadow-dialog: 0 0 0 1px #29362e0a, 0 16px 48px #29362e1f;
+  --shadow-composer: 0 0 0 1px #dfe5da, 0 5px 18px #29362e06;
 }
 
 html.dark {
   color-scheme: dark;
-  --color-canvas: oklch(0.2 0.01 264);
-  /* Match conversation surface so the session rail reads as one sheet. */
-  --color-sidebar: oklch(0.24 0.01 264);
-  --color-surface: oklch(0.24 0.01 264);
-  --color-elevated: oklch(0.27 0.012 264);
-  --color-line: oklch(0.96 0.005 264 / 0.1);
-  --color-ink: oklch(0.96 0.006 264);
-  --color-mute: oklch(0.74 0.012 264);
-  --color-accent: oklch(0.68 0.16 250);
-  --color-accent-soft: oklch(0.68 0.16 250 / 0.18);
-  --color-snow: oklch(0.995 0.002 255);
-  --color-warn: oklch(0.82 0.12 80);
-  --color-success: oklch(0.76 0.12 155);
-  --color-danger: oklch(0.7 0.18 25);
-  --color-info: oklch(0.68 0.16 250);
-  --color-fill: oklch(0.96 0.005 264 / 0.06);
-  --color-fill-strong: oklch(0.96 0.005 264 / 0.1);
-  --color-bubble: oklch(0.68 0.16 250 / 0.16);
-  --shadow-card: 0 0.5px 0 0 oklch(1 0 0 / 0.08);
-  --shadow-dialog: 0 0 0 0.5px oklch(1 0 0 / 0.12), 0 24px 64px oklch(0 0 0 / 0.55);
-  --shadow-composer: 0 0 0 0.5px oklch(1 0 0 / 0.12), 0 1px 2px oklch(0 0 0 / 0.2), 0 10px 24px oklch(0 0 0 / 0.28);
+  --color-canvas: #18211c;
+  --color-sidebar: #1c2820;
+  --color-surface: #1e2922;
+  --color-elevated: #253129;
+  --color-line: #3e4d40;
+  --color-ink: #e6eddf;
+  --color-mute: #a4b39d;
+  --color-accent: #a0c4a7;
+  --color-accent-soft: #304536;
+  --color-on-accent: #18271d;
+  --color-selection: #36543f;
+  --color-selection-ink: #f0f5e9;
+  --color-warn: #dec18b;
+  --color-success: #a3c798;
+  --color-danger: #eea59b;
+  --color-info: #9dc4cd;
+  --color-fill: #29362c;
+  --color-fill-strong: #344335;
+  --color-bubble: #304536;
+  --shadow-card: 0 1px 3px #00000008;
+  --shadow-dialog: 0 0 0 1px #3e4d40, 0 18px 54px #00000055;
+  --shadow-composer: 0 0 0 1px #3e4d40, 0 5px 18px #00000015;
 }
 
 @layer base {
@@ -83,8 +87,8 @@ html.dark {
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 13px;
-    line-height: 1.4;
-    letter-spacing: -0.014em;
+    line-height: 1.55;
+    letter-spacing: 0;
     font-synthesis: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -96,8 +100,8 @@ html.dark {
   }
 
   :focus-visible {
-    outline: 3px solid color-mix(in oklch, var(--color-accent) 45%, transparent);
-    outline-offset: 1px;
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
     border-radius: 6px;
   }
 
@@ -203,9 +207,7 @@ html.dark {
   .titlebar {
     height: 52px;
     min-height: 52px;
-    background: color-mix(in oklch, var(--color-surface) 78%, transparent);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: var(--color-surface);
   }
 
   .conversation-titlebar { display: flex; gap: 6px; }
@@ -295,8 +297,7 @@ html.dark {
   }
 
   .material-sidebar {
-    /* Same solid fill as the conversation pane — avoid a colder translucent slab. */
-    background: var(--color-surface);
+    background: var(--color-sidebar);
   }
 
   .search-field {
@@ -306,7 +307,7 @@ html.dark {
     align-items: center;
     gap: 6px;
     border-radius: 7px;
-    background: var(--color-fill-strong);
+    background: var(--color-elevated);
     padding: 0 8px;
     color: var(--color-ink);
   }
@@ -328,12 +329,16 @@ html.dark {
   }
 
   .source-item {
-    border-radius: 7px;
+    border-radius: 8px;
   }
 
   .source-item-active {
-    background: var(--color-accent-soft);
-    color: var(--color-ink);
+    background: var(--color-selection);
+    color: var(--color-selection-ink);
+    --color-ink: var(--color-selection-ink);
+    --color-mute: var(--color-selection-ink);
+    --color-accent: var(--color-selection-ink);
+    --color-line: color-mix(in srgb, var(--color-selection-ink) 24%, transparent);
   }
 
   .source-item-accessory {
@@ -352,22 +357,23 @@ html.dark {
   }
 
   .settings-shell {
-    max-width: 640px;
+    max-width: 720px;
     margin-inline: auto;
   }
 
   .settings-label {
-    margin: 0 0 6px;
+    margin: 0 0 12px;
     padding: 0 4px;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 590;
     letter-spacing: 0.02em;
-    color: var(--color-mute);
+    color: var(--color-ink);
   }
 
   .settings-card {
     overflow: hidden;
-    border-radius: 10px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
     background: var(--color-elevated);
     box-shadow: var(--shadow-card);
   }
@@ -377,7 +383,7 @@ html.dark {
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    padding: 12px 14px;
+    padding: 16px 18px;
   }
 
   .settings-row + .settings-row {
@@ -479,10 +485,10 @@ html.dark {
   }
 
   .field {
-    min-height: 28px;
+    min-height: 32px;
     border-radius: 8px;
-    border: 0.5px solid var(--color-line);
-    background: var(--color-fill);
+    border: 1px solid var(--color-line);
+    background: var(--color-elevated);
     padding: 0 10px;
     color: var(--color-ink);
   }
@@ -505,8 +511,8 @@ html.dark {
 
   .btn {
     display: inline-flex;
-    height: 28px;
-    min-height: 28px;
+    height: 32px;
+    min-height: 32px;
     min-width: 64px;
     align-items: center;
     justify-content: center;
@@ -526,13 +532,13 @@ html.dark {
 
   .btn-primary {
     background: var(--color-accent);
-    color: white;
+    color: var(--color-on-accent);
   }
 
   .btn-secondary {
     color: var(--color-ink);
-    background: var(--color-fill-strong);
-    box-shadow: inset 0 0 0 0.5px var(--color-line);
+    background: var(--color-elevated);
+    box-shadow: inset 0 0 0 1px var(--color-line);
   }
 
   .btn-ghost {
@@ -558,8 +564,8 @@ html.dark {
     align-items: center;
     justify-content: center;
     border-radius: 99px;
-    background: var(--color-ink);
-    color: var(--color-elevated);
+    background: var(--color-accent);
+    color: var(--color-on-accent);
   }
 
   .send-btn:disabled {
@@ -900,7 +906,7 @@ html.dark {
   }
 
   html.dark .model-picker-list {
-    background: oklch(0.22 0.01 264);
+    background: var(--color-elevated);
   }
 
   .model-picker-list-title {
@@ -1159,14 +1165,49 @@ html.dark {
   }
 
   .starter-prompt {
-    min-height: 32px;
-    border-radius: 8px;
-    background: var(--color-fill);
-    padding: 7px 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 44px;
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    background: var(--color-elevated);
+    padding: 11px 16px;
     color: var(--color-ink);
     font-size: 12.5px;
     text-align: left;
   }
+
+  .starter-prompt:hover {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+
+  .starter-prompt svg { flex-shrink: 0; color: var(--color-accent); }
+
+  .display-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: .04em;
+    line-height: 1.5;
+  }
+
+  .app-wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 6px;
+    white-space: nowrap;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: .12em;
+  }
+
+  .app-wordmark svg { color: var(--color-accent); }
+
+  @media (max-width: 1100px) { .app-wordmark { display: none; } }
 
   .title-rename-btn {
     opacity: 0;
@@ -1362,11 +1403,11 @@ html.dark {
   .seg-active {
     background: var(--color-elevated);
     color: var(--color-ink);
-    box-shadow: 0 0.5px 0.5px oklch(0.32 0.02 264 / 0.18), 0 1px 2px oklch(0.32 0.02 264 / 0.08);
+    box-shadow: var(--shadow-card);
   }
 
   html.dark .seg-active {
-    background: oklch(0.34 0.012 264);
+    background: var(--color-elevated);
   }
 
   .banner-note {
@@ -1576,30 +1617,20 @@ html.dark {
   }
 
   .composer-well {
-    border-radius: 16px;
+    border-radius: 12px;
     background: var(--color-elevated);
     box-shadow: var(--shadow-composer);
     transition: box-shadow 0.16s ease;
   }
 
-  .composer-well :focus,
-  .composer-well :focus-visible {
+  .composer-well textarea:focus,
+  .composer-well textarea:focus-visible {
     outline: none;
     box-shadow: none;
   }
 
   .composer-well:focus-within {
-    box-shadow:
-      0 0 0 0.5px color-mix(in oklch, var(--color-ink) 28%, transparent),
-      0 1px 2px oklch(0.32 0.02 264 / 0.05),
-      0 10px 28px oklch(0.32 0.02 264 / 0.07);
-  }
-
-  html.dark .composer-well:focus-within {
-    box-shadow:
-      0 0 0 0.5px oklch(1 0 0 / 0.22),
-      0 1px 2px oklch(0 0 0 / 0.24),
-      0 12px 28px oklch(0 0 0 / 0.36);
+    box-shadow: 0 0 0 2px var(--color-accent), 0 5px 18px color-mix(in srgb, var(--color-accent) 8%, transparent);
   }
 
   .composer-toolbar {
@@ -2000,6 +2031,66 @@ html.desktop[data-platform="darwin"] .traffic-inline {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-mute);
+}
+
+.markdown-code-block {
+  min-width: 0;
+  margin: 1.2em 0;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-canvas);
+}
+
+.markdown-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-fill);
+}
+
+.markdown-code-head .markdown-pre-lang { margin: 0; }
+.markdown-code-head button { padding: 3px 6px; border-radius: 5px; color: var(--color-mute); font-size: 11px; }
+.markdown-code-head button:hover { background: var(--color-fill-strong); color: var(--color-ink); }
+.markdown-code-block > .markdown-pre { margin: 0; padding: 14px 16px; border-radius: 0; }
+
+/* Conversation prose has a reading rhythm; process records stay secondary. */
+.conversation-log { padding-block: 28px; row-gap: 24px; }
+.conversation-user { margin-top: 12px; min-width: 0; font-size: 14px; line-height: 1.75; letter-spacing: 0; overflow-wrap: anywhere; }
+.conversation-assistant { padding-block: 4px; }
+.conversation-assistant .markdown { min-width: 0; font-size: 14px; line-height: 1.85; letter-spacing: 0; overflow-wrap: anywhere; }
+.conversation-assistant .markdown p { margin: .95em 0; font-size: inherit; line-height: inherit; }
+.conversation-assistant .markdown h1, .conversation-assistant .markdown h2, .conversation-assistant .markdown h3, .conversation-assistant .markdown h4 { margin: 1.8em 0 .65em; font-weight: 650; line-height: 1.5; letter-spacing: 0; }
+.conversation-assistant .markdown h1 { font-size: 23px; }
+.conversation-assistant .markdown h2 { font-size: 20px; }
+.conversation-assistant .markdown h3 { font-size: 17px; }
+.conversation-assistant .markdown h4 { font-size: 15px; }
+.conversation-assistant .markdown > :first-child { margin-top: 0; }
+.conversation-assistant .markdown > :last-child { margin-bottom: 0; }
+.conversation-assistant .markdown ul, .conversation-assistant .markdown ol { margin: .9em 0; padding-left: 1.5em; }
+.conversation-assistant .markdown li { margin: .4em 0; padding-left: .15em; font-size: inherit; line-height: inherit; }
+.conversation-assistant .markdown li > p { margin: .4em 0; }
+.conversation-assistant .markdown li > ul, .conversation-assistant .markdown li > ol { margin: .5em 0; }
+.conversation-assistant .markdown blockquote { margin: 1.2em 0; padding: 2px 16px; border-left-width: 2px; background: var(--color-fill); border-radius: 0 6px 6px 0; }
+.conversation-assistant .markdown table { margin: 1.2em 0; font-size: 13px; line-height: 1.65; }
+.conversation-assistant .markdown th, .conversation-assistant .markdown td { padding: 8px 12px; }
+.conversation-assistant .markdown input[type="checkbox"] { width: 14px; height: 14px; min-height: 14px; }
+.conversation-tool { min-width: 0; border: 1px solid var(--color-line); background: var(--color-canvas); }
+.conversation-tool-compact { border: 0; background: transparent; }
+.conversation-tool > button, .conversation-tool > div:first-child > button { min-height: 36px; }
+.conversation-log .thinking-body { max-height: 320px; overflow: auto; overflow-wrap: anywhere; padding: 12px 16px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-canvas); color: var(--color-mute); font-family: var(--font-sans); font-size: 13px; line-height: 1.8; }
+@media (max-width: 640px) {
+  .conversation-log { padding-block: 20px; row-gap: 20px; }
+  .conversation-assistant .markdown h1 { font-size: 21px; }
+  .conversation-assistant .markdown h2 { font-size: 19px; }
+  .conversation-assistant .markdown h3 { font-size: 16px; }
+}
+@media (pointer: coarse) {
+  .conversation-tool > button, .conversation-tool > div:first-child > button { min-height: 40px; }
 }
 
 .hljs-keyword,

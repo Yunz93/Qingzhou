@@ -5,8 +5,8 @@ export const LEGACY_THEME_STORAGE_KEY = "mowen.theme";
 export const LEGACY_OHMYPI_THEME_STORAGE_KEY = "ohmypi.theme";
 export const THEME_EVENT = "qingzhou-theme";
 
-const DARK_THEME_COLOR = "#1c1c1e";
-const LIGHT_THEME_COLOR = "#f5f5f7";
+const DARK_THEME_COLOR = "#18211c";
+const LIGHT_THEME_COLOR = "#f7f8f5";
 
 export function readTheme(): Theme {
   try {
@@ -30,10 +30,12 @@ export function readTheme(): Theme {
 
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
+  const color = theme === "dark" ? DARK_THEME_COLOR : LIGHT_THEME_COLOR;
   root.classList.toggle("dark", theme === "dark");
   root.style.colorScheme = theme;
+  root.style.background = color;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", theme === "dark" ? DARK_THEME_COLOR : LIGHT_THEME_COLOR);
+  if (meta) meta.setAttribute("content", color);
 }
 
 export function persistTheme(theme: Theme): void {

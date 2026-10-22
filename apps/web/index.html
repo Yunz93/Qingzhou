@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#f5f5f7" />
+    <meta name="theme-color" content="#f7f8f5" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <title>轻舟</title>
     <script>
@@ -19,7 +19,8 @@
         var dark = theme === "dark";
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = theme;
-        document.documentElement.style.background = dark ? "#1c1c1e" : "#f5f5f7";
+        document.documentElement.style.background = dark ? "#18211c" : "#f7f8f5";
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", dark ? "#18211c" : "#f7f8f5");
 
         // Mark Electron shell before React mounts so macOS traffic-light inset
         // CSS applies on first paint (local `pnpm desktop:dev` included).

@@ -745,7 +745,7 @@ test("four requirement tabs preserve PRD drafts and show real test changes and c
   await page.setViewportSize({ width: 1440, height: 1000 });
   await setupWorkflowProject(page);
   await page.getByRole("button", { name: "编排设置", exact: true }).click();
-  await page.getByLabel("命令", { exact: true }).fill("node --test sample.test.cjs");
+  await page.getByLabel("命令", { exact: true }).fill("node --test --test-reporter=tap sample.test.cjs");
   await page.getByRole("button", { name: "保存编排设置" }).click();
   await createRequirement(page, "四页签审阅", "WRITE:sample.test.cjs:require('node:test')('新增用例', () => { require('node:assert/strict').equal(1 + 1, 2); });");
   await page.getByRole("button").filter({ has: page.getByText("四页签审阅", { exact: true }) }).click();

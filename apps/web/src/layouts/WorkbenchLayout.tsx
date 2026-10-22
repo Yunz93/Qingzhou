@@ -991,7 +991,7 @@ export function WorkbenchLayout() {
             />
           ) : (
             <div className="mx-auto flex h-full max-w-[420px] flex-col items-center justify-center px-6 pb-16 text-center">
-              <p className="text-[28px] font-semibold tracking-tight text-ink">你好，我是轻舟</p>
+              <h1 className="display-title text-[30px] text-ink">你好，我是轻舟</h1>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
@@ -1032,7 +1032,7 @@ export function WorkbenchLayout() {
                       setCreating(true);
                     }}
                   >
-                    {item.label}
+                    {item.label}<ArrowUpRight size={14} aria-hidden="true" />
                   </button>
                 ))}
               </div>

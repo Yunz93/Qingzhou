@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { ToolExecution } from "@qingzhou/protocol";
 import { toolGroupLabel } from "../../lib/tool-groups";
@@ -11,9 +11,11 @@ type Props = {
 };
 
 export function ToolGroupRow({ tools, taskId = null, onOpen }: Props) {
-  const [open, setOpen] = useState(tools.some((tool) => tool.status === "failed" || tool.isError));
+  const failed = tools.some((tool) => tool.status === "failed" || tool.isError);
+  const [open, setOpen] = useState(failed);
+  useEffect(() => { if (failed) setOpen(true); }, [failed]);
   return (
-    <div className="overflow-hidden rounded-[10px] bg-fill">
+    <div className="conversation-tool conversation-tool-group overflow-hidden rounded-[10px] bg-fill">
       <button
         type="button"
         className="pressable flex min-h-8 w-full items-center gap-2.5 px-3 py-1.5 text-left"
