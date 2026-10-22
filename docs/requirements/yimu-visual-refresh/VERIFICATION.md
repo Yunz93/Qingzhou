@@ -76,3 +76,19 @@
 - 未运行原生 macOS / Windows 桌面；窗口交通灯通过既有模拟用例验证，Electron 源码通过类型检查。
 - 中文宋体取决于操作系统本地字体，未引入远程字体或生成插画。
 - 用户已明确授权本轮 Git 合并；实际提交与远端状态以 Git 为准。不生成平台验收、PRD 固化或发版记录。
+
+## v0.1.27 本地发版检查
+
+用户在合并后另行明确授权“发布新版本”。以 `122f3b6` 为源码基线，仅同步五个包的版本、更新日志、标签示例和本节记录。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `pnpm exec tsx scripts/verify-release-version.ts v0.1.27` | 五个包的正式版本与标签一致 |
+| `pnpm lint` | 通过 |
+| `pnpm typecheck` | protocol、server、web、desktop 通过 |
+| `pnpm test` | 486 通过，3 个 Windows 专用用例在 Linux 跳过 |
+| `pnpm test:integration` | 101 通过，1 个 Windows 安装子进程专用用例在 Linux 跳过，共 5 个文件通过 |
+
+日志位于 `/workspace/scratch/qingzhou-v0.1.27-{lint,typecheck,unit,integration}.log`。本次没有产品源码变化，沿用前述完整 56 项浏览器结果及 `122f3b6` 已通过的远端 CI，不额外重复本地 E2E。
+
+原生 macOS arm64、macOS x64 与 Windows x64 的检查及打包由正式标签触发的 Release 工作流执行；真实状态以 [Actions](https://github.com/Yunz93/Qingzhou/actions/workflows/release.yml) 和 [v0.1.27 Release](https://github.com/Yunz93/Qingzhou/releases/tag/v0.1.27) 为准，本文不提前声明原生打包或发布成功。
