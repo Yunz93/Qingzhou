@@ -92,3 +92,5 @@
 日志位于 `/workspace/scratch/qingzhou-v0.1.27-{lint,typecheck,unit,integration}.log`。本次没有产品源码变化，沿用前述完整 56 项浏览器结果及 `122f3b6` 已通过的远端 CI，不额外重复本地 E2E。
 
 原生 macOS arm64、macOS x64 与 Windows x64 的检查及打包由正式标签触发的 Release 工作流执行；真实状态以 [Actions](https://github.com/Yunz93/Qingzhou/actions/workflows/release.yml) 和 [v0.1.27 Release](https://github.com/Yunz93/Qingzhou/releases/tag/v0.1.27) 为准，本文不提前声明原生打包或发布成功。
+
+后续结果：`v0.1.27` [发布工作流](https://github.com/Yunz93/Qingzhou/actions/runs/39806202291)已取消，未创建正式 Release。浏览器检查发现并复现了模式 / 审批的回写问题，修复后改用 `v0.1.28` 发布，实际验证见[关联修复记录](../policy-acknowledgement/VERIFICATION.md)。

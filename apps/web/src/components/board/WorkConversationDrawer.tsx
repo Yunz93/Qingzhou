@@ -208,7 +208,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull, embedded = f
             void socketClient.send("model.default.set", { provider, modelId }, task.id)
           }
           onThinking={(level: ThinkingLevel) => void socketClient.send("thinking.set", { level }, task.id)}
-          onPolicy={(mode: InteractionMode, approvalPolicy: ApprovalPolicy) => { setIntent(mode === "agent" ? "execute" : "discussion"); void socketClient.send("task.policy.set", { mode, approvalPolicy }, task.id).catch((error) => reportRequestError(error)); }}
+          onPolicy={(mode: InteractionMode, approvalPolicy: ApprovalPolicy) => { setIntent(mode === "agent" ? "execute" : "discussion"); return socketClient.send("task.policy.set", { mode, approvalPolicy }, task.id); }}
           onImages={(picked) => void uploadImages(picked)}
           onRemoveImage={(id) =>
             setImages((current) => {

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApprovalPolicy, InteractionMode, ThinkingLevel } from "@qingzhou/protocol";
 import { approvalPolicies, interactionModes } from "@qingzhou/protocol";
 import { Check, ChevronDown, RotateCw, Star, Zap } from "lucide-react";
+import { reportRequestError } from "../../lib/client-error";
 import {
   THINKING_LABEL,
   capsuleModelLabel,
@@ -25,7 +26,7 @@ type Props = {
   defaultModelId?: string | null;
   thinkingLevel: ThinkingLevel;
   thinkingLevels: ThinkingLevel[];
-  onPolicy: (mode: InteractionMode, approvalPolicy: ApprovalPolicy) => void;
+  onPolicy: (mode: InteractionMode, approvalPolicy: ApprovalPolicy) => Promise<unknown>;
   onModel: (provider: string, modelId: string) => void;
   onDefaultModel?: (provider: string, modelId: string) => void;
   onThinking: (level: ThinkingLevel) => void;
@@ -127,6 +128,8 @@ export function ComposerCapsules({
   const [pendingThinking, setPendingThinking] = useState<ThinkingLevel | null>(null);
   const [pendingMode, setPendingMode] = useState<InteractionMode | null>(null);
   const [pendingPolicy, setPendingPolicy] = useState<ApprovalPolicy | null>(null);
+  const policyRequest = useRef(0);
+  const [acknowledgedPolicy, setAcknowledgedPolicy] = useState(0);
   const [agentPolicy, setAgentPolicy] = useState<ApprovalPolicy>(
     approvalPolicy === "read_only" && mode !== "agent" ? "auto" : approvalPolicy,
   );
@@ -186,22 +189,30 @@ export function ComposerCapsules({
   }, [thinkingLevel, pendingThinking]);
 
   useEffect(() => {
-    if (pendingMode !== null && pendingMode === mode) setPendingMode(null);
-  }, [mode, pendingMode]);
-
-  useEffect(() => {
-    if (pendingPolicy !== null && pendingPolicy === approvalPolicy) setPendingPolicy(null);
-  }, [approvalPolicy, pendingPolicy]);
+    // An unchanged prop can be the old value, not an acknowledgement of a rapid reversal.
+    if (acknowledgedPolicy !== policyRequest.current || pendingMode !== mode || pendingPolicy !== approvalPolicy) return;
+    setPendingMode(null);
+    setPendingPolicy(null);
+  }, [acknowledgedPolicy, mode, approvalPolicy, pendingMode, pendingPolicy]);
 
   useEffect(() => {
     if ((pendingMode ?? mode) === "agent") setAgentPolicy(pendingPolicy ?? approvalPolicy);
   }, [mode, approvalPolicy, pendingMode, pendingPolicy]);
 
   const applyPolicy = (nextMode: InteractionMode, nextPolicy: ApprovalPolicy) => {
+    const request = ++policyRequest.current;
     setPendingMode(nextMode);
     setPendingPolicy(nextPolicy);
     if (nextMode === "agent") setAgentPolicy(nextPolicy);
-    onPolicy(nextMode, nextPolicy);
+    void onPolicy(nextMode, nextPolicy).then(() => {
+      if (request === policyRequest.current) setAcknowledgedPolicy(request);
+    }, (error: unknown) => {
+      reportRequestError(error, "保存模式与审批失败");
+      // Allow retry using saved values; older failures must not clear a newer choice.
+      if (request !== policyRequest.current) return;
+      setPendingMode(null);
+      setPendingPolicy(null);
+    });
   };
 
   if (slot === "mode") {

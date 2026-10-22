@@ -56,3 +56,5 @@
 流式和完成正文使用同一套稳定 Markdown 组件，生成阶段延后更新正文并跳过代码高亮，完成后高亮。代码块展示语言并支持复制原始代码。思考与成功只读操作按需展开，异步收到失败时自动展示输出，用户仍可收起。安全 URL、HTML 转义、工作区媒体边界和既有草稿、滚动、搜索及审批契约继续保留。
 
 代码入口：`components/timeline/AssistantMarkdown.tsx`、`ConversationTimeline.tsx`、`ToolExecutionRow.tsx`、`ToolGroupRow.tsx`、`lib/clipboard.ts` 和 `styles/app.css`。验证入口：`conversation-rendering.spec.ts`、`visual-theme.spec.ts` 及既有前端交互 / 工作台 E2E；完整结果和真实模型、原生桌面边界见[验证记录](../requirements/yimu-visual-refresh/VERIFICATION.md)。
+
+模式与审批的连续选择以最新保存请求为准。仅该请求已确认且服务器模式 / 审批都与选择一致时清除本地等待状态；较早请求不能覆盖最新选择，保存失败恢复已保存值并可重试。自由对话与需求内嵌对话均传递实际 RPC Promise。来源：[切换回写修复](../requirements/policy-acknowledgement/PRD.md)，回归为 `frontend-interactions.spec.ts` 的延迟确认与失败重试用例，不改变服务端审批语义。

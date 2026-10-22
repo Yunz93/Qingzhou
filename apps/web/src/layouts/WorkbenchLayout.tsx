@@ -1105,7 +1105,7 @@ export function WorkbenchLayout() {
               void socketClient.send("thinking.set", { level }, task.id)
             }
             onPolicy={(nextMode: InteractionMode, nextPolicy: ApprovalPolicy) =>
-              void socketClient.send("task.policy.set", { mode: nextMode, approvalPolicy: nextPolicy }, task.id)
+              socketClient.send("task.policy.set", { mode: nextMode, approvalPolicy: nextPolicy }, task.id)
             }
             onImages={(files) => void uploadImages(files)}
             onRemoveImage={removeComposerImage}

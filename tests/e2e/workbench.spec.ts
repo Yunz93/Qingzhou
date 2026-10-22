@@ -47,6 +47,7 @@ test("workbench core loop", async ({ page }) => {
   await page.getByRole("button", { name: "创建对话" }).click();
   await expect(page.getByRole("banner").getByText("E2E task")).toBeVisible();
   await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
+  await expect(page.getByRole("complementary", { name: "会话", exact: true }).getByRole("button").filter({ hasText: "E2E task" }).first()).toContainText("就绪");
 
   await page.getByLabel("输入消息").fill("hello from e2e please stream this slowly for steer");
   await page.getByRole("button", { name: "发送" }).click();
