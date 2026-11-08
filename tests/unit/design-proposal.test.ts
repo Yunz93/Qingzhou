@@ -48,4 +48,12 @@ describe("structured design proposals", () => {
     expect(extractDesignProposal("```json\n{}\n".repeat(20_000))).toBeNull();
     expect(performance.now() - start).toBeLessThan(1000);
   });
+  it("does not treat Unicode whitespace as a Markdown fence suffix", () => {
+    const input = proposal();
+    const example = `\`\`\`json\n${JSON.stringify(input)}\n\`\`\``;
+    for (const whitespace of ["\u00a0", "\ufeff"]) {
+      expect(extractDesignProposal(`~~~markdown\n~~~${whitespace}\n${example}\n~~~`)).toBeNull();
+      expect(extractDesignProposal(`\`\`\`json${whitespace}\n${JSON.stringify(input)}\n\`\`\``)).toBeNull();
+    }
+  });
 });

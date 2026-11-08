@@ -10,6 +10,8 @@
 - 后续复核复现了两处边界：外层 Markdown 代码块中的 JSON 示例被误识别，20,000 个未闭合围栏导致约 4.4 秒反复扫描。补充的两项回归先失败，再将解析改为逐行跟踪外层反引号/波浪线围栏；七项提案单测全部通过，耗时 13 毫秒。身份和 schema 校验保持原有边界。
 - 主工作区另有未提交的桌面包体任务。本次只操作当前独立工作区，不暂存、移动或合入其文件。
 
-整合验证：`107e883` 的完整非 visual workbench 端到端测试 65 项通过；上述后续修复通过 `pnpm lint`、`pnpm typecheck`、`pnpm test`（502 通过，3 项 Windows 专用测试跳过），并重新构建后通过 Markdown 阅读、结构化提案采用、文档回读三项相关端到端回归。新增回归的失败与通过日志保存在本地忽略目录 `.qingzhou-test/productize-refactor/logs/`，远端提交的完整 CI 另按 Actions 记录核对。
+整合验证：`107e883` 的完整非 visual workbench 端到端测试 65 项通过，远端完整 CI 也通过（Actions run `42461973180`）。`540640e` 的后续修复通过 `pnpm lint`、`pnpm typecheck`、`pnpm test`（502 通过，3 项 Windows 专用测试跳过），并重新构建后通过 Markdown 阅读、结构化提案采用、文档回读三项相关端到端回归。
+
+`540640e` 复核又以实际 Markdown 渲染复现了 Unicode 空白伪闭合围栏：`trim()` 吞掉 NBSP / U+FEFF 后，会提前离开外层示例。新增回归先失败，再将语言和闭合后缀匹配限定为 ASCII 空格 / Tab；提案单测 8 项通过（12 毫秒），lint、类型检查和完整单测再次通过（503 通过，3 项 Windows 专用测试跳过）。被替代候选的在途 CI 已取消，新候选另跑完整 CI。新增回归的失败与通过日志保存在本地忽略目录 `.qingzhou-test/productize-refactor/logs/`，最终远端状态按确切提交的 Actions 记录核对。
 
 本次不发布新版本、不打标签或替换安装版。组合检查、候选提交和远端 CI 以实际 Git / Actions 记录为准；实现阶段的旧测试结果不冒充整合后的验证。
