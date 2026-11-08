@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { FolderPicker } from "./FolderPicker";
 import { isDesktopApp } from "../../desktop-bridge";
-import { authStatusLabel, findAuthEntry, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthMode } from "../../lib/settings-auth";
+import { authEntryStatusLabel, findAuthEntry, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthEntryLike, type AuthMode } from "../../lib/settings-auth";
 
 type WizardAuthMode = Exclude<AuthMode, "env">;
 
@@ -24,7 +24,7 @@ export type SetupStatus = {
   needsSetup: boolean;
   piBundled?: boolean;
   canInstallPi?: boolean;
-  authEntries?: Array<{ id: string; label: string; kind: "api_key" | "oauth" | "other" }>;
+  authEntries?: AuthEntryLike[];
   hasModelsFile?: boolean;
   modelsFilePath?: string;
   modelCount?: number;
@@ -359,7 +359,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                     <div className="min-w-0">
                       <p className="text-sm text-ink">{activeItem.label}</p>
                       <p className="text-[12px] text-mute">
-                        {authStatusLabel(activeEntry?.kind, {
+                        {authEntryStatusLabel(activeEntry, {
                           oauth: authMode === "oauth",
                           apiKey: authMode === "api_key",
                         })}
@@ -482,7 +482,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                 刷新
               </button>
               {authMode === "api_key" || !hasExistingLogin ? <button type="button" className="pressable btn btn-ghost" onClick={() => setStep("workspace")}>
-                {hasExistingLogin ? "使用已有登录" : "暂时跳过"}
+                {hasExistingLogin ? "使用现有连接" : "暂时跳过"}
               </button> : null}
               {authMode === "api_key" ? (
                 <button
@@ -503,7 +503,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                   disabled={busy || (!hasExistingLogin && activeEntry?.kind !== "oauth")}
                   onClick={() => setStep("workspace")}
                 >
-                  {hasExistingLogin ? "使用已有登录" : "继续"}
+                  {hasExistingLogin ? "使用现有连接" : "继续"}
                 </button>
               )}
             </>

@@ -1,8 +1,7 @@
 import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
-import { FolderPicker } from "../setup/FolderPicker";
-import { isDesktopApp } from "../../desktop-bridge";
+import { FolderField } from "../setup/FolderField";
 
 type Props = {
   defaultCwd: string;
@@ -12,12 +11,10 @@ type Props = {
 };
 
 export function NewWorkProjectDialog({ defaultCwd, defaultName = "", onCancel, onCreate }: Props) {
-  const desktop = isDesktopApp();
   const [cwd, setCwd] = useState(defaultCwd);
   const [name, setName] = useState(defaultName);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"browse" | "type">("browse");
 
   const panelRef = useRef<HTMLFormElement>(null);
   useDialogLayer(panelRef, () => { if (!busy) onCancel(); });
@@ -55,50 +52,14 @@ export function NewWorkProjectDialog({ defaultCwd, defaultName = "", onCancel, o
             <h2 id="new-work-project-title" className="dialog-title">
               启动项目
             </h2>
-            <p className="dialog-copy">选一个文件夹作为项目。之后在里面创建任务、追加内容，直到任务闭环。</p>
+            <p className="dialog-copy">选择项目文件夹，记录需求并持续推进。</p>
           </div>
           <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={() => { if (!busy) onCancel(); }}>
             <X size={16} />
           </button>
         </div>
         <div className="dialog-body space-y-3">
-          {desktop ? null : (
-            <div className="seg">
-              <button
-                type="button"
-                className={`pressable btn ${mode === "browse" ? "seg-active" : "text-mute"}`}
-                onClick={() => setMode("browse")}
-              >
-                浏览
-              </button>
-              <button
-                type="button"
-                className={`pressable btn ${mode === "type" ? "seg-active" : "text-mute"}`}
-                onClick={() => setMode("type")}
-              >
-                输入路径
-              </button>
-            </div>
-          )}
-          {desktop || mode === "browse" ? (
-            <FolderPicker initialPath={defaultCwd || undefined} selectedPath={cwd} onSelect={setCwd} />
-          ) : (
-            <div>
-              <label className="block text-sm text-mute" htmlFor="work-project-cwd">
-                项目文件夹
-              </label>
-              <input
-                id="work-project-cwd"
-                value={cwd}
-                onChange={(event) => {
-                  setCwd(event.target.value);
-                  setError("");
-                }}
-                className="field mt-1 w-full font-mono text-sm"
-                required
-              />
-            </div>
-          )}
+          <FolderField label="项目文件夹" value={cwd} onChange={(next) => { setCwd(next); setError(""); }} />
           <div>
             <label className="block text-sm text-mute" htmlFor="work-project-name">
               项目名称

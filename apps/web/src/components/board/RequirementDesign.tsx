@@ -1,23 +1,19 @@
+import { MessageSquare } from "lucide-react";
 import { RequirementModuleChanges } from "./RequirementModuleChanges";
 import { DocumentReader } from "./DocumentReader";
 import { ReviewActions } from "./ReviewActions";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { requirementFiles, requirementDesignPath, type RequirementPrd, type WorkflowProjectState, type WorkItemSummary } from "@qingzhou/protocol";
 import { socketClient } from "../../transport/socket-client";
 import { useAgentStore } from "../../stores/agent-store";
 import { useConversationDraft } from "../../lib/conversation-draft";
 import { WorkflowModal } from "./WorkflowTabs";
-import { isSavedPrdDraft, moduleBodies } from "../../lib/prd-draft";
+import { moduleBodies, type PrdDraft } from "../../lib/prd-draft";
+import { usePrdDraft } from "../../hooks/usePrdDraft";
+import { prdFor } from "../../lib/requirement-planning";
+import { useWorkflowAction } from "../../hooks/useWorkflowAction";
 
-const message = (reason: unknown) => reason instanceof Error ? reason.message : "操作失败，请重试";
-export const prdFor = (state: WorkflowProjectState, id: string) => state.prds?.find((prd) => prd.id === state.plans?.find((plan) => plan.itemId === id)?.currentPrdId);
-export const planningReady = (state: WorkflowProjectState, id: string) => {
-  const plan = state.plans?.find((entry) => entry.itemId === id);
-  const prd = prdFor(state, id);
-  const scope = state.scopes.filter((entry) => entry.itemId === id).at(-1);
-  return !plan || (!!prd?.confirmedAt && !prd.frozenAt && prd.scopeId === scope?.id && plan.confirmedScopeId === scope?.id && prd.moduleChanges.every((change) => change.baseRevisionId === (prd.codeBaseline ? prd.codeBaseline.moduleRevisionIds[change.moduleId] ?? null : state.moduleRevisions?.filter((entry) => entry.moduleId === change.moduleId).at(-1)?.id ?? null)));
-};
 export function RequirementDesign({ state, item, onRefresh, onScope, onConversation, actionsTarget, executionActions, view = "design", onDesign }: {
   view?: "design" | "modules"; onDesign: () => void; actionsTarget?: HTMLElement | null; executionActions?: ReactNode;
   state: WorkflowProjectState; item: WorkItemSummary; onRefresh: () => Promise<void>; onScope: () => void; onConversation: () => void;
@@ -26,13 +22,9 @@ export function RequirementDesign({ state, item, onRefresh, onScope, onConversat
   const plan = state.plans?.find((entry) => entry.itemId === item.id);
   const scope = state.scopes.filter((entry) => entry.itemId === item.id).at(-1);
   const prd = prdFor(state, item.id);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { busy, error, run } = useWorkflowAction(item.id);
   const [child, setChild] = useState(false);
-  const send = async (type: Parameters<typeof socketClient.send>[0], payload: object) => {
-    setBusy(true); setError("");
-    try { await socketClient.send(type, payload); await onRefresh(); } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
-  };
+  const send = (type: Parameters<typeof socketClient.send>[0], payload: object) => run(() => socketClient.send(type, payload), onRefresh);
   const active = state.tickets.some((entry) => entry.itemId === item.id && ["running", "queued"].includes(entry.status))
     || state.verifications.some((entry) => entry.itemId === item.id && ["running", "queued"].includes(entry.status))
     || state.integrations.some((entry) => entry.itemId === item.id && ["queued", "preparing", "conflicts", "verifying", "ready", "merging"].includes(entry.status));
@@ -49,7 +41,6 @@ export function RequirementDesign({ state, item, onRefresh, onScope, onConversat
   </section>;
 }
 
-type Draft = { expectedPrdId: string | null; content: string; reason: string; moduleChanges: RequirementPrd["moduleChanges"] };
 function PrdEditor({ state, item, prd, scopeConfirmed, active, onRefresh, onConversation, onScope, onConfirmScope, scopeReady, actionsTarget, executionActions, view, onDesign }: {
   view: "design" | "modules"; onDesign: () => void; onScope: () => void; onConfirmScope: () => Promise<void>; scopeReady: boolean; actionsTarget?: HTMLElement | null; executionActions?: ReactNode;
   state: WorkflowProjectState; item: WorkItemSummary; prd?: RequirementPrd; scopeConfirmed: boolean; active: boolean; onRefresh: () => Promise<void>; onConversation: () => void;
@@ -57,7 +48,7 @@ function PrdEditor({ state, item, prd, scopeConfirmed, active, onRefresh, onConv
   const storageKey = `qingzhou:prd-draft:${item.id}`;
   const baseline = state.designBaselines?.[item.id];
   const moduleCurrent = (id: string) => baseline ? state.moduleRevisions?.find((entry) => entry.id === baseline.moduleRevisionIds[id]) : state.moduleRevisions?.filter((entry) => entry.moduleId === id).at(-1);
-  const initial = (): Draft => {
+  const initial = (): PrdDraft => {
     const origin = state.prds?.find((entry) => entry.id === item.source?.prdId);
     const moduleIds = item.source?.moduleIds ?? origin?.moduleChanges.map((change) => change.moduleId) ?? [];
     return { expectedPrdId: prd?.id ?? null, content: prd?.content ?? `# ${item.title}\n\n## 目标与边界\n${item.description}\n\n## 交互与实现方案\n\n## 验收与回归\n${item.acceptanceCriteria}`, reason: "", moduleChanges: prd?.moduleChanges ?? moduleIds.map((moduleId) => {
@@ -65,52 +56,47 @@ function PrdEditor({ state, item, prd, scopeConfirmed, active, onRefresh, onConv
       return { moduleId, baseRevisionId: current?.id ?? null, content: current?.content || "待补充模块的完整设计" };
     }) };
   };
-  const [draft, setDraft] = useState<Draft>(() => {
-    try {
-      const saved = sessionStorage.getItem(storageKey);
-      return saved && !isSavedPrdDraft(saved, state.prds ?? []) ? JSON.parse(saved) as Draft : initial();
-    } catch { return initial(); }
-  });
-  const previousPrd = useRef(prd);
-  const initialDraft = useRef(initial());
-  useEffect(() => {
-    const previous = previousPrd.current; previousPrd.current = prd;
-    if (!prd || previous?.id === prd.id) return;
-    const before = previous ?? initialDraft.current;
-    setDraft((current) => current.expectedPrdId === (previous?.id ?? null) && !current.reason
-      && current.content === before.content && moduleBodies(current.moduleChanges) === moduleBodies(before.moduleChanges)
-      ? { expectedPrdId: prd.id, content: prd.content, reason: "", moduleChanges: prd.moduleChanges } : current);
-  }, [prd]);
+  const local = usePrdDraft(storageKey, initial(), prd, state.prds ?? []);
+  const { draft, patch } = local;
   const editor = useConversationDraft(item.taskId, item.id);
-  const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { try { sessionStorage.setItem(storageKey, JSON.stringify(draft)); } catch { /* Optional local recovery. */ } }, [draft, storageKey]);
+  const { busy, error, setError, run } = useWorkflowAction(item.id);
   const stale = draft.expectedPrdId !== (prd?.id ?? null);
   const dirty = draft.content !== (prd?.content ?? "") || moduleBodies(draft.moduleChanges) !== moduleBodies(prd?.moduleChanges ?? []);
   const scope = state.scopes.filter((entry) => entry.itemId === item.id).at(-1)!;
-  const patch = (value: Partial<Draft>) => setDraft((previous) => ({ ...previous, ...value }));
-  const send = async (confirm: boolean) => {
-    setBusy(true); setError("");
-    try {
-      if (confirm) await socketClient.send("workflow.prd.confirm", { id: item.id, prdId: prd!.id });
-      else {
-        const result = await socketClient.send<{ prd: RequirementPrd }>("workflow.prd.save", { id: item.id, scopeId: scope.id, ...draft });
-        setDraft((current) => ({ ...current, expectedPrdId: result.prd.id,
-          moduleChanges: moduleBodies(current.moduleChanges) === moduleBodies(draft.moduleChanges) ? result.prd.moduleChanges : current.moduleChanges,
-          reason: current.reason === draft.reason ? "" : current.reason }));
-      }
-      await onRefresh();
-    } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
-  };
+  const send = (confirm: boolean) => run(async () => {
+    if (confirm) await socketClient.send("workflow.prd.confirm", { id: item.id, prdId: prd!.id });
+    else {
+      const submitted = draft;
+      const result = await socketClient.send<{ prd: RequirementPrd }>("workflow.prd.save", { id: item.id, scopeId: scope.id, ...submitted });
+      return { submitted, prd: result.prd };
+    }
+  }, async (result) => {
+    if (result) local.saved(result.submitted, result.prd);
+    await onRefresh();
+  });
+  if (local.recovery) return <>
+    <section hidden={view !== "design"} role="tabpanel" id="requirement-panel-design" aria-labelledby="requirement-tab-design" className="review-design-section">
+      <div className="review-toolbar"><h3>需求 PRD</h3></div>
+      <div className="review-document-body">
+        <div className="workflow-design-note" role="alert"><strong>本地 PRD 草稿无法读取</strong><p>原始内容已保留。重建前先保留恢复副本，不会更改已保存的 PRD。</p>
+          {local.recovery.raw !== null ? <><a className="btn btn-secondary" download={`prd-draft-${item.id}.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(local.recovery.raw)}`}>下载原始草稿</a><button className="btn btn-secondary" onClick={local.recover}>保留副本并重建草稿</button></> : null}
+          <button className="btn btn-ghost" onClick={local.reload}>重新读取草稿</button>
+          {local.storageError ? <p>{local.storageError}</p> : null}
+        </div>
+        <DocumentReader>{prd?.content ?? initial().content}</DocumentReader>
+      </div>
+    </section>
+    <RequirementModuleChanges state={state} prd={prd} changes={prd?.moduleChanges ?? []} visible={view === "modules"} actionsTarget={actionsTarget} onDesign={onDesign} />
+  </>;
   const proposal = state.proposals?.findLast((entry) => entry.itemId === item.id);
   const proposalCurrent = proposal && proposal.scopeId === scope.id && proposal.expectedPrdId === (prd?.id ?? null);
   return <><section hidden={view !== "design"} role="tabpanel" id="requirement-panel-design" aria-labelledby="requirement-tab-design" className="review-design-section">
-    <div className="review-toolbar"><h3>需求 PRD <span className="review-hint">{prd ? `v${prd.version} · ${prd.confirmedAt ? "已确认" : "待确认"}` : "草稿"}</span></h3><div className="review-toolbar-actions"><button className="btn btn-ghost" aria-pressed={!editing} onClick={() => setEditing(false)}>阅读</button><button className="btn btn-ghost" aria-pressed={editing} onClick={() => setEditing(true)}>编辑 PRD</button>{editing ? <button className="btn btn-ghost" aria-label="将草稿带入对话讨论" disabled={active} onClick={() => { const instruction = `请与我讨论以下 PRD，指出待确认的问题并给出完整修订稿。此轮仅讨论，先不要实施。\n\n${draft.content}`; editor.setText((current) => current ? `${current}\n\n${instruction}` : instruction); onConversation(); }}>讨论</button> : null}<button className="btn btn-ghost" onClick={onScope}>范围与来源</button></div></div>
+    <div className="review-toolbar"><h3>需求 PRD <span className="review-hint">{prd ? `v${prd.version} · ${prd.confirmedAt ? "已确认" : "待确认"}` : "草稿"}</span></h3><div className="review-toolbar-actions">{editing ? <button className="btn btn-ghost" onClick={() => setEditing(false)}>阅读</button> : <button className="btn btn-ghost" onClick={() => setEditing(true)}>编辑 PRD</button>}<button className="icon-btn" aria-label="将草稿带入对话讨论" title="讨论设计" disabled={active} onClick={() => { const instruction = `请与我讨论以下 PRD，指出待确认的问题并给出完整修订稿。此轮仅讨论，先不要实施。\n\n${draft.content}`; editor.setText((current) => current ? `${current}\n\n${instruction}` : instruction); onConversation(); }}><MessageSquare size={14} /></button></div></div>
     <div className="review-document-body">
     {!scopeConfirmed ? <p className="review-blocker">先确认需求范围。<button className="btn btn-ghost" onClick={onScope}>编辑需求范围</button></p> : null}
     {active ? <p className="review-hint">本轮进行中，草稿保留；结束后可保存设计调整。</p> : null}
-    {stale ? <p role="alert" className="workflow-design-note">PRD 已有新版本。你的草稿已保留，请合并后<button className="btn btn-ghost" onClick={() => patch({ expectedPrdId: prd?.id ?? null })}>保留草稿并采用新版依据</button><button className="btn btn-ghost" onClick={() => setDraft(initial())}>放弃草稿，载入最新 PRD</button></p> : null}
+    {stale ? <p role="alert" className="workflow-design-note">PRD 已有新版本。你的草稿已保留，请合并后<button className="btn btn-ghost" onClick={() => patch({ expectedPrdId: prd?.id ?? null })}>保留草稿并采用新版依据</button><button className="btn btn-ghost" onClick={() => local.replace(initial())}>放弃草稿，载入最新 PRD</button></p> : null}
     {proposal ? <details className="workflow-design-note"><summary>{proposalCurrent ? "Agent 结构化设计提案" : "历史 Agent 设计提案"}</summary>
       {!proposalCurrent ? <p role="alert">此提案依据已过期，请重新讨论；不能覆盖当前草稿。</p> : null}
       <details><summary>对照当前 PRD</summary><DocumentReader>{prd?.content || "尚无 PRD"}</DocumentReader></details><h4>提议的 PRD</h4><DocumentReader>{proposal.content}</DocumentReader>
@@ -124,11 +110,11 @@ function PrdEditor({ state, item, prd, scopeConfirmed, active, onRefresh, onConv
     {editing ? <><label className="block mt-4">本次设计变更说明<input className="field w-full mt-2" value={draft.reason} maxLength={2000} onChange={(event) => patch({ reason: event.target.value })} placeholder="说明本次设计调整" /></label><details className="mt-4"><summary>预览草稿</summary><DocumentReader>{draft.content}</DocumentReader></details></> : null}
     <details className="review-design-tools"><summary>模块、文件与草稿来源</summary>
     {prd?.document ? <button className="btn btn-ghost" disabled={busy || active || dirty || stale} onClick={() => {
-      setBusy(true); setError(""); void socketClient.send("workflow.prd.import", { id: item.id, source: "project" }).then(onRefresh).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
+      void run(() => socketClient.send("workflow.prd.import", { id: item.id, source: "project" }), onRefresh);
     }}>同步项目文件修改</button> : null}
     {baseline ? <details className="text-sm text-mute"><summary>代码基线 · {baseline.commit.slice(0, 8)}</summary><p className="mt-2">设计依据对应此代码版本；其他尚未合入的设计保留为来源参考。</p></details> : null}
     {state.workspaces.some((entry) => entry.itemId === item.id && !entry.removedAt) ? <details className="text-sm"><summary>工作区文档</summary><code className="block break-all mt-2">{requirementFiles(item.id, prd?.document?.workspacePath ?? prd?.document?.path).prd}</code><code className="block break-all">{requirementDesignPath(item.id)}</code><code className="block break-all">{requirementFiles(item.id, prd?.document?.workspacePath ?? prd?.document?.path).context}</code><p className="mt-2 text-mute">Agent 的文档修改会在本轮结束后读回为待确认版本；也可手动同步。</p><button className="btn btn-secondary mt-2" disabled={busy || active || !prd} onClick={() => {
-      setBusy(true); setError(""); void socketClient.send("workflow.prd.import", { id: item.id, source: "workspace" }).then(onRefresh).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
+      void run(() => socketClient.send("workflow.prd.import", { id: item.id, source: "workspace" }), onRefresh);
     }}>从工作区同步 PRD</button></details> : null}
 <details className="text-sm"><summary>其他草稿来源</summary><button className="btn btn-ghost mt-2" onClick={() => {
       const reply = item.taskId ? useAgentStore.getState().messagesByTask[item.taskId]?.findLast((entry) => entry.role === "assistant" && entry.text.trim()) : null;
@@ -147,19 +133,17 @@ function PrdEditor({ state, item, prd, scopeConfirmed, active, onRefresh, onConv
       })}
     </fieldset></details>
     </details>
+    {local.storageError ? <p className="workflow-design-note" role="status">{local.storageError}</p> : null}
     {error ? <p className="text-danger" role="alert">{error}</p> : null}
     </div>
-    <ReviewActions target={view === "design" ? actionsTarget : null}><span className="review-hint">{!scopeConfirmed ? "需求范围待确认" : dirty && prd ? "有未保存的设计调整" : prd?.confirmedAt ? "当前 PRD 已确认，可开始实施。" : "保存后确认具体设计版本"}</span><div className="review-action-buttons">
-      {!scopeConfirmed ? <button className="btn btn-primary" disabled={busy || active || !scopeReady} onClick={() => { setBusy(true); void onConfirmScope().finally(() => setBusy(false)); }}>确认这个需求范围</button> : <>
-      {editing ? (dirty || draft.reason || !prd ? <button className="btn btn-secondary" disabled={busy || active || stale || !draft.reason.trim()} onClick={() => void send(false)}>保存 PRD 新版本</button> : null) : <button className="btn btn-secondary" aria-label="将草稿带入对话讨论" disabled={active} onClick={() => {
-        const instruction = `请与我讨论以下 PRD，指出待确认的问题并给出完整修订稿。此轮仅讨论，先不要实施。\n\n${draft.content}`;
-        editor.setText((current) => current ? `${current}\n\n${instruction}` : instruction); onConversation();
-      }}>讨论设计</button>}
+    {(!scopeConfirmed || dirty || !!draft.reason || !prd?.confirmedAt || executionActions) ? <ReviewActions target={view === "design" ? actionsTarget : null}>{!scopeConfirmed || dirty || !prd?.confirmedAt ? <span className="review-hint">{!scopeConfirmed ? "需求范围待确认" : dirty && prd ? "有未保存的设计调整" : "保存后确认具体设计版本"}</span> : null}<div className="review-action-buttons">
+      {!scopeConfirmed ? <button className="btn btn-primary" disabled={busy || active || !scopeReady} onClick={() => void run(onConfirmScope)}>确认这个需求范围</button> : <>
+      {editing && (dirty || draft.reason || !prd) ? <button className="btn btn-secondary" disabled={busy || active || stale || !draft.reason.trim()} onClick={() => void send(false)}>保存 PRD 新版本</button> : null}
       {prd && !prd.confirmedAt ? <button className="btn btn-primary" disabled={busy || active || stale || dirty || prd.scopeId !== scope.id} onClick={() => void send(true)}>确认 PRD v{prd.version}</button> : null}
       {prd && (dirty || draft.reason) ? <button className="btn btn-ghost" disabled={busy} onClick={() => patch({ expectedPrdId: prd.id, content: prd.content, moduleChanges: prd.moduleChanges, reason: "" })}>放弃未保存的 PRD 修改</button> : null}
       {prd?.confirmedAt && !dirty && !stale ? executionActions : null}
       </>}
-    </div></ReviewActions>
+    </div></ReviewActions> : null}
   </section><RequirementModuleChanges state={state} prd={prd} changes={draft.moduleChanges} draft={dirty || !!draft.reason || !prd} stale={stale} visible={view === "modules"} actionsTarget={actionsTarget} onDesign={onDesign} /></>;
 }
 
@@ -171,11 +155,11 @@ export function ChildRequirement({ state, projectId, prd, moduleId, onClose, onC
   state: WorkflowProjectState; projectId: string; prd?: RequirementPrd; moduleId?: string; onClose: () => void; onCreated: (id: string) => Promise<void>;
 }) {
   const [title, setTitle] = useState(""); const [description, setDescription] = useState(""); const [criteria, setCriteria] = useState("");
-  const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const { busy, error, run } = useWorkflowAction(`${projectId}:${prd?.id ?? moduleId ?? "child"}`);
   const moduleIds = moduleId ? [moduleId] : prd?.moduleChanges.map((entry) => entry.moduleId) ?? [];
   return <WorkflowModal title="创建关联子需求" onClose={onClose}><form className="workflow-design" onSubmit={(event) => {
-    event.preventDefault(); setBusy(true); setError("");
-    void socketClient.send<{ item: { id: string } }>("workItem.create", { projectId, title, description, acceptanceCriteria: criteria, start: false, source: { prdId: prd?.id, moduleIds } }).then((result) => onCreated(result.item.id)).catch((reason) => setError(message(reason))).finally(() => setBusy(false));
+    event.preventDefault();
+    void run(() => socketClient.send<{ item: { id: string } }>("workItem.create", { projectId, title, description, acceptanceCriteria: criteria, start: false, source: { prdId: prd?.id, moduleIds } }), (result) => onCreated(result.item.id));
   }}><p className="text-sm text-mute">继承关联模块，独立确认与交付；原 PRD 保持固化。</p>{moduleIds.length ? <p className="text-sm">关联模块：{moduleIds.map((id) => state.modules?.find((entry) => entry.id === id)?.name).join("、")}</p> : null}
     <label>子需求标题<input className="field w-full" required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>子需求目标<textarea className="field w-full" rows={4} maxLength={20000} value={description} onChange={(event) => setDescription(event.target.value)} /></label><label>子需求验收标准<textarea className="field w-full" rows={3} maxLength={10000} value={criteria} onChange={(event) => setCriteria(event.target.value)} /></label>
     {error ? <p className="text-danger" role="alert">{error}</p> : null}<button type="submit" className="btn btn-primary" disabled={busy || !title.trim()}>创建子需求并开始讨论</button>

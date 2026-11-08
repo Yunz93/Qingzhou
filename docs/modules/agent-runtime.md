@@ -17,3 +17,9 @@ Agent 默认连续承担沟通、规划、实施、复核、集成各阶段，�
 - 验证：[任务服务](../../tests/unit/task-service.test.ts)、[并行审批](../../tests/unit/parallel-approvals.test.ts)、[服务集成](../../tests/integration/agent.test.ts)。
 
 规范详见 [Agent 工作流](../agents/workflow.md)、[职责](../agents/roles.md) 和 [验证方式](../project/verification.md)。
+
+## 真实模型走查修订（已实施，待用户确认）
+
+来源：[真实 DeepSeek 生命周期 PRD v1](../requirements/deepseek-lifecycle/PRD.md)，完成后提案见该需求 [runtime-and-design.md](../requirements/deepseek-lifecycle/modules/runtime-and-design.md)。问答、规划、审阅明确禁用任何命令并指向专用读取工具，与现有只读审批一致；兼容旧前缀的历史显示。向导复用来源感知凭据标签，环境密钥不再显示为已保存登录。没有放宽审批或路径根。
+
+真实 Pi/DeepSeek 样例、独立 main 合入和主线检查见该需求生命周期；这是验证证据，不代表轻舟已验收或模块版本已确认。

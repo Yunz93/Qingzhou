@@ -63,3 +63,14 @@
 来源：[PRD v3](../requirements/history-and-split-diff/PRD.md)、[结构修订稿](../requirements/history-and-split-diff/STRUCTURE-v3.md)。此节记录本轮实现，不声明平台模块版本已确认或人工验收已通过。
 
 发布复核补充：缺少文件归属的 TAP 用例结果只作为日志和总体统计，不与变更清单按名称关联。候选复审修改后可重新保存；未保存修改清除最终确认并阻止合入，保存设计变化结论后不能合入。
+
+
+## UI 重设计与最小元素集（已实施，待用户确认）
+
+来源：[轻舟 UI 重设计 PRD v1](../requirements/mozi-ui-redesign/PRD.md)，完整界面契约和本模块完成后提案见该需求 DESIGN.md 与 modules/ui-experience.md。使用统一画布、系统字体、陶土强调和按需展示的工具；保留本模块原有数据、版本和关键确认语义。对话、项目、五页签和设置按当前任务减少重复入口、状态与空操作，行为和运行证据见该需求实施、走查与验证记录。此节不声明平台版本确认、用户验收或代码合入。
+
+## 产品化职责重构（已实施并自测，待用户确认）
+
+来源：[产品化重构 PRD v1](../requirements/productize-refactor/PRD.md)，完成后提案见该需求 modules/workflow.md。项目订阅移至 useProjectWorkflow；项目导航、列表、交付/验收、候选复审和检查详情分别由明确组件呈现，版本判断复用既有投影。useWorkflowAction 保护对象内的重复提交和失效回执；页签与组件挂载保持原草稿生命周期。
+
+WorkflowCommandRunner 仅处理检查进程、环境、输出、超时和清理；WorkflowService 继续拥有调度、资源锁、精确版本、事件与检查有效性。协议、Git/CAS、文档事务、验收与合入规则不因拆分改变。实际源码、80 项相关集成和完整界面回归见该需求实施与验证记录；不声明用户验收或主仓库合入。

@@ -16,4 +16,18 @@ describe("structured design proposals", () => {
     expect(() => extractDesignProposal(block({ ...proposal(), content: " " }))).toThrow();
     expect(() => extractDesignProposal("```qingzhou-design\n{broken}\n```")).toThrow();
   });
+  it("keeps Markdown fences inside the serialized PRD intact", () => {
+    const input = { ...proposal(), content: '# 方案\n\n```json\n{"version":1}\n```\n\n## 验收\n保留正文。' };
+    expect(extractDesignProposal(block(input))).toEqual(input);
+    expect(extractDesignProposal(block(input).replaceAll('\n', '\r\n'))).toEqual(input);
+  });
+  it("accepts a validated JSON proposal without adopting ordinary JSON examples", () => {
+    const input = { ...proposal(), content: '数据示例：\n```json\n{"tasks":[]}\n```' };
+    const json = (value: unknown) => `\`\`\`json\n${JSON.stringify(value)}\n\`\`\``;
+    expect(extractDesignProposal(`${json({ version: 1, tasks: [] })}\n${json(input)}`)).toEqual(input);
+    expect(extractDesignProposal(json({ version: 1, tasks: [] }))).toBeNull();
+    expect(() => extractDesignProposal(json({ ...input, itemId: 'wrong' }))).toThrow();
+    expect(() => extractDesignProposal(`${block(input)}\n${json(input)}`)).toThrow('一个');
+    expect(() => extractDesignProposal(`\`\`\`json\n{"schemaVersion":1,"itemId":"${input.itemId}","scopeId":"${input.scopeId}","content":"未转义\n换行"}\n\`\`\``)).toThrow('格式无效');
+  });
 });

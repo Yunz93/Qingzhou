@@ -36,72 +36,25 @@ type Props = {
 
 type GearOption<T extends string> = { value: T; label: string; description?: string };
 
-function GearSlider<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-  disabled = false,
-  ariaLabel,
+function PolicyOptions<T extends string>({
+  options, value, onChange, disabled = false, ariaLabel,
 }: {
-  label: string;
   options: GearOption<T>[];
   value: T;
   onChange: (next: T) => void;
   disabled?: boolean;
   ariaLabel: string;
 }) {
-  const index = Math.max(
-    0,
-    options.findIndex((item) => item.value === value),
-  );
-  const pct = sliderPercent(index, options.length);
-  const title = ariaLabel.replace(/^滑动选择/, "");
-  return (
-    <div className={`policy-picker-rail ${disabled ? "policy-picker-rail-disabled" : ""}`}>
-      <p className="policy-picker-label">{title}</p>
-      <div className="model-picker-slider-wrap">
-        <div className="model-picker-track" style={{ "--slider-pct": `${pct}%` } as CSSProperties} aria-hidden>
-          <div className="model-picker-dots">
-            {options.map((item) => (
-              <span key={item.value} className="model-picker-dot" />
-            ))}
-          </div>
-        </div>
-        <input
-          type="range"
-          className="model-picker-slider"
-          min={0}
-          max={Math.max(0, options.length - 1)}
-          step={1}
-          value={index}
-          disabled={disabled}
-          aria-label={ariaLabel}
-          aria-valuetext={options[index]?.label ?? label}
-          onChange={(event) => {
-            const next = options[clampIndex(Number(event.target.value), options.length)];
-            if (next) onChange(next.value);
-          }}
-        />
-      </div>
-      <div className="slider-labels">
-        {options.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            className="pressable"
-            disabled={disabled}
-            aria-pressed={value === item.value}
-            title={item.description}
-            onClick={() => onChange(item.value)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      {options[index]?.description ? <p className="policy-picker-help">{options[index]!.description}</p> : null}
+  const selected = options.find((option) => option.value === value);
+  return <fieldset className="policy-picker-rail" disabled={disabled}>
+    <legend className="policy-picker-label">{ariaLabel}</legend>
+    <div className="policy-picker-options" role="group" aria-label={ariaLabel}>
+      {options.map((option) => <button key={option.value} type="button" className="pressable hover-fill"
+        disabled={disabled} aria-pressed={value === option.value} title={option.description}
+        onClick={() => onChange(option.value)}>{option.label}</button>)}
     </div>
-  );
+    {selected?.description ? <p className="policy-picker-help">{selected.description}</p> : null}
+  </fieldset>;
 }
 
 export function ComposerCapsules({
@@ -222,11 +175,10 @@ export function ComposerCapsules({
         </button>
         {open ? (
           <div className="policy-picker" role="dialog" aria-label="模式与审批">
-            <GearSlider
-              label={modeLabel}
+            <PolicyOptions
               options={interactionModes}
               value={displayMode}
-              ariaLabel="滑动选择交互模式"
+              ariaLabel="交互模式"
               onChange={(nextMode) => {
                 if (nextMode === "agent") {
                   applyPolicy(nextMode, agentPolicy);
@@ -235,12 +187,11 @@ export function ComposerCapsules({
                 }
               }}
             />
-            <GearSlider
-              label={displayMode === "agent" ? policyLabel : "只读"}
+            <PolicyOptions
               options={policyOptions}
               value={displayMode === "agent" ? displayPolicy : "read_only"}
               disabled={displayMode !== "agent"}
-              ariaLabel="滑动选择审批策略"
+              ariaLabel="审批策略"
               onChange={(nextPolicy) => {
                 applyPolicy("agent", nextPolicy);
               }}

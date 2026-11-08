@@ -23,7 +23,7 @@ import { GoWorkDialog } from "../components/board/GoWorkDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import type { ApprovalPolicy, InteractionMode, PiPackageCatalogResult, ThinkingLevel } from "@qingzhou/protocol";
 import { stripModePrefix, workItemIsClosed, workRunIsActive } from "@qingzhou/protocol";
-import { headerSubtitle, STARTER_PROMPTS } from "../copy";
+import { headerSubtitle } from "../copy";
 import { abnormalStopNotice } from "../lib/run-status";
 import { tasksInSidebarOrder } from "../lib/task-list";
 import { OPEN_CONVERSATION_SEARCH_EVENT } from "../lib/conversation-search";
@@ -748,7 +748,7 @@ export function WorkbenchLayout() {
       {dockLeft ? <div className="flex h-full">{renderSidebar()}</div> : null}
       <div className="flex min-w-0 flex-1 flex-col bg-surface">
         <header
-          className={`titlebar conversation-titlebar app-drag items-center border-b border-line px-3 ${dockLeft ? "" : "traffic-inline"}`}
+          className={`titlebar conversation-titlebar app-drag items-center px-3 ${dockLeft ? "" : "traffic-inline"}`}
         >
           <button
             type="button"
@@ -834,7 +834,7 @@ export function WorkbenchLayout() {
             )}
           </div>
           <div className="conversation-actions app-no-drag flex shrink-0 items-center gap-0.5">
-            {task && !linkedWorkItem ? <button className="conversation-convert btn btn-secondary" aria-label="整理为需求" title="整理为需求" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /><span>整理为需求</span></button> : null}
+            {task && !linkedWorkItem ? <button className="conversation-convert icon-btn" aria-label="整理为需求" title="整理为需求" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /></button> : null}
             {task ? (
               <div className="hidden sm:block">
                 <ContextMeter
@@ -990,52 +990,8 @@ export function WorkbenchLayout() {
               onStarter={(prompt) => setDraft(prompt)}
             />
           ) : (
-            <div className="mx-auto flex h-full max-w-[420px] flex-col items-center justify-center px-6 pb-16 text-center">
-              <p className="text-[28px] font-semibold tracking-tight text-ink">你好，我是轻舟</p>
-              <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  className="pressable btn btn-primary"
-                  onClick={() => {
-                    void socketClient
-                      .send<{ task?: { id: string } }>("task.create", { title: "随便聊聊" })
-                      .then((result) => {
-                        if (result.task?.id) useAgentStore.getState().setActiveTask(result.task.id);
-                      })
-                      .catch((error: unknown) => reportRequestError(error, "创建对话失败"));
-                  }}
-                >
-                  随便聊聊
-                </button>
-                <button type="button" className="pressable btn btn-secondary" onClick={() => setCreating(true)}>
-                  随便看看
-                </button>
-                <button
-                  type="button"
-                  className="pressable btn btn-secondary"
-                  onClick={() => {
-                    setGoingWork(true);
-                    if (connection === "open") void socketClient.send("workItem.list").catch(() => undefined);
-                  }}
-                >
-                  去工作
-                </button>
-              </div>
-              <div className="mt-8 flex flex-col items-stretch gap-2">
-                {STARTER_PROMPTS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="pressable starter-prompt"
-                    onClick={() => {
-                      setPendingDraft(item.prompt);
-                      setCreating(true);
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+            <div className="workspace-welcome">
+              <button type="button" className="pressable btn btn-primary" onClick={() => setCreating(true)}>新建对话</button>
             </div>
           )}
         </main>

@@ -54,6 +54,19 @@ describe("interaction policy", () => {
     expect(stripModePrefix(prefixed)).toBe("implement login");
     expect(applyModePrefix("agent", "implement login")).toBe("implement login");
   });
+  it("explains the actual read-only tool boundary and preserves old message display", () => {
+    for (const mode of ['ask', 'plan', 'review'] as const) {
+      const message = applyModePrefix(mode, '讨论需求');
+      expect(message).toContain('不要运行任何命令');
+      expect(message).toContain('专用读取工具');
+      expect(approvalDecision(effectiveApprovalPolicy(mode, 'always'), { ...approval, toolName: 'bash', rawCommand: 'ls' })).toBe(false);
+      expect(stripModePrefix(message)).toBe('讨论需求');
+    }
+    const old = '【问答模式】只解释和查找，不要修改文件，不要运行会改动系统的命令。\n\n讨论需求';
+    expect(stripModePrefix(old)).toBe('讨论需求');
+    expect(applyModePrefix('ask', old)).toContain('不要运行任何命令');
+    expect(stripModePrefix(applyModePrefix('ask', old))).toBe('讨论需求');
+  });
 
   it("flags high-risk commands even with light obfuscation", () => {
     expect(isHighRiskCommand("npm test")).toBe(false);

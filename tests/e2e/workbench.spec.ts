@@ -201,16 +201,20 @@ test("reduced motion disables the status ring spin", async ({ page }) => {
 
 test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) => {
   await page.goto("/settings");
+  await page.getByRole("link", { name: "关于与更新", exact: true }).click();
   await page.getByRole("button", { name: "更新详情", exact: true }).click();
   await expect(page.getByText("启动后自动检查更新")).toBeVisible();
   await expect(page.getByRole("button", { name: /立即检查|正在检查/ })).toBeVisible();
+  await page.getByRole("link", { name: "账号与认证", exact: true }).click();
   await expect(page.getByRole("heading", { name: "账号与认证" })).toBeVisible();
   await expect(page.getByRole("button", { name: "订阅登录", pressed: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "环境变量", exact: true })).toBeVisible();
   await expect(page.getByLabel("服务商")).toHaveValue("github");
   await expect(page.getByText("已登录").first()).toBeVisible();
+  await page.getByRole("link", { name: "模型与引擎", exact: true }).click();
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeEnabled({ timeout: 20_000 });
+  await page.getByRole("link", { name: "账号与认证", exact: true }).click();
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
   await expect(page.getByText("修改系统环境或 .env 后需重启应用；刷新只检测当前进程。")).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新状态" })).toBeVisible();
@@ -220,17 +224,20 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await page.getByRole("button", { name: "保存密钥" }).click();
   await expect(page.getByText("已保存 Anthropic (Claude) 的密钥。")).toBeVisible();
   await expect(page.getByText("已保存密钥").first()).toBeVisible();
+  await page.getByRole("link", { name: "模型与引擎", exact: true }).click();
   await expect(page.getByText("models.json", { exact: true })).toBeVisible();
   await expect(page.getByText(/已配置.*个模型/)).toBeVisible();
+  await page.getByRole("link", { name: "项目", exact: true }).click();
   await expect(page.getByText("信任默认工作区")).toBeVisible();
   await expect(page.getByText("默认工作文件夹", { exact: true })).toBeVisible();
   await expect(page.getByText("应用数据目录")).toBeVisible();
   await expect(page.getByText("新对话默认使用此目录，可在会话中切换。")).toBeVisible();
+  await page.getByRole("link", { name: "账号与认证", exact: true }).click();
   await page.getByRole("button", { name: "打开设置向导" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByText("无法打开登录页？", { exact: true }).click();
   await expect(page.getByText("/login")).toBeVisible();
-  await expect(page.getByRole("button", { name: "使用已有登录" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "使用现有连接" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await page.goto("/");
@@ -781,6 +788,7 @@ test("work mode creates an objective and starts an agent run", async ({ page }) 
   await page.getByLabel("工作文件夹").fill(project);
   await page.getByLabel("标题").fill("Chat after work");
   await page.getByRole("button", { name: "创建对话" }).click();
+  await expect(page.getByRole("dialog", { name: "新对话", exact: true })).toBeHidden({ timeout: 20_000 });
   await expect(page.getByRole("banner").getByText("Chat after work")).toBeVisible();
   await expect(sessions.getByText("Board e2e job", { exact: true })).toBeVisible();
   await expect(sessions.locator("li").filter({ hasText: "Board e2e job" }).getByText("需求对话", { exact: true })).toBeVisible();

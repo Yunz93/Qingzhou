@@ -262,8 +262,10 @@ test("settings distinguishes load failure, retries, and failed trust save", asyn
   await page.route("**/api/setup", (route) => route.fulfill({ status: 503, json: { error: "offline" } }));
   await page.goto("/settings");
   await expect(page.getByRole("alert")).toContainText("读取设置失败");
-  await expect(page.getByLabel("信任默认工作区")).toBeDisabled();
+  await page.getByRole("link", { name: "模型与引擎", exact: true }).click();
   await expect(page.getByText("暂时无法读取", { exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "设置分组" }).getByRole("link", { name: "项目", exact: true }).click();
+  await expect(page.getByLabel("信任默认工作区")).toBeDisabled();
   await page.unroute("**/api/setup");
   await page.getByRole("button", { name: "重试", exact: true }).click();
   const trust = page.getByLabel("信任默认工作区");
@@ -276,19 +278,21 @@ test("settings distinguishes load failure, retries, and failed trust save", asyn
   expect(await trust.isChecked()).toBe(previous);
 });
 
-test("sliders expose all choices and settings fits narrow light and dark views", async ({ page }) => {
+test("discrete mode choices retain permissions and settings fits narrow light and dark views", async ({ page }) => {
   await createConversation(page, "Readable selectors");
   await page.getByRole("button", { name: "模式", exact: true }).click();
   const policy = page.getByRole("dialog", { name: "模式与审批" });
   await expect(policy.getByText("交互模式", { exact: true })).toBeVisible();
   await expect(policy.getByRole("button", { name: "每次确认", exact: true })).toBeVisible();
   await expect(policy.locator(".policy-picker-rail").last().getByRole("button")).toHaveText(["只读", "每次确认", "自动审核", "自动通过"]);
-  await policy.getByRole("slider", { name: "滑动选择交互模式" }).fill("1");
-  await expect(policy.getByRole("slider", { name: "滑动选择交互模式" })).toHaveAttribute("aria-valuetext", "规划");
-  await policy.getByRole("slider", { name: "滑动选择交互模式" }).fill("2");
-  await expect(policy.getByRole("slider", { name: "滑动选择交互模式" })).toHaveAttribute("aria-valuetext", "代理");
+  await expect(policy.getByRole("slider")).toHaveCount(0);
+  await policy.getByRole("button", { name: "规划", exact: true }).click();
+  await expect(policy.getByRole("button", { name: "规划", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(policy.getByRole("button", { name: "自动通过", exact: true })).toBeDisabled();
+  await policy.getByRole("button", { name: "代理", exact: true }).click();
+  await expect(policy.getByRole("button", { name: "代理", exact: true })).toHaveAttribute("aria-pressed", "true");
   await policy.getByRole("button", { name: "自动通过", exact: true }).click();
-  await expect(policy.getByRole("slider", { name: "滑动选择审批策略" })).toHaveAttribute("aria-valuetext", "自动通过");
+  await expect(policy.getByRole("button", { name: "自动通过", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
   await page.reload();
   await page.getByRole("button", { name: "模式", exact: true }).click();
@@ -304,6 +308,7 @@ test("sliders expose all choices and settings fits narrow light and dark views",
   await page.goto("/settings");
   await page.getByRole("button", { name: "环境变量", exact: true }).click();
   await expect(page.getByText(/修改系统环境或 .env 后/)).toBeVisible();
+  await page.getByRole("navigation", { name: "设置分组" }).getByRole("link", { name: "项目", exact: true }).click();
   await expect(page.getByText("默认工作文件夹", { exact: true })).toBeVisible();
   await expect(page.getByText("新对话默认使用此目录，可在会话中切换。")).toBeVisible();
   await page.setViewportSize({ width: 533, height: 600 });
@@ -421,4 +426,93 @@ test("a question displays waiting feedback and empty Enter cannot bypass a disab
   await dialog.getByRole("textbox").press("Enter");
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Input: 已检查当前实现", { exact: true })).toBeVisible();
+});
+
+test("compact directory selection keeps a typed path when an older browse request returns", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "新对话", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新对话", exact: true });
+  await expect(dialog.locator(".folder-field-summary")).toContainText(project);
+  await expect(dialog.getByRole("tree")).toHaveCount(0);
+  let releaseBrowse: (() => Promise<void>) | undefined;
+  await page.route("**/api/folders?**", (route) => {
+    releaseBrowse = () => route.fulfill({ json: { cwd: project, parent: null, entries: [], roots: [project] } });
+  });
+  await dialog.getByRole("button", { name: "浏览", exact: true }).click();
+  await expect.poll(() => Boolean(releaseBrowse)).toBe(true);
+  await dialog.getByRole("button", { name: "输入路径", exact: true }).click();
+  await dialog.getByLabel("工作文件夹", { exact: true }).fill(`${project}/typed-folder`);
+  await releaseBrowse!();
+  await expect(dialog.getByLabel("工作文件夹", { exact: true })).toHaveValue(`${project}/typed-folder`);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "新对话", exact: true })).toBeFocused();
+});
+
+test("conversation conversion creates a project without losing its source or draft", async ({ page }) => {
+  const directory = path.join(project, "conversion-ui-redesign");
+  mkdirSync(directory, { recursive: true });
+  await createConversation(page, "转需求草稿恢复", directory);
+  await page.getByLabel("输入消息").fill("保留这个讨论作为需求来源");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.getByText("Echo: 保留这个讨论作为需求来源", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "整理为需求", exact: true }).click();
+  const conversion = page.getByRole("dialog", { name: "整理为需求", exact: true });
+  await conversion.getByLabel("目标说明").fill("保留输入的目标草稿");
+  await conversion.getByLabel("验收标准").fill("来源可追溯，保存后不执行");
+  await conversion.getByRole("button", { name: "新建项目", exact: true }).click();
+  const projectDialog = page.getByRole("dialog", { name: "启动项目", exact: true });
+  await projectDialog.getByLabel("项目名称").fill("不保存的名称");
+  await page.keyboard.press("Escape");
+  await expect(conversion).toBeVisible();
+  await expect(conversion.getByLabel("目标说明")).toHaveValue("保留输入的目标草稿");
+  await expect(conversion.getByRole("button", { name: "新建项目", exact: true })).toBeFocused();
+  await conversion.getByRole("button", { name: "新建项目", exact: true }).click();
+  await projectDialog.getByLabel("项目名称").fill("对话转需求示例");
+  await projectDialog.getByRole("button", { name: "启动项目", exact: true }).click();
+  await expect(projectDialog).toBeHidden();
+  await expect(conversion.getByLabel("目标项目").locator("option:checked")).toHaveText("对话转需求示例");
+  await expect(conversion.getByLabel("验收标准")).toHaveValue("来源可追溯，保存后不执行");
+  await expect(conversion.locator("summary").filter({ hasText: "选择作为依据的聊天片段" })).toContainText("2 条");
+  await expect(conversion.getByRole("button", { name: "保存并完善需求", exact: true })).toBeDisabled();
+});
+
+test("settings groups retain local inputs and theme changes fit the supported narrow windows", async ({ page }, testInfo) => {
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "API Key", exact: true }).click();
+  await page.getByLabel("服务商").selectOption("anthropic");
+  const key = page.getByLabel("Anthropic (Claude) API Key");
+  await key.fill("test-only-unsaved-value");
+  await page.getByRole("link", { name: "外观", exact: true }).click();
+  await expect(key).toBeHidden();
+  for (const theme of ["浅色", "深色"] as const) {
+    await page.getByRole("button", { name: theme, exact: true }).click();
+    for (const width of [533, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(page.getByRole("navigation", { name: "设置分组" })).toBeInViewport();
+      await page.screenshot({ path: testInfo.outputPath(`settings-${theme}-${width}.png`) });
+    }
+  }
+  await page.getByRole("link", { name: "账号与认证", exact: true }).click();
+  await expect(key).toHaveValue("test-only-unsaved-value");
+  await expect(page.getByRole("button", { name: "API Key", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("setup distinguishes an environment key from a saved login", async ({ page }) => {
+  await page.route('**/api/setup', async (route) => {
+    const response = await route.fetch();
+    const status = await response.json();
+    await route.fulfill({ response, json: { ...status, needsSetup: true, setupCompleted: false,
+      authConfigured: true, configuredProviders: ['deepseek'],
+      authEntries: [{ id: 'deepseek', label: 'DeepSeek', kind: 'api_key', source: 'env', envVar: 'DEEPSEEK_API_KEY' }] } });
+  });
+  await page.goto('/');
+  const wizard = page.getByRole('dialog');
+  await wizard.getByRole('button', { name: '继续', exact: true }).click();
+  await wizard.getByRole('button', { name: 'API Key', exact: true }).click();
+  await wizard.getByLabel('服务商', { exact: true }).selectOption('deepseek');
+  await expect(wizard.getByText('环境变量 DEEPSEEK_API_KEY', { exact: true })).toBeVisible();
+  await expect(wizard.getByText('已保存密钥', { exact: true })).toHaveCount(0);
+  await wizard.getByRole('button', { name: '使用现有连接', exact: true }).click();
+  await expect(wizard.getByRole('heading', { name: '选一个工作文件夹', exact: true })).toBeVisible();
 });

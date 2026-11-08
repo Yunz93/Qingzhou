@@ -177,7 +177,7 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull, embedded = f
         {itemClosed ? (
           <p className="px-4 pb-2 text-[12px] text-mute">这个目标已经结束，请先重新打开。</p>
         ) : null}
-        <div className="workflow-conversation-intent"><label>本轮目的 <select aria-label="本轮目的" className="field" value={intent} disabled={!["idle", "stopped", "error"].includes(status) || sendPending} onChange={(event) => setIntent(event.target.value)}><option value="discussion">讨论与规划 · 只读</option><option value="execute">继续实施 · 记入执行记录</option></select></label></div>
+        <div className="workflow-conversation-intent"><label><span className="sr-only">本轮目的</span><select aria-label="本轮目的" className="field" value={intent} disabled={!["idle", "stopped", "error"].includes(status) || sendPending} onChange={(event) => setIntent(event.target.value)}><option value="discussion">讨论与规划 · 只读</option><option value="execute">继续实施 · 记入执行记录</option></select></label></div>
         <PromptComposer
           recorded
           sending={sendPending}

@@ -121,8 +121,6 @@ describe("agent-native work mode", () => {
     expect(drawer).toMatch(/role="alert"/);
     expect(drawer).toMatch(/serverError/);
     expect(layout).toMatch(/随便聊聊/);
-    expect(layout).toMatch(/随便看看/);
-    expect(layout).toMatch(/去工作/);
     expect(layout).toMatch(/GoWorkDialog/);
     expect(layout).toMatch(/NewWorkProjectDialog/);
     expect(layout).not.toMatch(/选择文件夹/);

@@ -5,7 +5,7 @@ export const interactionModes: Array<{
   label: string;
   description: string;
 }> = [
-  { value: "ask", label: "问答", description: "只解释和查找，不改文件、不跑会改动系统的命令" },
+  { value: "ask", label: "问答", description: "只解释和查找，不改文件、不执行命令" },
   { value: "plan", label: "规划", description: "只出实施计划，不改文件" },
   { value: "agent", label: "代理", description: "按审批策略动手改代码、跑命令" },
   { value: "review", label: "审阅", description: "只检查当前状态，不改文件" },
@@ -16,7 +16,7 @@ export const approvalPolicies: Array<{
   label: string;
   description: string;
 }> = [
-  { value: "read_only", label: "只读", description: "拒绝所有改动" },
+  { value: "read_only", label: "只读", description: "只读文件，拒绝改动和命令执行" },
   { value: "ask", label: "每次确认", description: "改文件和跑命令都先问你" },
   {
     value: "auto",
@@ -26,10 +26,17 @@ export const approvalPolicies: Array<{
   { value: "always", label: "自动通过", description: "改文件和跑命令自动允许，包括高危命令" },
 ];
 
-export const MODE_PREFIX: Record<Exclude<InteractionMode, "agent">, string> = {
+const LEGACY_MODE_PREFIX: Record<Exclude<InteractionMode, "agent">, string> = {
   ask: "【问答模式】只解释和查找，不要修改文件，不要运行会改动系统的命令。\n\n",
   plan: "【规划模式】只输出可执行的实施计划，不要修改文件，不要运行会改动系统的命令。\n\n",
   review: "【审阅模式】只检查当前代码和状态，不要修改文件，不要运行会改动系统的命令。\n\n",
+};
+
+const READ_ONLY_TOOLS = "不要修改文件，不要运行任何命令（包括 ls、git status 等只读命令）。需要文件内容请使用专用读取工具；无法读取时说明限制，不反复重试命令。";
+export const MODE_PREFIX: Record<Exclude<InteractionMode, "agent">, string> = {
+  ask: `【问答模式】只解释和查找。${READ_ONLY_TOOLS}\n\n`,
+  plan: `【规划模式】只输出可执行的实施计划。${READ_ONLY_TOOLS}\n\n`,
+  review: `【审阅模式】只检查当前代码和状态。${READ_ONLY_TOOLS}\n\n`,
 };
 
 export function effectiveApprovalPolicy(
@@ -161,11 +168,12 @@ export function applyModePrefix(mode: InteractionMode, message: string): string 
   if (mode === "agent") return message;
   const prefix = MODE_PREFIX[mode];
   if (message.startsWith(prefix)) return message;
-  return `${prefix}${message}`;
+  const legacy = LEGACY_MODE_PREFIX[mode];
+  return `${prefix}${message.startsWith(legacy) ? message.slice(legacy.length) : message}`;
 }
 
 export function stripModePrefix(message: string): string {
-  for (const prefix of Object.values(MODE_PREFIX)) {
+  for (const prefix of [...Object.values(MODE_PREFIX), ...Object.values(LEGACY_MODE_PREFIX)]) {
     if (message.startsWith(prefix)) return message.slice(prefix.length);
   }
   return message;

@@ -92,10 +92,7 @@ describe("conversation interaction chrome", () => {
     expect(capsules).toContain("Fast 模式");
     expect(capsules).toContain("model-picker");
     expect(capsules).toContain("policy-picker");
-    expect(capsules).toContain("GearSlider");
     expect(capsules).toContain("policy-picker-rail");
-    expect(capsules).toContain("滑动选择交互模式");
-    expect(capsules).toContain("滑动选择审批策略");
     expect(capsules).toContain("pendingMode");
     expect(capsules).toContain("pendingPolicy");
     expect(capsules).toContain("activeThinking");

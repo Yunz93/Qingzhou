@@ -24,6 +24,8 @@ type PiLatest = {
 
 export function SettingsPage() {
   const location = useLocation();
+  const sectionId = location.hash.replace("#settings-", "");
+  const section = ["auth", "engine", "project", "appearance", "about"].includes(sectionId) ? sectionId : "auth";
   const [returnPath] = useState(() => settingsReturnPath(location.state));
   const [setupLoading, setSetupLoading] = useState(true);
   const [setupError, setSetupError] = useState("");
@@ -322,7 +324,7 @@ export function SettingsPage() {
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>
-      <header className="titlebar app-drag traffic-inline flex shrink-0 items-center gap-2 border-b border-line px-3">
+      <header className="titlebar app-drag traffic-inline flex shrink-0 items-center gap-2 px-3">
         <Link
           to={returnPath}
           className="pressable app-no-drag inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[13px] text-accent"
@@ -337,11 +339,11 @@ export function SettingsPage() {
       </header>
       <main id="main-content" className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
         <div className="settings-shell space-y-7">
-          <nav className="settings-nav" aria-label="设置分组">{[["auth", "账号与认证"], ["engine", "模型与引擎"], ["project", "项目"], ["appearance", "外观"], ["about", "关于与更新"]].map(([id, label]) => <a key={id} className="pressable hover-fill" href={`#settings-${id}`}>{label}</a>)}</nav>
+          <nav className="settings-nav" aria-label="设置分组">{[["auth", "账号与认证"], ["engine", "模型与引擎"], ["project", "项目"], ["appearance", "外观"], ["about", "关于与更新"]].map(([id, label]) => <Link key={id} className="pressable hover-fill" to={`#settings-${id}`} state={{ from: returnPath }} replace aria-current={section === id ? "page" : undefined}>{label}</Link>)}</nav>
           {setupLoading ? <p role="status" className="settings-load-note">正在读取设置…</p> : setupError ? <div className="settings-load-note text-danger" role="alert"><span>{setupError}</span><button type="button" className="pressable text-accent" onClick={() => void loadSetup()}>重试</button></div> : null}
 
 
-          <section id="settings-auth">
+          <section id="settings-auth" hidden={section !== "auth"}>
             <h2 className="settings-label">账号与认证</h2>
             <div className="settings-card">
               <div className="settings-row flex-col items-stretch gap-3">
@@ -564,7 +566,7 @@ export function SettingsPage() {
             </div>
           </section>
 
-          <section id="settings-engine">
+          <section id="settings-engine" hidden={section !== "engine"}>
             <h2 className="settings-label">模型与引擎</h2>
             <div className="settings-card">
               <div className="settings-row items-center">
@@ -625,7 +627,7 @@ export function SettingsPage() {
             </div>
           </section>
 
-          <section id="settings-project">
+          <section id="settings-project" hidden={section !== "project"}>
             <h2 className="settings-label">项目</h2>
             <div className="settings-card">
               <div className="settings-row items-center">
@@ -666,7 +668,7 @@ export function SettingsPage() {
             </div>
           </section>
 
-          <section id="settings-appearance">
+          <section id="settings-appearance" hidden={section !== "appearance"}>
             <h2 className="settings-label">外观</h2>
             <div className="settings-card">
               <div className="settings-row flex-col items-stretch gap-3">
@@ -690,11 +692,12 @@ export function SettingsPage() {
             </div>
           </section>
 
-          <AppUpdateSection />
+          <div hidden={section !== "about"}><AppUpdateSection /></div>
 
           <button
             type="button"
             className="pressable btn btn-ghost"
+            hidden={section !== "auth"}
             onClick={() => setWizardOpen(true)}
           >
             打开设置向导

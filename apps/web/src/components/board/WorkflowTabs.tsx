@@ -19,7 +19,7 @@ export function WorkflowTabs<T extends string>({ label, tabs, value, onChange, i
         else return;
         event.preventDefault(); onChange(tabs[next]!.id);
         (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
-      }}>{tab.label}{tab.count !== undefined ? <span className="workflow-tab-count">{tab.count}</span> : null}</button>)}
+      }}>{tab.label}{tab.count !== undefined && tab.count > 0 ? <span className="workflow-tab-count">{tab.count}</span> : null}</button>)}
   </div>;
 }
 

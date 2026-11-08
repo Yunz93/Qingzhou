@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Folder } from "lucide-react";
 import { isDesktopApp, getDesktop } from "../../desktop-bridge";
 
@@ -46,17 +46,22 @@ function NativeFolderPicker({ initialPath, onSelect, selectedPath }: Props) {
 }
 
 function WebFolderPicker({ initialPath, onSelect, selectedPath }: Props) {
+  const requestRef = useRef<AbortController | null>(null);
   const [data, setData] = useState<FolderBrowseResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   async function load(path?: string) {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     setError("");
     try {
       const query = path ? `?path=${encodeURIComponent(path)}` : "";
-      const response = await fetch(`/api/folders${query}`, { credentials: "same-origin" });
+      const response = await fetch(`/api/folders${query}`, { credentials: "same-origin", signal: controller.signal });
       const json = (await response.json()) as FolderBrowseResult & { error?: string };
+      if (controller.signal.aborted) return;
       if (!response.ok) {
         setError(json.error ?? "打不开这个文件夹。");
         return;
@@ -64,14 +69,15 @@ function WebFolderPicker({ initialPath, onSelect, selectedPath }: Props) {
       setData(json);
       onSelect(json.cwd);
     } catch {
-      setError("无法浏览文件夹。");
+      if (!controller.signal.aborted) setError("无法浏览文件夹。");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load(initialPath);
+    return () => requestRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPath]);
 

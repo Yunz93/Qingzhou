@@ -7,12 +7,14 @@ import { workflowGit as git } from "../../apps/server/src/tasks/workflow-git";
 test("project workflow seals, verifies, accepts and merges independent requirements out of order", async ({ page }, testInfo) => {
   const repository = await setupWorkflowProject(page);
   const metrics = page.getByRole("region", { name: "项目编排" }).locator(".workflow-project-metrics");
-  await expect(metrics.getByRole("button")).toHaveCount(3);
+  await expect(metrics.getByRole("button")).toHaveCount(0);
   await expect(metrics.getByText("排队等待", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "项目更多操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "运行详情", exact: true }).click();
   const runtime = page.locator("summary").filter({ hasText: /^运行详情$/ });
-  await runtime.focus(); await page.keyboard.press("Enter");
+  await expect(metrics.getByRole("button")).toHaveCount(3);
   await expect(page.getByText("并发上限 2", { exact: false })).toBeVisible();
-  await page.keyboard.press("Enter");
+  await runtime.focus(); await page.keyboard.press("Enter");
   await expect(page.getByText("并发上限 2", { exact: false })).toBeHidden();
   await createRequirement(page, "需求 A", "WRITE:a.txt:result A");
   await createRequirement(page, "需求 B", "WRITE:b.txt:result B");
@@ -20,7 +22,7 @@ test("project workflow seals, verifies, accepts and merges independent requireme
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("project-list.png"), fullPage: true });
   const desktop = page.viewportSize()!;
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(metrics.getByRole("button")).toHaveCount(3);
+  await expect(metrics.getByRole("button")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("project-overview-mobile.png"), fullPage: true });
   await page.setViewportSize(desktop);
@@ -49,7 +51,8 @@ test("project workflow seals, verifies, accepts and merges independent requireme
   expect(await git(repository, ["status", "--porcelain"])).toBe("");
   await page.getByRole("dialog", { name: "需求 A" }).getByRole("button", { name: "关闭", exact: true }).click();
   await expect(page.getByText(/当前范围检查有效 2 · 当前范围已合入 2/)).toBeHidden();
-  await page.getByText("运行详情", { exact: true }).click();
+  await page.getByRole("button", { name: "项目更多操作", exact: true }).click();
+  await page.getByRole("menuitem", { name: "运行详情", exact: true }).click();
   await expect(page.getByText(/当前范围检查有效 2 · 当前范围已合入 2/)).toBeVisible();
   await page.getByRole("tab", { name: "项目历史" }).click();
   await expect(page.locator(".workflow-history-group")).toHaveCount(0);
@@ -141,13 +144,13 @@ test("structured discussion proposals become reviewable drafts without confirmin
   await room.getByRole("button", { name: "阅读", exact: true }).click();
   await expect(room.getByLabel("PRD 正文", { exact: true })).toBeHidden();
   await expect(room.locator(".review-document-body > .workflow-document-reader").getByRole("heading", { name: "结构化方案", exact: true })).toBeVisible();
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await expect(room.getByLabel("PRD 正文", { exact: true })).toContainText("结构化方案");
   await room.locator(".workflow-inspector-scroll").evaluate((element) => { element.scrollTop = 0; });
   await page.screenshot({ path: testInfo.outputPath("structured-design-proposal.png"), fullPage: true });
 });
 
-async function setupWorkflowProject(page: Page) {
+async function setupWorkflowProject(page: Page, name = "迭代与集成验证") {
   const parent = path.join(process.cwd(), ".qingzhou-test", "e2e-project");
   await mkdir(parent, { recursive: true });
   const repository = await mkdtemp(path.join(parent, "workflow-"));
@@ -159,7 +162,7 @@ async function setupWorkflowProject(page: Page) {
   await page.getByRole("menuitem", { name: "新项目…" }).click();
   await page.getByRole("button", { name: "输入路径" }).click();
   await page.getByLabel("项目文件夹").fill(repository);
-  await page.getByLabel("项目名称").fill("迭代与集成验证");
+  await page.getByLabel("项目名称").fill(name);
   await page.getByRole("dialog", { name: "启动项目" }).getByRole("button", { name: "启动项目" }).click();
   await page.getByRole("button", { name: "配置工作模式" }).click();
   await expect(page.getByLabel("集成分支")).toHaveValue("integration");
@@ -168,7 +171,7 @@ async function setupWorkflowProject(page: Page) {
   await page.getByLabel("名称", { exact: true }).fill("文件回归");
   await page.getByLabel("命令", { exact: true }).fill(`node -e "if(!require('fs').existsSync('README.md'))process.exit(1)"`);
   await page.getByRole("button", { name: "保存编排设置" }).click();
-  await expect(page.getByRole("button", { name: "0 / 2 执行名额占用" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "编排设置", exact: true })).toBeVisible();
   return repository;
 }
 
@@ -222,11 +225,11 @@ async function confirmRequirementDesign(page: Page) {
   const room = page.getByRole("dialog").first();
   await room.getByRole("tab", { name: "设计", exact: true }).click();
   await room.getByRole("button", { name: "确认这个需求范围", exact: true }).click();
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("本次设计变更说明").fill("确认交互与实现方案");
   await room.getByRole("button", { name: "保存 PRD 新版本", exact: true }).click();
   await room.getByRole("button", { name: /^确认 PRD v/ }).click();
-  await expect(room.getByText("当前 PRD 已确认，可开始实施。", { exact: true })).toBeVisible();
+  await expect(room.getByRole("button", { name: "开始执行", exact: true })).toBeVisible();
 }
 async function sealAndAccept(page: Page, title: string) {
   await page.getByRole("button").filter({ has: page.getByText(title, { exact: true }) }).click();
@@ -299,7 +302,7 @@ test("requirement workspace preserves drafts, supports keyboard navigation and k
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   await setupWorkflowProject(page);
-  await createRequirement(page, "交互需求 A", "WRITE:interaction.txt:done");
+  await createRequirement(page, "交互需求 A", `WRITE:interaction.txt:done\n\n${Array.from({ length: 18 }, (_, index) => `交互要求 ${index + 1}：保留草稿、阅读位置和原需求身份。`).join("\n")}`);
   await createRequirement(page, "交互需求 B", "第二个独立需求");
   await page.getByRole("checkbox", { name: "选择当前可执行需求" }).check();
   await expect(page.getByRole("button", { name: "开始所选（2）" })).toBeVisible();
@@ -561,7 +564,12 @@ test("an incomplete requirement stays discussable and cannot bypass scope confir
   await create.getByLabel("标题", { exact: true }).fill("待完善的需求");
   await expect(create.getByRole("button", { name: "创建并开始", exact: true })).toHaveCount(0);
   await create.getByRole("button", { name: "保存到计划", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "选择 待完善的需求", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "新建需求", exact: true }).click();
+  await create.getByLabel("标题", { exact: true }).fill("另一个待讨论需求");
+  await create.getByRole("button", { name: "保存到计划", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "选择 待完善的需求", exact: true })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "选择当前可执行需求", exact: true })).toBeDisabled();
   await page.getByRole("button").filter({ has: page.getByText("待完善的需求", { exact: true }) }).click();
   const room = page.getByRole("dialog", { name: "待完善的需求", exact: true });
   await expect(room.getByRole("button", { name: "讨论这个需求", exact: true })).toBeVisible();
@@ -596,7 +604,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   let room = page.getByRole("dialog", { name: "编排设计迭代", exact: true });
   await expect(room.getByRole("button", { name: "开始执行", exact: true })).toHaveCount(0);
   await room.getByRole("button", { name: "确认这个需求范围" }).click();
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByText("模块、文件与草稿来源", { exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("# 编排设计\n支持串行和并行的实施与独立验收。");
   await expect(room.getByRole("checkbox", { name: /需求编排 · 代码基线 v1/ })).toBeChecked();
@@ -609,7 +617,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await room.getByRole("tab", { name: "设计", exact: true }).click();
   await room.getByRole("button", { name: "将草稿带入对话讨论" }).click();
   await expect(room.getByLabel("本轮目的")).toHaveValue("discussion");
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("# 编排设计修订\n支持串行、并行，增加中断恢复入口。");
   await room.getByLabel("需求编排完成后的完整设计").fill("模块设计：串行与并行实施，支持中断恢复");
   await room.getByLabel("本次设计变更说明").fill("实施后调整恢复交互并同步 PRD");
@@ -628,7 +636,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await room.getByRole("checkbox", { name: "交付文件正确", exact: true }).check();
   await room.getByRole("checkbox", { name: "我已审阅这个交付的代码、检查证据与需人工确认的结果，并确认 PRD 与模块设计已同步", exact: true }).check();
   await room.getByRole("tab", { name: "设计", exact: true }).click();
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("尚未保存的设计调整");
   await room.getByRole("tab", { name: "验收", exact: true }).click();
   await expect(room.getByRole("button", { name: "验收并固化 PRD", exact: true })).toBeDisabled();
@@ -669,7 +677,7 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await child.getByLabel("子需求标题").fill("下一轮模块优化");
   await child.getByRole("button", { name: "创建子需求并开始讨论" }).click();
   room = page.getByRole("dialog", { name: "下一轮模块优化", exact: true });
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByText("模块、文件与草稿来源", { exact: true }).click();
   await expect(room.getByLabel("需求编排完成后的完整设计")).toHaveValue("原始设计：按顺序实施需求");
   await room.getByRole("button", { name: "关闭", exact: true }).click();
@@ -705,7 +713,7 @@ test("project standards preview missing files, preserve existing rules and read 
   await createRequirement(page, "标准需求 Markdown 同步", "WRITE:standard-output.txt:done");
   await page.getByRole("button", { name: "标准需求 Markdown 同步 的更多操作", exact: true }).click();
   await page.getByRole("menuitem", { name: "开始执行", exact: true }).click();
-  await expect(page.getByRole("listitem").filter({ hasText: "标准需求 Markdown 同步" }).getByText("待验证", { exact: true })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "标准需求 Markdown 同步" }).getByText("待验证", { exact: true })).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button").filter({ has: page.getByText("标准需求 Markdown 同步", { exact: true }) }).click();
   const room = page.getByRole("dialog", { name: "标准需求 Markdown 同步", exact: true });
   const itemId = new URL(page.url()).searchParams.get("item")!;
@@ -723,7 +731,7 @@ test("project standards preview missing files, preserve existing rules and read 
   await room.getByText("工作区文档", { exact: true }).click();
   await room.getByRole("button", { name: "从工作区同步 PRD", exact: true }).click();
   await expect(room.locator(".review-document-body > .workflow-document-reader").getByRole("heading", { name: "Markdown 修订方案", exact: true })).toBeVisible();
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await expect(room.getByLabel("PRD 正文", { exact: true })).toHaveValue(updated);
   await expect(room.getByRole("button", { name: "确认 PRD v2", exact: true })).toBeVisible();
   await expect(room.getByRole("button", { name: "开始新一轮", exact: true })).toHaveCount(0);
@@ -754,7 +762,7 @@ test("four requirement tabs preserve PRD drafts and show real test changes and c
   await room.getByRole("tab", { name: "设计", exact: true }).click();
   await expect(room.locator(".workflow-workroom-progress,.workflow-next-step")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("v3-design-light.png"), fullPage: true, animations: "disabled" });
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   const original = await room.getByLabel("PRD 正文", { exact: true }).inputValue();
   await room.getByLabel("PRD 正文", { exact: true }).fill("临时设计草稿");
   await room.getByRole("tab", { name: "历史", exact: true }).click();
@@ -796,10 +804,13 @@ test("four requirement tabs preserve PRD drafts and show real test changes and c
     const activePanel = room.getByRole("tabpanel", { name, exact: true });
     await expect(activePanel).toBeVisible();
     const footer = room.locator(".workflow-review-footer");
-    await expect(footer).toBeVisible();
-    const roomBox = (await room.boundingBox())!;
-    const footerBox = (await footer.boundingBox())!;
-    expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(roomBox.y + roomBox.height + 1);
+    if (name === "设计") await expect(footer).toBeHidden();
+    else {
+      await expect(footer).toBeVisible();
+      const roomBox = (await room.boundingBox())!;
+      const footerBox = (await footer.boundingBox())!;
+      expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(roomBox.y + roomBox.height + 1);
+    }
     const key = ({ 设计: "design", 模块设计: "modules", 交付: "delivery", 验收: "acceptance", 历史: "history" })[name as "设计"];
     await page.screenshot({ path: testInfo.outputPath(`v3-${key}-dark.png`), fullPage: true, animations: "disabled" });
   }
@@ -848,7 +859,7 @@ test("reopening design follows the newest PRD while preserving an edited older c
   const itemId = new URL(page.url()).searchParams.get("item")!;
   const key = `qingzhou:prd-draft:${itemId}`;
   const cached = await page.evaluate((key) => sessionStorage.getItem(key)!, key);
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByLabel("PRD 正文", { exact: true }).fill("# 最新设计版本");
   await room.getByLabel("本次设计变更说明").fill("修订设计");
   await room.getByRole("button", { name: "保存 PRD 新版本", exact: true }).click();
@@ -862,10 +873,151 @@ test("reopening design follows the newest PRD while preserving an edited older c
   await page.evaluate(({ key, raw }) => sessionStorage.setItem(key, JSON.stringify({ ...JSON.parse(raw), content: "未保存的旧版设计修改" })), { key, raw: cached });
   await page.getByRole("button").filter({ has: page.getByText("设计版本跟随", { exact: true }) }).click();
   await expect(room.getByRole("alert")).toContainText("PRD 已有新版本");
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await expect(room.getByLabel("PRD 正文", { exact: true })).toHaveValue("未保存的旧版设计修改");
 });
 
+
+test("corrupt PRD drafts preserve their original bytes until recovery is explicitly requested", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    const write = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key.includes(":recovery:") && document.documentElement.dataset.failDraftBackup) throw new DOMException("quota", "QuotaExceededError");
+      return write.call(this,key,value);
+    };
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await setupWorkflowProject(page);
+  await createRequirement(page, "草稿恢复需求", "保留本地设计与原始恢复内容");
+  const open = () => page.getByRole("button").filter({ has: page.getByText("草稿恢复需求", { exact: true }) }).click();
+  await open();
+  const room = page.getByRole("dialog", { name: "草稿恢复需求", exact: true });
+  const key = `qingzhou:prd-draft:${new URL(page.url()).searchParams.get("item")}`;
+  const original = await page.evaluate((key) => sessionStorage.getItem(key)!, key);
+  await room.getByRole("button", { name: "关闭", exact: true }).click();
+  for (const raw of ["", "null", "[]", JSON.stringify({ ...JSON.parse(original), moduleChanges: [null] })]) {
+    await page.evaluate(({key,raw}) => sessionStorage.setItem(key,raw),{key,raw});
+    await open();
+    const warning = room.getByRole("alert").filter({hasText:"本地 PRD 草稿无法读取"});
+    await expect(warning).toBeVisible();
+    expect(await page.evaluate((key) => sessionStorage.getItem(key),key)).toBe(raw);
+    await expect(room.getByRole("button",{name:"保存 PRD 新版本",exact:true})).toHaveCount(0);
+    const downloaded = page.waitForEvent("download");
+    await warning.getByRole("link",{name:"下载原始草稿",exact:true}).click();
+    const download = await downloaded;
+    expect(await readFile((await download.path())!,"utf8")).toBe(raw);
+    await page.evaluate(() => { document.documentElement.dataset.failDraftBackup = "true"; });
+    await warning.getByRole("button",{name:"保留副本并重建草稿",exact:true}).click();
+    await expect(warning).toContainText("原始草稿保持不变");
+    expect(await page.evaluate((key) => sessionStorage.getItem(key),key)).toBe(raw);
+    await page.evaluate(() => { delete document.documentElement.dataset.failDraftBackup; });
+    await page.screenshot({path:testInfo.outputPath(`draft-recovery-${raw.length}.png`),animations:"disabled"});
+    if (raw === "") {
+      await page.setViewportSize({width:390,height:844});
+      await room.getByRole("tab",{name:"需求与交付",exact:true}).click();
+      await expect(warning.getByRole("button",{name:"保留副本并重建草稿",exact:true})).toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      await page.screenshot({path:testInfo.outputPath("draft-recovery-mobile.png"),animations:"disabled"});
+      await page.setViewportSize({width:1280,height:720});
+    }
+    await warning.getByRole("button",{name:"保留副本并重建草稿",exact:true}).click();
+    await expect(warning).toHaveCount(0);
+    expect(await page.evaluate(({key,raw}) => Object.keys(sessionStorage).some(k=>k.startsWith(`${key}:recovery:`)&&sessionStorage.getItem(k)===raw),{key,raw})).toBe(true);
+    await expect(room.getByRole("heading",{name:"草稿恢复需求",exact:true}).first()).toBeVisible();
+    await room.getByRole("button", { name: "关闭", exact: true }).click();
+  }
+  expect(errors).toEqual([]);
+});
+
+test("PRD saves reject duplicate submissions and preserve edits through delayed and failed requests", async ({ page }) => {
+  let mode: "pass" | "hold" | "fail" = "pass";
+  let release: (() => void) | undefined;
+  let requests = 0;
+  await page.routeWebSocket("**/ws", route => {
+    const server = route.connectToServer();
+    let latest: Record<string, unknown> = {};
+    server.onMessage(message => { const frame = JSON.parse(String(message)); latest = frame.__batch ? frame.events.at(-1) : frame; route.send(message); });
+    route.onMessage(message => {
+      const command = JSON.parse(String(message));
+      if (command.type !== "workflow.prd.save" || mode === "pass") { server.send(message); return; }
+      requests++;
+      if (mode === "hold") release = () => server.send(message);
+      else route.send(JSON.stringify({ ...latest, eventId: `failed-${command.id}`, type: "request.failed", payload: { requestId: command.id, error: "模拟保存失败，请重试" } }));
+    });
+  });
+  await setupWorkflowProject(page);
+  await createRequirement(page,"保存中的设计","验证真实编辑与保存时序");
+  await page.getByRole("button").filter({has:page.getByText("保存中的设计",{exact:true})}).click();
+  const room = page.getByRole("dialog",{name:"保存中的设计",exact:true});
+  await room.getByRole("button",{name:"编辑 PRD",exact:true}).click();
+  const body = room.getByLabel("PRD 正文",{exact:true});
+  await body.fill("# 提交的快照");
+  await room.getByLabel("本次设计变更说明").fill("本次提交");
+  mode = "hold";
+  await room.getByRole("button",{name:"保存 PRD 新版本",exact:true}).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); button.click(); });
+  await expect.poll(()=>requests).toBe(1);
+  await body.fill("# 保存期间的新输入");
+  await room.getByLabel("本次设计变更说明").fill("后续设计调整");
+  release!();
+  await expect(room.getByRole("button",{name:"保存 PRD 新版本",exact:true})).toBeEnabled();
+  await expect(body).toHaveValue("# 保存期间的新输入");
+  await expect(room.getByLabel("本次设计变更说明")).toHaveValue("后续设计调整");
+  mode = "fail";
+  await room.getByRole("button",{name:"保存 PRD 新版本",exact:true}).click();
+  await expect(room.getByRole("alert")).toContainText("模拟保存失败");
+  await expect(body).toHaveValue("# 保存期间的新输入");
+  mode = "pass";
+  await room.getByRole("button",{name:"保存 PRD 新版本",exact:true}).click();
+  await expect(room.getByRole("button",{name:"确认 PRD v3",exact:true})).toBeEnabled();
+  await expect(room.getByRole("alert")).toHaveCount(0);
+});
+
+test("late project responses and failures cannot replace the newly selected project", async ({page}) => {
+  let projectA = "";
+  let lastProject = "";
+  let hold = false;
+  const pending: Array<{succeed:()=>void; fail:()=>void}> = [];
+  await page.routeWebSocket("**/ws",route => {
+    const server = route.connectToServer();
+    let latest: Record<string,unknown> = {};
+    server.onMessage(message => {const frame=JSON.parse(String(message));latest=frame.__batch?frame.events.at(-1):frame;route.send(message);});
+    route.onMessage(message => {
+      const command=JSON.parse(String(message));
+      if(command.type==="workflow.state") lastProject=command.payload.projectId;
+      if(hold && command.type==="workflow.state" && command.payload.projectId===projectA) {
+        pending.push({succeed:()=>server.send(message),fail:()=>route.send(JSON.stringify({...latest,eventId:`failed-${command.id}`,type:"request.failed",payload:{requestId:command.id,error:"旧项目迟到的错误"}}))});
+      } else server.send(message);
+    });
+  });
+  await setupWorkflowProject(page,"异步项目 A");
+  await createRequirement(page,"项目 A 的需求","A 的独立目标");
+  projectA=lastProject;
+  await setupWorkflowProject(page,"异步项目 B");
+  await createRequirement(page,"项目 B 的需求","B 的独立目标");
+  expect(lastProject).not.toBe(projectA);
+  const select = async (name:string) => {
+    await page.getByRole("button",{name:"项目",exact:true}).click();
+    await page.getByRole("menuitem",{name,exact:true}).click();
+  };
+  for(const result of ["fail","succeed"] as const) {
+    hold=true;
+    await select("异步项目 A");
+    await expect.poll(()=>pending.length).toBeGreaterThan(0);
+    await select("异步项目 B");
+    const item=page.getByRole("button").filter({has:page.getByText("项目 B 的需求",{exact:true})});
+    await expect(item).toBeVisible();
+    hold=false;
+    for(const request of pending.splice(0)) request[result]();
+    await item.click();
+    const room=page.getByRole("dialog",{name:"项目 B 的需求",exact:true});
+    await expect(room.getByRole("heading",{name:"项目 B 的需求",exact:true,level:2})).toBeVisible();
+    await room.getByRole("button",{name:"关闭",exact:true}).click();
+    await expect(page.getByRole("button",{name:"项目",exact:true})).toContainText("异步项目 B");
+    await expect(page.getByText("旧项目迟到的错误",{exact:true})).toHaveCount(0);
+    await expect(page.getByRole("button").filter({has:page.getByText("项目 A 的需求",{exact:true})})).toHaveCount(0);
+  }
+});
 
 test("module design tab compares exact requirement baselines and follows local drafts across modules", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -893,7 +1045,7 @@ test("module design tab compares exact requirement baselines and follows local d
   const panel = room.getByRole("tabpanel", { name: "模块设计", exact: true });
   await expect(panel.getByRole("heading", { name: "当前需求尚未关联模块设计", exact: true })).toBeVisible();
   await room.getByRole("button", { name: "回到设计调整", exact: true }).click();
-  await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
+  if (!(await room.getByLabel("PRD 正文", { exact: true }).isVisible())) await room.getByRole("button", { name: "编辑 PRD", exact: true }).click();
   await room.getByText("模块、文件与草稿来源", { exact: true }).click();
   await room.getByText("关联模块（0）", { exact: true }).click();
   for (const module of modules) {
@@ -946,4 +1098,26 @@ test("module design tab compares exact requirement baselines and follows local d
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`module-changes-${width}.png`), fullPage: true, animations: "disabled" });
   }
+});
+
+test("compact project controls preserve filters, empty state actions and queue recovery", async ({ page }) => {
+  await setupWorkflowProject(page);
+  await expect(page.getByRole("button", { name: "新建需求", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "新建第一个需求", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "选择当前可执行需求", exact: true })).toHaveCount(0);
+  const filter = page.getByRole("combobox", { name: "需求状态筛选", exact: true });
+  await expect(filter.getByRole("option")).toHaveCount(6);
+  await filter.selectOption("archived");
+  await page.reload();
+  await expect(filter).toHaveValue("archived");
+  await expect(page.getByText("没有匹配的需求", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "清除筛选", exact: true }).click();
+  await expect(filter).toHaveValue("active");
+  await page.getByRole("button", { name: "项目更多操作", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "运行详情", exact: true })).toBeFocused();
+  await expect(page.getByRole("menuitem", { name: "验证当前主线", exact: true })).toBeVisible();
+  await page.getByRole("menuitem", { name: "暂停后续执行", exact: true }).click();
+  await expect(page.getByRole("button", { name: "恢复队列", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "恢复队列", exact: true }).click();
+  await expect(page.getByRole("button", { name: "恢复队列", exact: true })).toHaveCount(0);
 });

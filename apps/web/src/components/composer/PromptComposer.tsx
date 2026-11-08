@@ -465,7 +465,7 @@ export function PromptComposer({
             ) : null}
           </div>
           <div className="composer-toolbar-end">
-            <div className="flex rounded-md bg-fill p-0.5" role="group" aria-label="回复时发送方式">
+            {(running || queuedSteering.length > 0 || queuedFollowUp.length > 0) ? <div className="flex rounded-md bg-fill p-0.5" role="group" aria-label="回复时发送方式">
               <button
                 type="button"
                 className={`pressable h-6 rounded-[5px] px-1.5 text-[11px] ${busySendMode === "steer" ? "bg-surface text-ink" : "text-mute"}`}
@@ -484,7 +484,7 @@ export function PromptComposer({
               >
                 排队
               </button>
-            </div>
+            </div> : null}
             <ComposerCapsules
               slot="model"
               mode={mode}

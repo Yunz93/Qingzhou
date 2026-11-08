@@ -9,7 +9,9 @@ import { WorkConversationDrawer, ensureWorkConversationTranscript } from "../com
 import { NewWorkItemDialog } from "../components/board/NewWorkItemDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import { WorkProjectPicker } from "../components/board/WorkProjectPicker";
-import { ProjectWorkflow, WorkflowDashboard, useProjectWorkflow } from "../components/board/ProjectWorkflow";
+import { ProjectWorkflow } from "../components/board/ProjectWorkflow";
+import { WorkflowDashboard } from "../components/board/WorkflowDashboard";
+import { useProjectWorkflow } from "../hooks/useProjectWorkflow";
 import { ModeSwitcher } from "../components/app/ModeSwitcher";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { ThemeToggle } from "../components/status/ThemeToggle";
@@ -177,7 +179,7 @@ export function BoardPage() {
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>
-      <header className="titlebar app-drag traffic-inline work-page-head border-b border-line px-3">
+      <header className="titlebar app-drag traffic-inline work-page-head px-3">
         <div className="work-head-start">
           <ModeSwitcher />
         </div>

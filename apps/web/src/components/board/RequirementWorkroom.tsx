@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Play, Square } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Play, Square } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary, WorkflowProjectState } from "@qingzhou/protocol";
 import { requirementProgress } from "../../lib/workflow-progress";
 import { Link, useSearchParams } from "react-router-dom";
@@ -10,8 +10,10 @@ import { useAgentStore } from "../../stores/agent-store";
 import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { WorkConversationDrawer } from "./WorkConversationDrawer";
 import { WorkObjectivePanel } from "./WorkObjectivePanel";
-import { RequirementWorkflow, requirementStatus } from "./ProjectWorkflow";
-import { RequirementDesign, planningReady, prdFor } from "./RequirementDesign";
+import { RequirementWorkflow } from "./RequirementWorkflow";
+import { requirementStatus } from "../../lib/requirement-state";
+import { RequirementDesign } from "./RequirementDesign";
+import { planningReady, prdFor } from "../../lib/requirement-planning";
 import { WorkflowMenu, WorkflowTabs } from "./WorkflowTabs";
 import { DocumentPath } from "./DocumentPath";
 
@@ -94,8 +96,8 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
     <section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="requirement-workroom-title" className="workflow-workroom" data-focus={focus} style={{ "--inspector-width": `${Math.min(70, Math.max(30, width))}%` } as CSSProperties}>
       <header role="presentation" className="workflow-workroom-head">
         <button className="btn btn-ghost" aria-label="关闭" onClick={onClose}><ArrowLeft size={16} /><span>项目</span></button>
-        <div className="min-w-0 flex-1"><p>{projectName}<span> · {status.versionLabel}</span></p><h2 id="requirement-workroom-title">{item.title}</h2></div>
-        <div className="workflow-item-pagination"><button className="icon-btn" aria-label="上一个需求" disabled={index <= 0} onClick={() => onSelect(sorted[index - 1]!)}><ChevronLeft size={17} /></button><span>{index + 1} / {sorted.length}</span><button className="icon-btn" aria-label="下一个需求" disabled={index < 0 || index >= sorted.length - 1} onClick={() => onSelect(sorted[index + 1]!)}><ChevronRight size={17} /></button></div>
+        <div className="min-w-0 flex-1"><p>{projectName}</p><h2 id="requirement-workroom-title">{item.title}</h2></div>
+        {sorted.length > 1 ? <div className="workflow-item-pagination"><button className="icon-btn" aria-label="上一个需求" disabled={index <= 0} onClick={() => onSelect(sorted[index - 1]!)}><ChevronLeft size={17} /></button><span>{index + 1} / {sorted.length}</span><button className="icon-btn" aria-label="下一个需求" disabled={index < 0 || index >= sorted.length - 1} onClick={() => onSelect(sorted[index + 1]!)}><ChevronRight size={17} /></button></div> : null}
         <span className="review-status" role="status" aria-label={headline} title={headline}>{compactStatus}</span>
         <WorkflowMenu label="需求更多操作" actions={[
           { label: "需求设置", run: () => setSettingsOpen(true) },
@@ -107,7 +109,6 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
       <div className="workflow-mobile-tabs"><WorkflowTabs id="workroom" label="工作区面板" value={pane} onChange={setPane} tabs={[{ id: "conversation", label: "连续对话" }, { id: "inspector", label: "需求与交付" }]} /></div>
       <div className="workflow-workroom-body" data-pane={pane}>
         <div className="workflow-workroom-chat" id="workroom-panel-conversation">
-          <div className="workflow-pane-heading"><MessageSquare size={14} /><h3>连续对话</h3></div>
           {workspace?.removedAt ? <div className="workflow-empty"><h3>工作区已清理</h3><p>执行内容与工具记录仍可在“历史”中查看。</p><button className="btn btn-secondary" onClick={() => { selectView("history"); setPane("inspector"); }}>查看历史</button></div> : <WorkConversationDrawer key={item.id} embedded discussionRequest={discussionRequest} item={item} onClose={onClose} onOpenFull={() => onOpenFull(item)} />}
         </div>
         <div className="workflow-splitter" role="separator" tabIndex={0} aria-label="调整对话与审阅宽度" aria-orientation="vertical" aria-valuemin={30} aria-valuemax={70} aria-valuenow={width} onDoubleClick={() => setWidth(61)} onKeyDown={(event) => { if (["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) { event.preventDefault(); setWidth(event.key === "Home" ? 61 : Math.min(70, Math.max(30, width + (event.key === "ArrowLeft" ? 3 : -3)))); } }} onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { const box = event.currentTarget.parentElement!.getBoundingClientRect(); setWidth(Math.min(70, Math.max(30, (box.right - event.clientX) / box.width * 100))); } }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />

@@ -26,3 +26,7 @@
 ## 主要模块
 
 见 [模块索引](../modules/README.md)。跨模块契约或数据语义变化需要同步模块文档、需求 PRD 和必要的 ADR。渲染状态、过程记录、真实证据之间保持明确边界。
+
+## 当前工作区的产品化重构（待用户确认）
+
+依据 [PRD v1](../requirements/productize-refactor/PRD.md)，前端将项目订阅/PRD 编辑会话放在 hooks，需求列表、交付/验收、集成复审与检查详情放在各自组件；ProjectWorkflow 负责项目视图组合。服务端 workflow-command-runner.ts 只拥有检查子进程及输出，WorkflowService 保持事实与编排所有权。没有新增数据格式、技术栈或发布渠道。当前实现和验证状态见该需求记录，不代表已合入主线。

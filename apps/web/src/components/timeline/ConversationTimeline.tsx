@@ -128,7 +128,7 @@ function UserMessage({
   return (
     <article
       id={conversationMessageDomId(message.id)}
-      className={`flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-[16px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.6] tracking-[-0.01em] text-ink ${
+      className={`conversation-message flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-lg bg-bubble px-3.5 py-2 text-[15px] leading-[1.75] text-ink ${
         message.isError ? "opacity-70 ring-1 ring-danger/40" : ""
       } ${highlighted ? "conversation-search-hit" : ""}`}
     >
@@ -163,7 +163,7 @@ function UserMessage({
           {!visible && message.images?.length ? (
             <p className="text-[12px] text-mute">附 {message.images.length} 张图</p>
           ) : null}
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <div className={`conversation-message-actions mt-1.5 flex flex-wrap gap-1.5 ${message.isError || copyState !== "idle" ? "conversation-message-feedback" : ""}`}>
             {message.isError ? <span className="text-[11px] text-danger">发送失败</span> : null}
             {visible ? (
               <button
@@ -239,18 +239,19 @@ const AssistantMessage = memo(function AssistantMessage({
   return (
     <article
       id={conversationMessageDomId(message.id)}
-      className={`mr-auto w-full max-w-[90%] shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
+      className={`conversation-message mr-auto w-full max-w-[90%] shrink-0 self-start ${highlighted ? "conversation-search-hit" : ""}`}
     >
       <ThinkingBlock message={message} highlighted={highlighted} />
-      {proposal ? <div className="workflow-design-note"><strong>设计提案：{proposal.reason}</strong><p>可在“设计与 PRD”对照并采用为草稿，采用后仍需确认。</p>
+      {proposal ? <div className="workflow-design-note"><strong>设计提案已生成</strong><p>在“设计”页审阅并采用为草稿，采用后仍需确认。</p>
         {proposal.questions.length ? <ul>{proposal.questions.map((question, index) => <li key={index}>{question}</li>)}</ul> : null}
+        <details><summary>提案说明</summary><p>{proposal.reason}</p></details>
         <details><summary>查看提议的设计</summary><AssistantMarkdown text={proposal.content} taskId={taskId} /></details>
         <details><summary>查看原始提案回复</summary><AssistantMarkdown text={message.text} taskId={taskId} /></details></div> : <AssistantMarkdown text={message.text} streaming={message.streaming} taskId={taskId} />}
       {message.streaming ? <span className="sr-only" aria-live="polite">正在回复</span> : null}
       {message.text ? (
         <button
           type="button"
-          className="pressable mt-1.5 h-6 min-h-6 text-[11px] text-mute"
+          className={`conversation-message-actions pressable mt-1.5 h-6 min-h-6 text-[11px] text-mute ${copyState !== "idle" ? "conversation-message-feedback" : ""}`}
           aria-label="复制回复"
           onClick={() => {
             void copyText(message.text).then((ok) => {

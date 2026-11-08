@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -18,6 +17,7 @@ import type { WorkItemStore } from "./work-item-store.js";
 import { moduleDocument, moduleDocumentContent } from "./workflow-module-docs.js";
 import { ProjectDocuments } from "./project-documents.js";
 import { readWorkspaceText } from "./workspace-files.js";
+import { WorkflowCommandRunner } from "./workflow-command-runner.js";
 
 type Host = {
   dataDir: string;
@@ -45,11 +45,12 @@ export class WorkflowService {
   private readonly resourceWaits = new Map<string, string>();
   private readonly resourceLocks = new Map<string, Promise<unknown>>();
   private readonly jobs = new Set<Promise<unknown>>();
-  private readonly children = new Set<ReturnType<typeof spawn>>();
+  private readonly commands: WorkflowCommandRunner;
   private readonly slotWaiters = new Set<() => void>();
   private readonly reservations = new Map<string, number>();
 
   constructor(private readonly host: Host) {
+    this.commands = new WorkflowCommandRunner(host.dataDir);
     this.store = new WorkflowStore(host.dataDir);
     this.design = new WorkflowDesign(this.store, host.items);
     this.documents = new ProjectDocuments(this.store, host.items, host.dataDir);
@@ -121,7 +122,7 @@ export class WorkflowService {
   dispose(): void {
     this.disposed = true;
     for (const wake of this.slotWaiters) wake();
-    for (const child of this.children) this.kill(child);
+    this.commands.dispose();
   }
   private async changed(): Promise<void> {
     await this.store.save(); this.host.emit();
@@ -463,7 +464,7 @@ export class WorkflowService {
       const scope = this.store.scope(item);
       const prd = this.design.prd(id);
       const baseInstruction = instruction ?? workItemPrompt({ ...scope, description: workItemContext(item), feedback: this.host.items.listFeedback(id).filter((entry) => !entry.deliveredAt) });
-      const proposalInstructions = kind === "discussion" ? `\n\n需要提交设计方案时，输出一个且仅一个带 qingzhou-design 语言标识的 JSON 代码块，字段为 schemaVersion:1、itemId:${JSON.stringify(id)}、scopeId:${JSON.stringify(scope.id)}、expectedPrdId:${JSON.stringify(prd?.id ?? null)}、content（完整 PRD）、reason、moduleChanges（moduleId、baseRevisionId、content）、questions（待确认问题数组）。只提交提案，不确认或实施；模块依据使用代码对应版本。可用模块：${JSON.stringify((this.store.state.modules ?? []).filter((entry) => entry.projectId === item.projectId).map((entry) => ({ id: entry.id, name: entry.name })))}；代码基线：${JSON.stringify(await this.designBaseline(id))}` : "";
+      const proposalInstructions = kind === "discussion" ? `\n\n需要提交设计方案时，输出一个且仅一个带 qingzhou-design 语言标识的 JSON 代码块，字段为 schemaVersion:1、itemId:${JSON.stringify(id)}、scopeId:${JSON.stringify(scope.id)}、expectedPrdId:${JSON.stringify(prd?.id ?? null)}、content（完整 PRD）、reason、moduleChanges（moduleId、baseRevisionId、content）、questions（待确认问题数组）。PRD 只放在 content 中，不在回复中重复全文；字符串中的换行、引号须正确 JSON 转义。只提交提案，不确认或实施；模块依据使用代码对应版本。可用模块：${JSON.stringify((this.store.state.modules ?? []).filter((entry) => entry.projectId === item.projectId).map((entry) => ({ id: entry.id, name: entry.name })))}；代码基线：${JSON.stringify(await this.designBaseline(id))}\n\n输出格式示例（替换正文，保留准确依据）：\n\`\`\`qingzhou-design\n${JSON.stringify({ schemaVersion: 1, itemId: id, scopeId: scope.id, expectedPrdId: prd?.id ?? null, content: "完整 PRD 正文", reason: "本次设计原因", moduleChanges: [], questions: [] })}\n\`\`\`` : "";
       const fullInstruction = this.instructionWithDesign(id, baseInstruction + (proposalInstructions ? AGENT_CONTEXT_MARKER + proposalInstructions : ""));
       const pendingFeedback = this.host.items.listFeedback(id).filter((entry) => !entry.deliveredAt);
       const attachments = [...new Set([...(imageIds ?? []), ...pendingFeedback.flatMap((entry) => entry.imageIds ?? [])])];
@@ -778,7 +779,7 @@ export class WorkflowService {
             startedAt: now(), finishedAt: null, exitCode: null, status: "running", output: "", truncated: false,
           };
           result.checks.push(entry); await this.changed();
-          const commandResult = await this.command(check.command, cwd, check.timeoutMs, result.id);
+          const commandResult = await this.commands.run(check.command, cwd, check.timeoutMs, result.id);
           Object.assign(entry, commandResult, { status: commandResult.exitCode === 0 ? "passed" : "failed", finishedAt: now() });
           await this.changed();
         };
@@ -798,30 +799,6 @@ export class WorkflowService {
     await this.changed();
     this.kick();
     if (result.phase === "delivery" && result.itemId) this.background(() => this.cycleVerified(result), config.projectId, result.itemId);
-  }
-  private command(command: string, cwd: string, timeoutMs: number, verificationId: string): Promise<{ exitCode: number | null; output: string; truncated: boolean }> {
-    return new Promise((resolve) => {
-      const child = spawn(command, [], { cwd, shell: true, detached: process.platform !== "win32", windowsHide: true,
-        env: { ...process.env, QINGZHOU_VERIFICATION_ID: verificationId, QINGZHOU_WORKSPACE: cwd,
-          TMPDIR: path.join(this.host.dataDir, "check-env", verificationId),
-          TMP: path.join(this.host.dataDir, "check-env", verificationId), TEMP: path.join(this.host.dataDir, "check-env", verificationId) } });
-      this.children.add(child);
-      let output = ""; let truncated = false; let timedOut = false;
-      const append = (value: Buffer | string) => { const text = String(value); const remaining = 256_000 - output.length; if (text.length > remaining) truncated = true; if (remaining > 0) output += text.slice(0, remaining); };
-      child.stdout?.on("data", append); child.stderr?.on("data", append);
-      child.once("error", (error) => append(error.message));
-      const timer = setTimeout(() => { timedOut = true; this.kill(child); }, timeoutMs);
-      child.once("close", (code) => {
-        clearTimeout(timer); this.children.delete(child);
-        resolve({ exitCode: timedOut ? null : code, output: redactWorkflowLog(output + (timedOut ? "\n检查超时，进程已停止。" : "")), truncated });
-      });
-    });
-  }
-  private kill(child: ReturnType<typeof spawn>): void {
-    try {
-      if (process.platform === "win32") { const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }); killer.on("error", () => child.kill()); }
-      else if (child.pid) process.kill(-child.pid, "SIGKILL");
-    } catch { child.kill("SIGKILL"); }
   }
   private delivery(id: string): Delivery {
     const delivery = this.store.state.deliveries.find((entry) => entry.id === id);

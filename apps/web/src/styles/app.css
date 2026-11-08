@@ -3,67 +3,72 @@
 @import "./workflow.css";
 
 @theme {
-  --color-canvas: oklch(0.96 0.005 264);
-  /* Match conversation surface so the session rail reads as one sheet. */
-  --color-sidebar: oklch(0.99 0.002 264);
-  --color-surface: oklch(0.99 0.002 264);
-  --color-elevated: oklch(1 0 0);
-  --color-line: oklch(0.32 0.02 264 / 0.1);
-  --color-ink: oklch(0.24 0.02 264);
-  --color-mute: oklch(0.5 0.02 264);
-  --color-accent: oklch(0.57 0.19 250);
-  --color-accent-soft: oklch(0.57 0.19 250 / 0.12);
+  --color-canvas: #faf8f3;
+  /* Shared canvas keeps the workspace continuous across panels. */
+  --color-sidebar: #faf8f3;
+  --color-surface: #faf8f3;
+  --color-elevated: #fffdf8;
+  --color-line: rgb(44 43 40 / 10%);
+  --color-control-line: #8b847a;
+  --color-ink: #2c2b28;
+  --color-mute: #746f67;
+  --color-accent: #8f4e37;
+  --color-accent-action: #a65f43;
+  --color-on-accent: #fffaf4;
+  --color-accent-soft: #f1e3d9;
   --color-snow: oklch(0.995 0.002 255);
-  --color-warn: oklch(0.75 0.14 70);
-  --color-success: oklch(0.62 0.15 155);
-  --color-danger: oklch(0.6 0.21 25);
-  --color-info: oklch(0.57 0.19 250);
-  --color-fill: oklch(0.32 0.02 264 / 0.05);
-  --color-fill-strong: oklch(0.32 0.02 264 / 0.08);
-  --color-bubble: oklch(0.57 0.19 250 / 0.1);
+  --color-warn: #8a5a18;
+  --color-success: #39734d;
+  --color-danger: #b33936;
+  --color-info: #326a91;
+  --color-fill: #efebe3;
+  --color-fill-strong: #eae5dc;
+  --color-bubble: #f1e3d9;
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
     "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
   --font-mono: "Commit Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --radius-xl: 16px;
+  --radius-xl: 12px;
   --radius-pill: 999px;
-  --text-xs: 0.6875rem;
+  --text-xs: 0.75rem;
   --text-xs--line-height: 1.35;
-  --text-sm: 0.8125rem;
+  --text-sm: 0.875rem;
   --text-sm--line-height: 1.45;
-  --text-base: 0.84375rem;
-  --text-base--line-height: 1.6;
-  --shadow-card: 0 0.5px 0 0 oklch(0.32 0.02 264 / 0.12), 0 1px 1px oklch(0.32 0.02 264 / 0.04);
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.75;
+  --shadow-card: none;
   --shadow-dialog: 0 0 0 0.5px oklch(0.32 0.02 264 / 0.12), 0 22px 70px oklch(0.32 0.02 264 / 0.22);
-  --shadow-composer: 0 0 0 0.5px oklch(0.32 0.02 264 / 0.12), 0 1px 2px oklch(0.32 0.02 264 / 0.04),
-    0 8px 20px oklch(0.32 0.02 264 / 0.05);
+  --shadow-composer: 0 0 0 1px var(--color-control-line);
 }
 
 html.dark {
   color-scheme: dark;
-  --color-canvas: oklch(0.2 0.01 264);
-  /* Match conversation surface so the session rail reads as one sheet. */
-  --color-sidebar: oklch(0.24 0.01 264);
-  --color-surface: oklch(0.24 0.01 264);
-  --color-elevated: oklch(0.27 0.012 264);
-  --color-line: oklch(0.96 0.005 264 / 0.1);
-  --color-ink: oklch(0.96 0.006 264);
-  --color-mute: oklch(0.74 0.012 264);
-  --color-accent: oklch(0.68 0.16 250);
-  --color-accent-soft: oklch(0.68 0.16 250 / 0.18);
+  --color-canvas: #24272b;
+  /* Shared canvas keeps the workspace continuous across panels. */
+  --color-sidebar: #24272b;
+  --color-surface: #24272b;
+  --color-elevated: #2b2f35;
+  --color-line: rgb(255 255 255 / 8%);
+  --color-control-line: #7b8087;
+  --color-ink: #e4e1d9;
+  --color-mute: #aaa79e;
+  --color-accent: #d49b7e;
+  --color-accent-action: #d49b7e;
+  --color-on-accent: #231e19;
+  --color-accent-soft: #363d45;
   --color-snow: oklch(0.995 0.002 255);
   --color-warn: oklch(0.82 0.12 80);
   --color-success: oklch(0.76 0.12 155);
   --color-danger: oklch(0.7 0.18 25);
   --color-info: oklch(0.68 0.16 250);
-  --color-fill: oklch(0.96 0.005 264 / 0.06);
-  --color-fill-strong: oklch(0.96 0.005 264 / 0.1);
-  --color-bubble: oklch(0.68 0.16 250 / 0.16);
-  --shadow-card: 0 0.5px 0 0 oklch(1 0 0 / 0.08);
+  --color-fill: #2b2f35;
+  --color-fill-strong: #30353b;
+  --color-bubble: #363d45;
+  --shadow-card: none;
   --shadow-dialog: 0 0 0 0.5px oklch(1 0 0 / 0.12), 0 24px 64px oklch(0 0 0 / 0.55);
-  --shadow-composer: 0 0 0 0.5px oklch(1 0 0 / 0.12), 0 1px 2px oklch(0 0 0 / 0.2), 0 10px 24px oklch(0 0 0 / 0.28);
+  --shadow-composer: 0 0 0 1px var(--color-control-line);
 }
 
 @layer base {
@@ -82,9 +87,9 @@ html.dark {
     background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 1.4;
-    letter-spacing: -0.014em;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: normal;
     font-synthesis: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -96,7 +101,7 @@ html.dark {
   }
 
   :focus-visible {
-    outline: 3px solid color-mix(in oklch, var(--color-accent) 45%, transparent);
+    outline: 2px solid var(--color-accent);
     outline-offset: 1px;
     border-radius: 6px;
   }
@@ -106,7 +111,7 @@ html.dark {
   input,
   select,
   textarea {
-    min-height: 28px;
+    min-height: 40px;
   }
 
   @media (pointer: coarse) {
@@ -203,13 +208,11 @@ html.dark {
   .titlebar {
     height: 52px;
     min-height: 52px;
-    background: color-mix(in oklch, var(--color-surface) 78%, transparent);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: var(--color-canvas);
   }
 
   .conversation-titlebar { display: flex; gap: 6px; }
-  .conversation-convert-icon { display: none; }
+  .conversation-convert-icon { display: block; }
 
   @media (max-width: 480px) {
     .conversation-titlebar {
@@ -295,14 +298,14 @@ html.dark {
   }
 
   .material-sidebar {
-    /* Same solid fill as the conversation pane — avoid a colder translucent slab. */
+    /* Sidebar and content share the same solid canvas. */
     background: var(--color-surface);
   }
 
   .search-field {
     display: flex;
-    height: 26px;
-    min-height: 26px;
+    height: 40px;
+    min-height: 40px;
     align-items: center;
     gap: 6px;
     border-radius: 7px;
@@ -313,17 +316,17 @@ html.dark {
 
   .search-field input {
     min-height: 0;
-    height: 26px;
+    height: 38px;
   }
 
   .toolbar-btn {
     display: flex;
-    height: 28px;
-    width: 28px;
-    min-height: 28px;
+    height: 40px;
+    width: 40px;
+    min-height: 40px;
     align-items: center;
     justify-content: center;
-    border-radius: 7px;
+    border-radius: 6px;
     color: var(--color-mute);
   }
 
@@ -368,8 +371,8 @@ html.dark {
   .settings-card {
     overflow: hidden;
     border-radius: 10px;
-    background: var(--color-elevated);
-    box-shadow: var(--shadow-card);
+    background: transparent;
+    box-shadow: none;
   }
 
   .settings-row {
@@ -377,7 +380,7 @@ html.dark {
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    padding: 12px 14px;
+    padding: 16px 0;
   }
 
   .settings-row + .settings-row {
@@ -479,10 +482,10 @@ html.dark {
   }
 
   .field {
-    min-height: 28px;
+    min-height: 40px;
     border-radius: 8px;
-    border: 0.5px solid var(--color-line);
-    background: var(--color-fill);
+    border: 1px solid var(--color-control-line);
+    background: var(--color-elevated);
     padding: 0 10px;
     color: var(--color-ink);
   }
@@ -494,26 +497,26 @@ html.dark {
 
   .icon-btn {
     display: flex;
-    height: 28px;
-    width: 28px;
-    min-height: 28px;
+    height: 40px;
+    width: 40px;
+    min-height: 40px;
     align-items: center;
     justify-content: center;
-    border-radius: 7px;
+    border-radius: 6px;
     color: var(--color-mute);
   }
 
   .btn {
     display: inline-flex;
-    height: 28px;
-    min-height: 28px;
+    height: 40px;
+    min-height: 40px;
     min-width: 64px;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    border-radius: 7px;
+    border-radius: 6px;
     padding: 0 12px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 510;
     line-height: 1;
     white-space: nowrap;
@@ -525,8 +528,8 @@ html.dark {
   }
 
   .btn-primary {
-    background: var(--color-accent);
-    color: white;
+    background: var(--color-accent-action);
+    color: var(--color-on-accent);
   }
 
   .btn-secondary {
@@ -551,10 +554,10 @@ html.dark {
 
   .send-btn {
     display: flex;
-    height: 28px;
-    width: 28px;
-    min-height: 28px;
-    min-width: 28px;
+    height: 40px;
+    width: 40px;
+    min-height: 40px;
+    min-width: 40px;
     align-items: center;
     justify-content: center;
     border-radius: 99px;
@@ -621,16 +624,16 @@ html.dark {
 
   .composer-capsule {
     display: inline-flex;
-    height: 28px;
+    height: 40px;
     max-width: 14rem;
-    min-height: 28px;
+    min-height: 40px;
     align-items: center;
     gap: 3px;
     border-radius: 8px;
     background: transparent;
     padding: 0 8px;
     color: var(--color-mute);
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 510;
   }
 
@@ -679,14 +682,14 @@ html.dark {
     z-index: 30;
     width: min(280px, calc(100vw - 24px));
     overflow: hidden;
-    border-radius: 22px;
+    border-radius: 12px;
     background: var(--color-elevated);
     padding: 14px 16px 10px;
     box-shadow: var(--shadow-dialog);
   }
 
   html.dark .policy-picker {
-    background: oklch(0.22 0.01 264);
+    background: var(--color-elevated);
   }
 
   .policy-picker-rail + .policy-picker-rail {
@@ -702,9 +705,27 @@ html.dark {
     text-align: left;
   }
 
-  .policy-picker-rail .model-picker-slider-wrap {
-    margin: 6px 2px 8px;
+  .policy-picker-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 8px;
   }
+
+  .policy-picker-options button {
+    min-height: 40px;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 14px;
+    text-align: left;
+  }
+
+  .policy-picker-options button[aria-pressed="true"] {
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+
+  .titlebar svg { width: 14px; height: 14px; }
 
   .policy-picker-rail-disabled {
     opacity: 0.45;
@@ -721,14 +742,14 @@ html.dark {
     z-index: 30;
     width: 280px;
     overflow: hidden;
-    border-radius: 22px;
+    border-radius: 12px;
     background: var(--color-elevated);
     padding: 12px 16px 12px;
     box-shadow: var(--shadow-dialog);
   }
 
   html.dark .model-picker {
-    background: oklch(0.22 0.01 264);
+    background: var(--color-elevated);
   }
 
   .model-picker-head {
@@ -900,7 +921,7 @@ html.dark {
   }
 
   html.dark .model-picker-list {
-    background: oklch(0.22 0.01 264);
+    background: var(--color-elevated);
   }
 
   .model-picker-list-title {
@@ -1215,9 +1236,7 @@ html.dark {
     align-items: center;
     justify-content: center;
     padding: 16px;
-    background: oklch(0.2 0.01 264 / 0.28);
-    backdrop-filter: blur(18px) saturate(140%);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    background: rgb(24 22 18 / 24%);
   }
 
   html.dark .dialog-scrim {
@@ -1233,7 +1252,7 @@ html.dark {
     max-height: min(88dvh, 640px);
     flex-direction: column;
     overflow: hidden;
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--color-elevated);
     box-shadow: var(--shadow-dialog);
     backdrop-filter: none;
@@ -1256,7 +1275,7 @@ html.dark {
     max-height: min(88dvh, 640px);
     flex-direction: column;
     overflow: hidden;
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--color-elevated);
     box-shadow: var(--shadow-dialog);
     animation: fade-in-short 180ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -1366,7 +1385,7 @@ html.dark {
   }
 
   html.dark .seg-active {
-    background: oklch(0.34 0.012 264);
+    background: var(--color-fill-strong);
   }
 
   .banner-note {
@@ -1576,30 +1595,20 @@ html.dark {
   }
 
   .composer-well {
-    border-radius: 16px;
+    border-radius: 8px;
     background: var(--color-elevated);
     box-shadow: var(--shadow-composer);
     transition: box-shadow 0.16s ease;
   }
 
-  .composer-well :focus,
-  .composer-well :focus-visible {
+  .composer-well textarea:focus,
+  .composer-well textarea:focus-visible {
     outline: none;
     box-shadow: none;
   }
 
   .composer-well:focus-within {
-    box-shadow:
-      0 0 0 0.5px color-mix(in oklch, var(--color-ink) 28%, transparent),
-      0 1px 2px oklch(0.32 0.02 264 / 0.05),
-      0 10px 28px oklch(0.32 0.02 264 / 0.07);
-  }
-
-  html.dark .composer-well:focus-within {
-    box-shadow:
-      0 0 0 0.5px oklch(1 0 0 / 0.22),
-      0 1px 2px oklch(0 0 0 / 0.24),
-      0 12px 28px oklch(0 0 0 / 0.36);
+    box-shadow: 0 0 0 2px var(--color-accent);
   }
 
   .composer-toolbar {
@@ -1630,9 +1639,9 @@ html.dark {
 
   .composer-tool-btn {
     display: flex;
-    height: 28px;
-    width: 28px;
-    min-height: 28px;
+    height: 40px;
+    width: 40px;
+    min-height: 40px;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
@@ -2653,7 +2662,7 @@ html.desktop[data-platform="darwin"] .traffic-inline {
 .slider-labels button { flex: 1; min-width: 0; padding: 3px 2px; border-radius: 5px; color: var(--color-mute); font-size: 10px; line-height: 1.4; white-space: normal; }
 .slider-labels button[aria-pressed="true"] { background: var(--color-fill); color: var(--color-accent); }
 .settings-nav { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--color-line); }
-.settings-nav a { border-radius: 6px; padding: 6px 8px; font-size: 12px; color: var(--color-mute); }
+.settings-nav a { display:inline-flex; align-items:center; min-height:40px; border-radius:6px; padding:6px 10px; font-size:14px; color: var(--color-mute); }
 .settings-shell section { scroll-margin-top: 20px; }
 .settings-load-note { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; }
 .work-search-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 36px 12px; color: var(--color-mute); font-size: 13px; }
@@ -2674,3 +2683,22 @@ html.desktop[data-platform="darwin"] .traffic-inline {
 .slider-labels button { font-size:11px; min-height:28px; }
 .interaction-choice { min-height:38px; border:1px solid var(--color-line); background:var(--color-surface); }
 .interaction-choice:hover { background:var(--color-fill); }
+
+/* Content-first entry and compact directory selection share the workspace scale. */
+.workspace-welcome { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; min-height:100%; max-width:520px; margin:auto; padding:48px 32px; }
+.folder-field { min-width:0; font-size:14px; }
+.folder-field-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--color-mute); }
+.folder-field-heading .btn { min-width:0; padding-inline:8px; }
+.folder-field-summary { display:flex; align-items:flex-start; gap:10px; padding:12px; border-radius:8px; background:var(--color-fill); }
+.folder-field-summary svg { flex-shrink:0; margin-top:3px; color:var(--color-mute); }
+.folder-field-summary p { min-width:0; overflow-wrap:anywhere; font-size:12px; line-height:1.7; }
+
+.settings-nav a[aria-current="page"] { background:var(--color-accent-soft); color:var(--color-accent); }
+
+@media (hover:hover) and (pointer:fine) {
+  .conversation-message-actions { opacity:0; }
+  .conversation-message:is(:hover,:focus-within) .conversation-message-actions,
+  .conversation-message-feedback { opacity:1; }
+}
+
+.conversation-message-actions button, button.conversation-message-actions { min-height:40px; }

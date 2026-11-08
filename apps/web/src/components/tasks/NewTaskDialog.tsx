@@ -2,8 +2,7 @@ import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useRef, useState } from "react";
 import type { PiSessionRef } from "@qingzhou/protocol";
 import { X } from "lucide-react";
-import { FolderPicker } from "../setup/FolderPicker";
-import { isDesktopApp } from "../../desktop-bridge";
+import { FolderField } from "../setup/FolderField";
 
 type Props = {
   defaultCwd: string;
@@ -14,12 +13,10 @@ type Props = {
 };
 
 export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, onResume }: Props) {
-  const desktop = isDesktopApp();
   const [cwd, setCwd] = useState(defaultCwd);
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"browse" | "type">("browse");
 
   async function submitCreate(): Promise<void> {
     if (busy) return;
@@ -75,44 +72,7 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
         </div>
 
         <div className="dialog-body space-y-3">
-          {desktop ? null : (
-            <div className="seg">
-              <button
-                type="button"
-                className={`pressable btn ${mode === "browse" ? "seg-active" : "text-mute"}`}
-                onClick={() => setMode("browse")}
-              >
-                浏览
-              </button>
-              <button
-                type="button"
-                className={`pressable btn ${mode === "type" ? "seg-active" : "text-mute"}`}
-                onClick={() => setMode("type")}
-              >
-                输入路径
-              </button>
-            </div>
-          )}
-
-          {desktop || mode === "browse" ? (
-            <FolderPicker initialPath={defaultCwd || undefined} selectedPath={cwd} onSelect={setCwd} />
-          ) : (
-            <div>
-              <label className="block text-sm text-mute" htmlFor="task-cwd">
-                工作文件夹
-              </label>
-              <input
-                id="task-cwd"
-                value={cwd}
-                onChange={(event) => {
-                  setCwd(event.target.value);
-                  setError("");
-                }}
-                className="field mt-1 w-full font-mono text-sm"
-                autoFocus
-              />
-            </div>
-          )}
+          <FolderField label="工作文件夹" value={cwd} onChange={(next) => { setCwd(next); setError(""); }} />
 
           {error ? <p className="text-sm text-danger">{error}</p> : null}
 
