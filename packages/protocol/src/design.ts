@@ -50,17 +50,34 @@ export const designProposalSchema = designProposalInputSchema.extend({ id, runId
 export type DesignProposal = z.infer<typeof designProposalSchema>;
 export function extractDesignProposal(text: string) {
   const proposals = [];
-  const blocks = text.matchAll(/^ {0,3}(`{3,})(qingzhou-design|json)[ \t]*\r?\n([\s\S]*?)^ {0,3}\1`*[ \t]*\r?$/gm);
-  for (const block of blocks) {
+  const lines = text.split(/\r\n?|\n/);
+  let opened: { marker: string; length: number; language: string; start: number } | null = null;
+  // Track every outer code block so examples stay examples. Each line is visited once,
+  // including malformed replies with thousands of opening fences and no closing one.
+  for (let index = 0; index < lines.length; index++) {
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[index]!);
+    if (!fence) continue;
+    const marker = fence[1]![0]!;
+    const language = fence[2]!.trim();
+    if (!opened) {
+      if (marker === "`" && language.includes("`")) continue;
+      opened = { marker, length: fence[1]!.length, language, start: index + 1 };
+      continue;
+    }
+    if (marker !== opened.marker || fence[1]!.length < opened.length || language) continue;
+    const block = opened;
+    opened = null;
+    if (block.language !== "qingzhou-design" && block.language !== "json") continue;
+    const body = lines.slice(block.start, index).join("\n");
     let value: unknown;
-    try { value = JSON.parse(block[3]!); }
+    try { value = JSON.parse(body); }
     catch (error) {
-      if (block[2] === "qingzhou-design") throw error;
-      if (/"schemaVersion"\s*:/.test(block[3]!) && /"itemId"\s*:/.test(block[3]!) && /"scopeId"\s*:/.test(block[3]!)) throw new Error("设计提案 JSON 格式无效，请让 Agent 重新生成。");
+      if (block.language === "qingzhou-design") throw error;
+      if (/"schemaVersion"\s*:/.test(body) && /"itemId"\s*:/.test(body) && /"scopeId"\s*:/.test(body)) throw new Error("设计提案 JSON 格式无效，请让 Agent 重新生成。");
       continue;
     }
     // Generic JSON is a proposal only when it carries the proposal's identity.
-    if (block[2] === "json" && !(value && typeof value === "object" && "schemaVersion" in value && "itemId" in value && "scopeId" in value)) continue;
+    if (block.language === "json" && !(value && typeof value === "object" && "schemaVersion" in value && "itemId" in value && "scopeId" in value)) continue;
     proposals.push(designProposalInputSchema.parse(value));
   }
   if (proposals.length > 1) throw new Error("请每轮只提供一个结构化设计提案");

@@ -37,4 +37,15 @@ describe("structured design proposals", () => {
     expect(extractDesignProposal(`${longer}\``)).toEqual(input);
     expect(() => extractDesignProposal(`${longer}\n${block(input)}`)).toThrow("一个");
   });
+  it("ignores protocol examples inside other fenced code blocks", () => {
+    const example = `\`\`\`json\n${JSON.stringify(proposal())}\n\`\`\``;
+    expect(extractDesignProposal(`\`\`\`\`markdown\n${example}\n\`\`\`\``)).toBeNull();
+    expect(extractDesignProposal(`~~~markdown\n${example}\n~~~`)).toBeNull();
+    expect(extractDesignProposal(`\`\`\`\`markdown\n${example}\n\`\`\`\`\n${block(proposal())}`)).not.toBeNull();
+  });
+  it("handles repeated unclosed fences without rescanning the remaining message", () => {
+    const start = performance.now();
+    expect(extractDesignProposal("```json\n{}\n".repeat(20_000))).toBeNull();
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
 });
