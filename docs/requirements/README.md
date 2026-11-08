@@ -5,6 +5,9 @@
 | 轻舟产品化重构 | [PRD v1](productize-refactor/PRD.md)、[实施](productize-refactor/IMPLEMENTATION.md)、[验证](productize-refactor/VERIFICATION.md)，已实施并自测、待用户确认 | 工作流职责、草稿与异步操作、检查命令适配器 |
 | 真实 DeepSeek 需求生命周期验证与修复 | [PRD v1](deepseek-lifecycle/PRD.md)、[实施](deepseek-lifecycle/IMPLEMENTATION.md)、[真实闭环](deepseek-lifecycle/LIFECYCLE.md)、[验证](deepseek-lifecycle/VERIFICATION.md)，独立样例已合入，轻舟修复待用户确认 | 凭据来源、只读提示、设计提案、精简对话、交付与集成 |
 | 轻舟 UI 重设计与交互精简 | [PRD v1](mozi-ui-redesign/PRD.md)、[界面规范](mozi-ui-redesign/DESIGN.md)、[实施](mozi-ui-redesign/IMPLEMENTATION.md)、[走查](mozi-ui-redesign/AUDIT.md)、[验证](mozi-ui-redesign/VERIFICATION.md)，已实施并自测、待用户确认 | 最小页面元素、统一视觉、对话与需求、设置及焦点恢复 |
+
+| 模式与审批切换回写修复 | [PRD v1](policy-acknowledgement/PRD.md)、[实施](policy-acknowledgement/IMPLEMENTATION.md)、[验证](policy-acknowledgement/VERIFICATION.md)，已发布 v0.1.28 | 对话与需求内嵌对话的模式和审批选择器 |
+| YiMu 风格视觉改造与对话阅读 | [PRD v2](yimu-visual-refresh/PRD.md)、[实施](yimu-visual-refresh/IMPLEMENTATION.md)、[验证](yimu-visual-refresh/VERIFICATION.md)，已发布 v0.1.28 | 应用外壳、对话排版、工作台、文档与设置 |
 | 统一历史与分屏差异审阅 | [PRD v4](history-and-split-diff/PRD.md)、[实施](history-and-split-diff/IMPLEMENTATION.md)、[验证](history-and-split-diff/VERIFICATION.md)，自测通过待验收 | 需求五页签、模块设计变化、分层历史与统一左右 diff |
 | 文档审阅与 Markdown 存储 | [PRD](document-review-simplification/PRD.md)、[实施](document-review-simplification/IMPLEMENTATION.md)、[验证](document-review-simplification/VERIFICATION.md)，实施验证中 | PRD、模块、目录配置、项目历史、安全合入 |
 | 全量 UI 与交互检视 | [PRD](ui-experience-review/PRD.md)、[实施](ui-experience-review/IMPLEMENTATION.md)、[验证](ui-experience-review/VERIFICATION.md)，实施验证中 | 对话、详情、设置、向导、工作台与关键弹窗 |

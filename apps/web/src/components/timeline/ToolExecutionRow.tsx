@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { sanitizeToolResultText, type ToolExecution } from "@qingzhou/protocol";
 import { Ban, Check, CircleAlert, LoaderCircle, Shield } from "lucide-react";
@@ -39,6 +39,8 @@ function toolTone(status: ToolExecution["status"]): "idle" | "busy" | "wait" | "
 export function ToolExecutionRow({ tool, taskId = null, onOpen, onUndo, compact }: Props) {
   const displayResult = tool.resultText ? sanitizeToolResultText(tool.resultText) : "";
   const [open, setOpen] = useState(Boolean(tool.isError) || tool.status === "failed");
+  const failed = Boolean(tool.isError) || tool.status === "failed";
+  useEffect(() => { if (failed) setOpen(true); }, [failed]);
   const Icon = ICONS[tool.status];
   const duration =
     typeof tool.durationMs === "number" ? `${Math.max(1, Math.round(tool.durationMs / 100) / 10)}s` : "";
@@ -51,7 +53,7 @@ export function ToolExecutionRow({ tool, taskId = null, onOpen, onUndo, compact 
   const tone = useMemo(() => toolTone(tool.status), [tool.status]);
 
   return (
-    <div className={`overflow-hidden rounded-[10px] bg-fill ${toneClass(tone)}`}>
+    <div className={`conversation-tool ${compact ? "conversation-tool-compact" : ""} overflow-hidden rounded-[10px] bg-fill ${toneClass(tone)}`}>
       <div className="flex min-h-8 items-center gap-1 px-1.5">
         <button
           type="button"
@@ -66,7 +68,7 @@ export function ToolExecutionRow({ tool, taskId = null, onOpen, onUndo, compact 
             }
           />
           <span className="text-xs text-ink">{label}</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-mute">{target}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-mute" title={target}>{target}</span>
           {compact ? null : <span className="text-[11px] text-mute">{toolStatusLabel(tool.status)}</span>}
           {duration ? <span className="text-[11px] text-mute">{duration}</span> : null}
           <ChevronRight size={14} className={`text-mute transition-transform ${open ? "rotate-90" : ""}`} />

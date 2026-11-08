@@ -234,7 +234,7 @@ export function TaskSidebar({
                               </span>
                             </span>
                             {task.unreadCount > 0 && !active ? (
-                              <span className="rounded-pill bg-accent px-1.5 text-[10px] leading-4 text-snow">
+                              <span className="rounded-pill bg-accent px-1.5 text-[10px] leading-4 text-on-accent">
                                 {task.unreadCount}
                               </span>
                             ) : null}

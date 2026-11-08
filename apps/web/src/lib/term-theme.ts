@@ -29,10 +29,10 @@ export const TERM_TRANSPARENT_BG = "#00000000";
 
 const DARK_TERM: TermPalette = {
   background: TERM_TRANSPARENT_BG,
-  foreground: "#f3f3f6",
-  cursor: "#8bb4ff",
-  cursorAccent: "#f3f3f6",
-  selectionBackground: "rgba(139, 180, 255, 0.38)",
+  foreground: "#e6eddf",
+  cursor: "#a0c4a7",
+  cursorAccent: "#e6eddf",
+  selectionBackground: "rgba(160, 196, 167, 0.38)",
   black: "#1c1c1e",
   red: "#ff6b6b",
   green: "#63d48e",
@@ -53,10 +53,10 @@ const DARK_TERM: TermPalette = {
 
 const LIGHT_TERM: TermPalette = {
   background: TERM_TRANSPARENT_BG,
-  foreground: "#2a2a33",
-  cursor: "#3b6fd9",
-  cursorAccent: "#2a2a33",
-  selectionBackground: "rgba(59, 111, 217, 0.28)",
+  foreground: "#29362e",
+  cursor: "#426650",
+  cursorAccent: "#29362e",
+  selectionBackground: "rgba(66, 102, 80, 0.28)",
   black: "#2a2a33",
   red: "#c23b3b",
   green: "#1a7f4c",

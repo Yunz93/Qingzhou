@@ -278,6 +278,84 @@ test("settings distinguishes load failure, retries, and failed trust save", asyn
   expect(await trust.isChecked()).toBe(previous);
 });
 
+test("rapid policy changes keep the latest selection while older requests are acknowledged", async ({ page }) => {
+  const held: Array<() => void> = [];
+  let planningReceived = false;
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    route.onMessage((message) => {
+      const command = JSON.parse(String(message));
+      if (command.type === "task.policy.set") held.push(() => server.send(message));
+      else server.send(message);
+    });
+    server.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      for (const event of frame.__batch ? frame.events : [frame]) {
+        if (event.type === "task.updated" && event.payload.task.mode === "plan") planningReceived = true;
+      }
+      route.send(message);
+    });
+  });
+  await createConversation(page, "Delayed policy acknowledgements");
+  await page.getByRole("button", { name: "模式", exact: true }).click();
+  const policy = page.getByRole("dialog", { name: "模式与审批" });
+  const planning = policy.getByRole("button", { name: "规划", exact: true });
+  const agent = policy.getByRole("button", { name: "代理", exact: true });
+  const automatic = policy.getByRole("button", { name: "自动通过", exact: true });
+  await planning.click();
+  await expect(planning).toHaveAttribute("aria-pressed", "true");
+  await agent.click();
+  await expect(agent).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => held.length).toBe(2);
+  held[0]!();
+  await expect.poll(() => planningReceived).toBe(true);
+  // Let React consume the deliberately delayed response before checking the UI.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(agent).toHaveAttribute("aria-pressed", "true");
+  await expect(automatic).toBeEnabled();
+  await automatic.click();
+  await expect(automatic).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => held.length).toBe(3);
+  held[1]!();
+  held[2]!();
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await page.getByRole("button", { name: "模式", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "模式与审批" }).getByRole("button", { name: "自动通过", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a rejected policy change restores the saved selection and can be retried", async ({ page }) => {
+  let reject = true;
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    let latest: Record<string, unknown> = {};
+    server.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      latest = frame.__batch ? frame.events.at(-1) : frame;
+      route.send(message);
+    });
+    route.onMessage((message) => {
+      const command = JSON.parse(String(message));
+      if (reject && command.type === "task.policy.set") {
+        route.send(JSON.stringify({ ...latest, eventId: `failed-${command.id}`, taskId: command.taskId, type: "request.failed", payload: { requestId: command.id, error: "测试审批保存失败，请重试" } }));
+      } else server.send(message);
+    });
+  });
+  await createConversation(page, "Rejected policy change");
+  await page.getByRole("button", { name: "模式", exact: true }).click();
+  const policy = page.getByRole("dialog", { name: "模式与审批" });
+  await policy.getByRole("button", { name: "自动通过", exact: true }).click();
+  await expect(page.getByRole("alert").last()).toContainText("测试审批保存失败");
+  await expect(policy.getByRole("button", { name: "自动审核", exact: true })).toHaveAttribute("aria-pressed", "true");
+  reject = false;
+  await policy.getByRole("button", { name: "自动通过", exact: true }).click();
+  await expect(policy.getByRole("button", { name: "自动通过", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await page.getByRole("button", { name: "模式", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "模式与审批" }).getByRole("button", { name: "自动通过", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("discrete mode choices retain permissions and settings fits narrow light and dark views", async ({ page }) => {
   await createConversation(page, "Readable selectors");
   await page.getByRole("button", { name: "模式", exact: true }).click();

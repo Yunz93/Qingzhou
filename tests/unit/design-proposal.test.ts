@@ -30,4 +30,11 @@ describe("structured design proposals", () => {
     expect(() => extractDesignProposal(`${block(input)}\n${json(input)}`)).toThrow('一个');
     expect(() => extractDesignProposal(`\`\`\`json\n{"schemaVersion":1,"itemId":"${input.itemId}","scopeId":"${input.scopeId}","content":"未转义\n换行"}\n\`\`\``)).toThrow('格式无效');
   });
+  it("recognizes longer Markdown fences without silently selecting a second proposal", () => {
+    const input = proposal();
+    const longer = `\`\`\`\`qingzhou-design\n${JSON.stringify(input)}\n\`\`\`\``;
+    expect(extractDesignProposal(longer)).toEqual(input);
+    expect(extractDesignProposal(`${longer}\``)).toEqual(input);
+    expect(() => extractDesignProposal(`${longer}\n${block(input)}`)).toThrow("一个");
+  });
 });

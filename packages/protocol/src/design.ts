@@ -50,17 +50,17 @@ export const designProposalSchema = designProposalInputSchema.extend({ id, runId
 export type DesignProposal = z.infer<typeof designProposalSchema>;
 export function extractDesignProposal(text: string) {
   const proposals = [];
-  const blocks = text.matchAll(/^ {0,3}```(qingzhou-design|json)[ \t]*\r?\n([\s\S]*?)^ {0,3}```[ \t]*\r?$/gm);
+  const blocks = text.matchAll(/^ {0,3}(`{3,})(qingzhou-design|json)[ \t]*\r?\n([\s\S]*?)^ {0,3}\1`*[ \t]*\r?$/gm);
   for (const block of blocks) {
     let value: unknown;
-    try { value = JSON.parse(block[2]!); }
+    try { value = JSON.parse(block[3]!); }
     catch (error) {
-      if (block[1] === "qingzhou-design") throw error;
-      if (/"schemaVersion"\s*:/.test(block[2]!) && /"itemId"\s*:/.test(block[2]!) && /"scopeId"\s*:/.test(block[2]!)) throw new Error("设计提案 JSON 格式无效，请让 Agent 重新生成。");
+      if (block[2] === "qingzhou-design") throw error;
+      if (/"schemaVersion"\s*:/.test(block[3]!) && /"itemId"\s*:/.test(block[3]!) && /"scopeId"\s*:/.test(block[3]!)) throw new Error("设计提案 JSON 格式无效，请让 Agent 重新生成。");
       continue;
     }
     // Generic JSON is a proposal only when it carries the proposal's identity.
-    if (block[1] === "json" && !(value && typeof value === "object" && "schemaVersion" in value && "itemId" in value && "scopeId" in value)) continue;
+    if (block[2] === "json" && !(value && typeof value === "object" && "schemaVersion" in value && "itemId" in value && "scopeId" in value)) continue;
     proposals.push(designProposalInputSchema.parse(value));
   }
   if (proposals.length > 1) throw new Error("请每轮只提供一个结构化设计提案");

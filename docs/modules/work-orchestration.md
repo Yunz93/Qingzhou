@@ -74,3 +74,9 @@
 来源：[产品化重构 PRD v1](../requirements/productize-refactor/PRD.md)，完成后提案见该需求 modules/workflow.md。项目订阅移至 useProjectWorkflow；项目导航、列表、交付/验收、候选复审和检查详情分别由明确组件呈现，版本判断复用既有投影。useWorkflowAction 保护对象内的重复提交和失效回执；页签与组件挂载保持原草稿生命周期。
 
 WorkflowCommandRunner 仅处理检查进程、环境、输出、超时和清理；WorkflowService 继续拥有调度、资源锁、精确版本、事件与检查有效性。协议、Git/CAS、文档事务、验收与合入规则不因拆分改变。实际源码、80 项相关集成和完整界面回归见该需求实施与验证记录；不声明用户验收或主仓库合入。
+
+## 共享工作台视觉
+
+来源：[YiMu 风格视觉改造 PRD v2](../requirements/yimu-visual-refresh/PRD.md) 的共用视觉部分，随用户授权的 Git 合并同步。项目总览、需求卡片、工作区、文档、差异和设置采用纸白、森林绿与细边框，选中和键盘焦点保持清晰；深色及手机布局共用语义变量。项目与文档标题使用本机宋体回退，密集工具区保持紧凑。
+
+工作模式内嵌对话与自由对话共用阅读排版，具体规则见[对话模块](conversation.md)。现有五页签、PRD 确认、验收、集成及历史来源不变。实现位于 `styles/workflow.css`、`styles/app.css` 及共用主题入口；回归见 `project-workflow.spec.ts`、`visual-theme.spec.ts`，实际结果见本需求[验证记录](../requirements/yimu-visual-refresh/VERIFICATION.md)。本节不创建平台确认或验收事实。

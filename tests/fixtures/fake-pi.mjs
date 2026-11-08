@@ -120,7 +120,7 @@ function waitForUiResponse(id) {
   });
 }
 
-async function streamText(text) {
+async function streamText(text, options = {}) {
   send({
     type: "message_start",
     message: {
@@ -130,13 +130,13 @@ async function streamText(text) {
     },
   });
   send({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-  const parts = text.split(" ");
-  const delayMs = text.includes("stream this slowly") ? 200 : 40;
+  const parts = options.chunkSize ? text.match(new RegExp(`[\\s\\S]{1,${options.chunkSize}}`, "g")) ?? [] : text.split(" ");
+  const delayMs = options.delayMs ?? (text.includes("stream this slowly") ? 200 : 40);
   let acc = "";
   for (const part of parts) {
     if (state.aborted) break;
-    acc += acc ? ` ${part}` : part;
-    const delta = acc.endsWith(part) && acc !== part ? ` ${part}` : part;
+    const delta = options.chunkSize || !acc ? part : ` ${part}`;
+    acc += delta;
     send({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta } });
     await new Promise((r) => setTimeout(r, delayMs));
   }
@@ -148,6 +148,43 @@ async function streamText(text) {
   send({ type: "message_end", message });
   state.messages.push(message);
   persist();
+}
+
+async function renderConversationDemo(failure = false) {
+  let timestamp = now();
+  for (const thinking of ["先分清需求、现有实现和验证依据。", "把结论与执行记录分开，保留完整过程供查阅。"]) {
+    const message = { role: "assistant", content: [{ type: "thinking", thinking }], timestamp: ++timestamp };
+    send({ type: "message_start", message });
+    send({ type: "message_end", message });
+    state.messages.push(message);
+  }
+  for (let index = 0; index < 2; index++) {
+    const toolCallId = `render-read-${++timestamp}`;
+    const target = index ? "src/conversation/renderer.tsx" : "docs/modules/conversation.md";
+    send({ type: "tool_execution_start", toolCallId, toolName: "read", args: { path: target } });
+    await new Promise((resolve) => setTimeout(resolve, failure && index ? 1000 : 40));
+    const isError = failure && index === 1;
+    const content = [{ type: "text", text: isError ? "读取失败：文件暂不可用，原始输出仍可查看。" : `已读取 ${target}\n${"文件内容与上下文。".repeat(12)}` }];
+    send({ type: "tool_execution_end", toolCallId, toolName: "read", result: { content }, isError });
+    const message = { role: "toolResult", toolCallId, toolName: "read", content, isError, timestamp: ++timestamp };
+    send({ type: "message_end", message });
+    state.messages.push(message);
+  }
+  if (failure) { await streamText("有一份文件读取失败，请先检查该文件，已有记录保留。"); return; }
+  const response = [
+    "## 阅读结论", "", "正文应该有清晰的阅读节奏。**先看结论**，再看方案，执行细节按需展开。", "",
+    "这是另一个段落。切换内容主题时保留间距，避免把所有信息挤成一块。", "",
+    "### 实施方案", "", "1. 区分正文、思考记录与工具结果。", "2. 生成过程中也显示标题、列表和代码。", "",
+    "```typescript", "const greeting = '你好，轻舟';", "console.log(greeting);", "```", "",
+    "> 检查通过与人工确认是两个不同的步骤。", "",
+    "| 内容 | 展示方式 |", "| --- | --- |", "| 正文 | 分段阅读 |", "| 执行记录 | 按需展开 |", "",
+    "- 第一项说明有独立的行距。", "- 第二项包含一段较长的路径：`src/conversation/a-very-long-module-name/another-long-directory/conversation-renderer.tsx`。", "",
+    "- [x] 保留完整内容", "- [ ] 等待确认", "",
+    "<script>window.__markdownInjected = true</script>", "",
+    "[不安全链接](javascript:alert(1))", "",
+    "### 回归验证", "", "分别检查桌面、深色和手机布局。生成结束后，正文沿用同一套排版，复制仍保留原始内容。",
+  ].join("\n");
+  await streamText(response, { chunkSize: 24, delayMs: 70 });
 }
 
 async function runWrite(filePath, content) {
@@ -304,6 +341,10 @@ async function handlePrompt(message, mode) {
   }
 
   try {
+    if (message.trim() === "RENDER_CONVERSATION" || message.trim() === "RENDER_TOOL_FAILURE") {
+      await renderConversationDemo(message.trim() === "RENDER_TOOL_FAILURE");
+      return;
+    }
     if (message.trim() === "FAIL429") {
       send({
         type: "message_start",
