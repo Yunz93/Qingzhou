@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       verify_only:
-        description: Run platform checks and exercise Windows signed updates with a temporary test key
+        description: Exercise Windows native install and signed updates with a temporary test key
         type: boolean
         default: false
 
@@ -57,13 +57,17 @@ jobs:
       - name: Configure Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Install and verify
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release build
+        if: ${{ !inputs.verify_only || runner.os != 'Windows' }}
         shell: bash
         env:
           VERIFY_ONLY: ${{ inputs.verify_only }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          pnpm install --frozen-lockfile
           if [[ "$VERIFY_ONLY" != "true" ]]; then
             pnpm exec tsx scripts/verify-release-version.ts "$RELEASE_TAG"
           fi
@@ -72,6 +76,10 @@ jobs:
           pnpm test
           pnpm test:integration
           cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --target "${{ matrix.target }}"
+
+      - name: Verify Windows archive handling
+        if: ${{ inputs.verify_only && runner.os == 'Windows' }}
+        run: pnpm exec vitest run --config vitest.unit.config.ts tests/unit/pi-search-tools.test.ts
 
       - name: Exercise Windows WebView2
         if: ${{ runner.os == 'Windows' && !inputs.verify_only }}

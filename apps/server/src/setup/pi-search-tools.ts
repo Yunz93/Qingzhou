@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { qingzhouEnv } from "../config.js";
 import { pathEnvKey, prependPath } from "./install-pi.js";
+import { systemTar } from "./system-tar.js";
 
 export const PINNED_FD_VERSION = "10.2.0";
 export const PINNED_RIPGREP_VERSION = "14.1.1";
@@ -150,12 +151,12 @@ function findExtractedBinary(rootDir: string, binaryName: string): string | null
 async function extractArchive(archivePath: string, extractDir: string): Promise<void> {
   await mkdir(extractDir, { recursive: true });
   const archiveDir = path.dirname(archivePath);
-  const result = spawnSync("tar", ["xf", path.basename(archivePath), "-C", path.relative(archiveDir, extractDir)], {
+  const result = spawnSync(systemTar(), ["xf", path.basename(archivePath), "-C", path.relative(archiveDir, extractDir)], {
     cwd: archiveDir,
     stdio: "pipe",
   });
   if (result.status !== 0) {
-    const detail = result.stderr?.toString().trim() || result.stdout?.toString().trim() || `exit ${result.status}`;
+    const detail = result.stderr?.toString().trim() || result.stdout?.toString().trim() || result.error?.message || `exit ${result.status}`;
     throw new Error(`Failed to extract ${path.basename(archivePath)}: ${detail}`);
   }
 }

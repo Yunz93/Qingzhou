@@ -1,9 +1,11 @@
+import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { humanizeUserFacingError } from "../../apps/server/src/setup/pi-agent-dir.ts";
 import {
+  downloadPinnedSearchTool,
   ensurePiSearchTools,
   guiSearchToolDirs,
   humanizeSearchToolDownloadError,
@@ -12,6 +14,7 @@ import {
   searchToolBinaryName,
   shouldFetchPinnedSearchTools,
 } from "../../apps/server/src/setup/pi-search-tools.ts";
+import { systemTar } from "../../apps/server/src/setup/system-tar.ts";
 
 describe("Pi search tools (fd / ripgrep)", () => {
   const dirs: string[] = [];
@@ -28,6 +31,27 @@ describe("Pi search tools (fd / ripgrep)", () => {
     );
     expect(searchToolDownloadUrl("rg", "darwin", "arm64")).toContain("/BurntSushi/ripgrep/releases/download/");
     expect(searchToolDownloadUrl("fd", "darwin", "arm64")).not.toContain("/releases/latest");
+  });
+
+  it("uses system tar on Windows regardless of the PATH order", () => {
+    expect(systemTar("win32", { SystemRoot: "D:\\Windows", PATH: "C:\\Program Files\\Git\\usr\\bin" }))
+      .toBe("D:\\Windows\\System32\\tar.exe");
+    expect(systemTar("darwin", {})).toBe("tar");
+  });
+
+  it.runIf(process.platform === "win32")("extracts a Windows fd download as ZIP", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-fd-zip-"));
+    dirs.push(root);
+    const archive = path.join(root, "fd.zip");
+    await writeFile(path.join(root, "fd.exe"), "fd fixture");
+    execFileSync(systemTar(), ["-a", "-cf", archive, "-C", root, "fd.exe"]);
+    const contents = new Uint8Array(await readFile(archive));
+    const result = await downloadPinnedSearchTool("fd", path.join(root, "installed"), {
+      platform: "win32",
+      architecture: "x64",
+      fetchImpl: async () => new Response(contents),
+    });
+    expect(await readFile(result, "utf8")).toBe("fd fixture");
   });
 
   it("puts Homebrew and common GUI bins ahead of a stripped Electron PATH", () => {

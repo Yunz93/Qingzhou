@@ -6,6 +6,10 @@
 
 - 核对 Mozi 和 Modu 的实际图标。墨问使用同色圆角底和独立的白色对话字形。Tauri 由网页 SVG 源生成桌面与窗口图标。
 - 已通过 49 项针对性单测和 6 项 Chromium 回归，覆盖浏览器标题及标志、项目导航、窄屏布局、便携更新提示、Mac 新安装至 `Mowen.app` 和已有 `Qingzhou.app` 原位替换。
+- 墨问候选通过 lint、类型检查、507 项单测和 67 项全量 Chromium E2E。集成测试通过 103 项，跳过 1 项。系统 WebView 通过启动、断线恢复、AppKit 组字、原生文件选择及重启回归。用正式 arm64 ZIP 一致的资源与随包 Pi，在原生窗口完成两轮实际本机模型流式对话并重启回读。
+- arm64 DMG 和 Intel ZIP 完成隔离首装、签名校验与原生启动。两套架构的历史 0.1.26 更新器使用墨问 ZIP 拒绝错误摘要，再从原 `Qingzhou.app` 路径原位替换。各四份会话和项目资料逐字节保留，应用元数据读出「墨问」，升级后原路径可启动。
+- 两种 macOS 架构从 0.1.27 设置页拒绝修改过的下载，随后安装以 `Mowen.app` 为根的正确签名包并重启。主程序和 7 个网页文件与成品一致，主题、中文草稿和已确认 PRD 历史保留。Apple Silicon 使用独立标识重建同版本测试夹具，解决历史夹具启动时未取得桌面会话的问题。
+- 三套墨问 ZIP 的全部 7 个网页文件与同次构建逐字节一致，macOS 两个场景分别核对新显示名称、原应用标识和旧 ZIP 入口。两份 DMG 通过磁盘校验。Finder 自定义窗口步骤在本机失败，最终本地 DMG 沿用安装内容、卷图标和 Applications 链接。候选完整哈希在 `.qingzhou-test/mowen-candidate.oqSdPk/release-artifacts.json`。
 
 ## 功能对照
 
@@ -72,18 +76,18 @@
 
 桌面测试构建与成品使用不同的 Cargo 输出目录。独立目录生成的 arm64 测试包已完成 WKWebView 回归，截图在 `.qingzhou-test/tauri-native-v9WjHx/`。三份成品 ZIP 均验证包含平台代理解析器且未编入 WebDriver 测试驱动。
 
-视觉层级优化后重新打包。三套 ZIP 的 6 个网页文件均与浏览器构建逐字节一致，桌面宿主、服务、审批扩展和 Pi 入口与上一候选一致。Tauri 打包器重新生成 macOS DMG、Windows NSIS 安装程序和便携包。两种 macOS ZIP 和 DMG 均通过完整性校验。候选哈希记录在 `.qingzhou-test/hierarchy-package.R4wpLc/release-artifacts.json`。
+视觉层级优化阶段曾对 6 个网页文件、桌面宿主与随包运行资源完成归档校验，结果记录在 `.qingzhou-test/hierarchy-package.R4wpLc/release-artifacts.json`。下表为增加墨问名称和标志后重编译的候选。
 
 新版 arm64 DMG、Intel ZIP 和 `--local` 选中的 arm64 ZIP 通过空目录安装、本机签名及临时资源清理。原有轻舟运行时，首次启动触发单实例机制。原有实例退出后，两种成品分别完成原生会话鉴权，arm64 重复启动只保留一个服务，Intel 通过 Rosetta。日志为 `.qingzhou-test/hierarchy-first-install-only.log` 和 `.qingzhou-test/hierarchy-stock-launch.log`。三套新版更新资产使用隔离密钥验证，原文件均通过，改动首字节后均被拒绝。
 
 | 文件 | 字节数 | SHA256 |
 | --- | ---: | --- |
-| `Qingzhou-mac-arm64.zip` | 79,748,960 | `efbcdf46396807278093e0c7e1195d00a1a5b93912c9c64c2afab3d1f611f2e5` |
-| `Qingzhou-mac-arm64.dmg` | 67,722,809 | `28f96e65eb3bca2c9d9f83167a967362d6ea9dff1035b37b3eb4927ce14b0eb1` |
-| `Qingzhou-mac-x64.zip` | 82,117,713 | `d530b67e18fbb5de079d5fbacc2a5f2c7581f2b683699d64a0ce11ddd32cda27` |
-| `Qingzhou-mac-x64.dmg` | 70,036,986 | `af69806038e4bfa73a33e3ad86cdb01569e543a4f9422cf9e341159d4fc95b21` |
-| `Qingzhou-win-x64-setup.exe` | 45,843,275 | `cfcbd64330a2094cdc06be3e80a53212aac869d4df99132969041189e80755a7` |
-| `Qingzhou-win-x64-portable.zip` | 78,671,640 | `a7fa4fa22fdcb632d73016b9b90a5f119725fe8119808b730180b61755338355` |
+| `Qingzhou-mac-arm64.zip` | 77,832,733 | `976e5b18113b42161e980738c6c823644e92a44c2643c156977d19b42afbb285` |
+| `Qingzhou-mac-arm64.dmg` | 64,699,079 | `2b60ff9d337912bc3668165dd05a8f6d9cd562754b250800e1c20ac009c68729` |
+| `Qingzhou-mac-x64.zip` | 80,206,012 | `d986dc7413d6d90b7700b6af781a5a51da077883a6c2d21b1f4a2235664929d1` |
+| `Qingzhou-mac-x64.dmg` | 67,042,023 | `048cd96a32b253fd6748f1952298f9820b532b9e5f9940e34f2177d6cf4b1e17` |
+| `Qingzhou-win-x64-setup.exe` | 45,160,993 | `2b8ca02be5765a063ae047aa1d23a7a59cc1d07b9f854949cf08a795623ef717` |
+| `Qingzhou-win-x64-portable.zip` | 77,993,421 | `968579a623d785399baa4e1ac4c3d9d80c93ab52070d0c9db7114178f03bc719` |
 
 Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建的未签名产物。便携 ZIP 完整性检查通过，主程序为 AMD64 Windows GUI 二进制，包内含 Windows Node、PTY、Pi 平台模块、fd 和 rg。检查了生成的 NSIS 脚本调用迁移钩子，PowerShell 回归脚本及发布工作流已通过解析。迁移脚本使用 0.1.26 的公开正式安装包，并固定其发布清单的 SHA256。
 
@@ -98,6 +102,7 @@ Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建�
 ## 待实机验收
 
 - 第一次 [GitHub Actions 仅验证作业](https://github.com/Yunz93/Qingzhou/actions/runs/45647793859) 到达 Windows 单测。命令成功退出，但 Windows 将子进程工作目录显示为 8.3 短路径，导致原始字符串比较失败。测试已对实际和预期路径应用 `realpath` 后严格比较。第二次 [仅验证作业](https://github.com/Yunz93/Qingzhou/actions/runs/45649564675) 对提交 `1b700571a0ca8a92844d82a8c86a5b4fcd583c3f` 运行。
-- 第二次作业的 lint、类型检查、全量单元与集成、Rust 检查及两个 WinHTTP PAC 用例均通过。Node 归档解压阶段选中了 Git Bash 的 GNU tar，Windows 的 `D:` 被解读为远程归档地址。打包脚本改用 Windows 系统自带的 `tar.exe` 处理 Node ZIP 和便携 ZIP。
+- 第二次作业的 lint、类型检查、全量单元与集成、Rust 检查及两个 WinHTTP PAC 用例均通过。Node 归档解压阶段选中了 Git Bash 的 GNU tar，Windows 的 `D:` 被解读为远程归档地址。打包脚本改用 Windows 系统自带的 `tar.exe` 处理 Node ZIP 和便携 ZIP。[墨问仅验证作业](https://github.com/Yunz93/Qingzhou/actions/runs/45651700193) 对提交 `5b193fbb43a8c13f8452e4f62f2b26f7ea455da0` 运行。
+- 墨问作业通过 Windows 单测、集成、Rust 和 WinHTTP PAC，Node ZIP 解压通过，fd ZIP 仍由 Git Bash 的 tar 处理。所有工具及安装包入口已共享系统 tar 解析；验证作业先运行真实 ZIP 夹具，再构建、安装和升级。正式发行作业仍执行全量前置验证。
 - Windows x64 的 NSIS 安装、便携启动、WebView2、旧版静默原位升级和新版签名更新。本轮仅有 macOS 宿主。发布工作流加入 Windows WebView2、安装、卸载、便携与安装共存和从 0.1.26 正式版自定义目录原位升级的测试入口。验证模式另使用带桌面测试驱动的 0.1.27 NSIS 软件包，通过本机源测试 0.1.28 候选，检查便携副本拒绝执行安装、损坏资产拒绝、正确签名原位更新和重启后资料保留。
 - macOS 已启用简体拼音，测试进程缺少系统键盘投递权限，自身窗口事件没有进入系统拼音引擎，系统候选词操作仍需手动验收。AppKit 文本客户端、草稿恢复与 Chromium 键码用例已通过。随包 Pi 已通过真实进程 RPC、写文件审批和本机模型推理，外部服务商账号连通仍待验收。

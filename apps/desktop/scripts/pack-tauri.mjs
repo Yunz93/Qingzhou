@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { proxiedFetch } from "../../server/dist/setup/http-proxy.js";
+import { systemTar } from "../../server/dist/setup/system-tar.js";
 
 const desktop = fileURLToPath(new URL("../", import.meta.url));
 const root = path.resolve(desktop, "../..");
@@ -18,8 +19,7 @@ const nodeVersion = "22.22.0";
 const [requestedArch = "native", requiredPlatform] = process.argv.slice(2);
 const arch = requestedArch === "native" ? process.arch : requestedArch;
 const host = process.platform;
-// Git Bash's GNU tar treats the colon in a drive letter as a remote archive host.
-const tar = host === "win32" ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+const tar = systemTar();
 const platform = requiredPlatform ?? host;
 const crossWindows = platform === "win32" && host === "darwin" && process.env.QINGZHOU_CROSS_WINDOWS === "1";
 if (platform !== host && !crossWindows) {
