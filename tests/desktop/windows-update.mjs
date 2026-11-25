@@ -100,9 +100,12 @@ async function exercise(executable, test) {
   let session;
   try {
     await waitFor(() => driver("GET", "/status"), "Windows 测试驱动未就绪");
-    const { sessionId } = await driver("POST", "/session", { capabilities: {
-      alwaysMatch: { "wdio:tauriServiceOptions": { windowLabel: "main" } },
-    } }, 20_000);
+    const { sessionId } = await waitFor(
+      () => driver("POST", "/session", { capabilities: {
+        alwaysMatch: { "wdio:tauriServiceOptions": { windowLabel: "main" } },
+      } }, 20_000),
+      "Windows 主窗口未接受 WebDriver 会话",
+    );
     session = `/session/${sessionId}`;
     await waitFor(() => driver("POST", `${session}/execute/sync`, {
       script: "return Boolean(document.querySelector('nav[aria-label=工作区]'))", args: [],

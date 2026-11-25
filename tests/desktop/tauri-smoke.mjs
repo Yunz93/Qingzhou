@@ -68,9 +68,12 @@ async function start({ simulateMissingPage = false } = {}) {
   const exited = once(processHandle, "close");
   try {
     await waitFor(() => request("GET", "/status"), "桌面测试驱动未就绪");
-    const { sessionId } = await request("POST", "/session", { capabilities: {
-      alwaysMatch: { "wdio:tauriServiceOptions": { windowLabel: "main" } },
-    } }, 20_000);
+    const { sessionId } = await waitFor(
+      () => request("POST", "/session", { capabilities: {
+        alwaysMatch: { "wdio:tauriServiceOptions": { windowLabel: "main" } },
+      } }, 20_000),
+      "桌面主窗口未接受 WebDriver 会话",
+    );
     const session = `/session/${sessionId}`;
     const execute = (script, ...args) => request("POST", `${session}/execute/sync`, { script, args });
     if (pageMoved) {
