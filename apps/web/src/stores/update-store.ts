@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getDesktop } from "../desktop-bridge";
+import { flushDesktopUiState } from "../lib/desktop-ui-state";
 import {
   applyUpdateDownloadEvent,
   INITIAL_UPDATE_DOWNLOAD_PROGRESS,
@@ -118,6 +119,24 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     if (!force && current.lastCheckedAt && Date.now() - current.lastCheckedAt < 60_000) return;
     set({ busy: true, error: null, notice: "", progress: INITIAL_UPDATE_DOWNLOAD_PROGRESS });
     try {
+      const desktop = getDesktop();
+      if (desktop?.checkSignedUpdate) {
+        const release = await desktop.checkSignedUpdate();
+        const portable = desktop.platform === "win32" && release?.canInstall === false;
+        set({
+          latest: release?.version ?? current.current,
+          tagName: release ? `v${release.version}` : null,
+          name: null,
+          url: portable ? `${RELEASES_PAGE_URL}/download/v${encodeURIComponent(release.version)}/Qingzhou-win-x64-portable.zip` : RELEASES_PAGE_URL,
+          body: release?.body ?? "",
+          updateAvailable: Boolean(release && release.version !== current.skippedUpdateVersion),
+          canUpdate: Boolean(release?.canInstall),
+          busy: false,
+          lastCheckedAt: Date.now(),
+          lastUpdateCheckAt: new Date().toISOString(),
+        });
+        return;
+      }
       const response = await fetch("/api/update/latest", { credentials: "same-origin" });
       const json = (await response.json()) as QingzhouUpdateSnapshot;
       set({
@@ -126,18 +145,18 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         busy: false,
         lastCheckedAt: Date.now(),
       });
-    } catch {
+    } catch (error) {
       set({
         busy: false,
         lastCheckedAt: Date.now(),
-        error: "检查更新失败。",
+        error: typeof error === "string" ? error : "检查更新失败。",
       });
     }
   },
 
   install: async () => {
-    const latest = get().latest;
-    if (!latest) return;
+    const { latest, canUpdate } = get();
+    if (!latest || !canUpdate) return;
     set({
       installing: true,
       notice: "",
@@ -145,6 +164,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       progress: startUpdateDownload(),
     });
     try {
+      const desktop = getDesktop();
+      if (desktop?.downloadSignedUpdate && desktop.installSignedUpdate) {
+        await desktop.downloadSignedUpdate(latest, (event) => set({ progress: applyUpdateDownloadEvent(get().progress, event) }));
+        await flushDesktopUiState();
+        set({ notice: "即将重启…", progress: { ...get().progress, phase: "installing" } });
+        await desktop.installSignedUpdate(latest);
+        return;
+      }
       const response = await fetch("/api/update/install", {
         method: "POST",
         credentials: "same-origin",
@@ -163,7 +190,6 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       }
 
       let failed: string | null = null;
-      let relaunch = false;
       if (contentType.includes("text/event-stream")) {
         await readSseEvents(response, (event) => {
           if (event.event === "Started" || event.event === "Progress" || event.event === "Finished") {
@@ -179,16 +205,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
             failed = typeof event.data?.error === "string" ? event.data.error : "更新失败。";
             return;
           }
-          if (event.event === "Done") {
-            relaunch = event.data?.relaunch === true;
-          }
         });
       } else {
-        const json = (await response.json()) as { error?: string; relaunch?: boolean };
+        const json = (await response.json()) as { error?: string };
         if (!response.ok) {
           failed = json.error ?? "更新失败。";
-        } else {
-          relaunch = json.relaunch === true;
         }
       }
 
@@ -201,21 +222,15 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         return;
       }
 
-      const desktop = getDesktop();
-      if (desktop?.restart) {
-        set({ notice: "即将重启…", progress: { ...get().progress, phase: "installing" } });
-        window.setTimeout(() => void desktop.restart?.({ relaunch }), 400);
-      } else {
-        set({
-          installing: false,
-          notice: "请重新打开轻舟。",
-          progress: INITIAL_UPDATE_DOWNLOAD_PROGRESS,
-        });
-      }
-    } catch {
       set({
         installing: false,
-        error: "更新失败。",
+        notice: "请重新打开轻舟。",
+        progress: INITIAL_UPDATE_DOWNLOAD_PROGRESS,
+      });
+    } catch (error) {
+      set({
+        installing: false,
+        error: typeof error === "string" ? error : error instanceof Error ? error.message : "更新失败。",
         progress: INITIAL_UPDATE_DOWNLOAD_PROGRESS,
       });
     }

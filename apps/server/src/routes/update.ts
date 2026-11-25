@@ -73,6 +73,9 @@ export function registerUpdateRoutes(
   });
 
   app.post("/api/update/install", async (request, reply) => {
+    if (options.env?.QINGZHOU_TAURI === "1") {
+      return reply.code(400).send({ error: "请从轻舟设置中安装已签名的更新。" });
+    }
     if (!isQingzhouDesktop(options.env)) {
       return reply.code(400).send({ error: "开发模式不支持替换当前源码，请使用桌面版更新。" });
     }

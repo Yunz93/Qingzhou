@@ -19,16 +19,6 @@ export function normalizeProxyEnv(env: NodeJS.ProcessEnv = process.env): string 
   return proxy;
 }
 
-/** Parse Chromium/Electron `resolveProxy` output (`PROXY host:port; DIRECT`). */
-export function parsePacProxyResult(result: string): string | null {
-  const token = result.split(";")[0]?.trim() ?? "";
-  if (!token || /^DIRECT$/i.test(token)) return null;
-  const match = token.match(/^(PROXY|HTTPS|HTTP|SOCKS5|SOCKS4|SOCKS)\s+(\S+)/i);
-  if (!match?.[2]) return null;
-  // Clash mixed-port accepts HTTP CONNECT on the same port as SOCKS.
-  return `http://${match[2]}`;
-}
-
 export function isUnsupportedRegionError(raw: string): boolean {
   return /unsupported_country_region_territory|territory not supported/i.test(raw);
 }
@@ -38,8 +28,8 @@ export function humanizeUnsupportedRegionError(error: unknown): string | null {
   if (!isUnsupportedRegionError(raw)) return null;
   return [
     "OpenAI 拒绝了这个地区的请求（HTTP 403 unsupported_country_region_territory）。",
-    "浏览器登录会走系统代理，轻舟换 token 和后续 API 默认不走。",
-    "请设置 HTTPS_PROXY（例如 http://127.0.0.1:7890），或让系统代理对所有应用生效后重启轻舟。",
+    "请检查轻舟与浏览器是否使用同一个代理。",
+    "可设置 HTTPS_PROXY（例如 http://127.0.0.1:7890），或调整系统代理后重启轻舟。",
   ].join("\n");
 }
 
@@ -60,7 +50,7 @@ export async function applyEnvHttpProxy(env: NodeJS.ProcessEnv = process.env): P
 
 /**
  * Outbound fetch that honors HTTP(S)_PROXY via undici's EnvHttpProxyAgent.
- * Electron/Node global `fetch` may ignore the npm-undici dispatcher, so callers that
+ * Node global `fetch` may ignore the npm-undici dispatcher, so callers that
  * must reach the public internet (plugin catalog, GitHub) should use this helper.
  */
 export async function proxiedFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {

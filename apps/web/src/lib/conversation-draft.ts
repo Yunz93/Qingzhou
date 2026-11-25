@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type { ComposerImage } from "../components/composer/PromptComposer";
 import { readComposerDraft } from "./composer-drafts";
+import { persistDesktopUiState, restoredDesktopUiValue, trackDesktopUiPreparation } from "./desktop-ui-state";
 
 type Draft = { text: string; images: ComposerImage[] };
 const drafts = new Map<string, Draft>();
@@ -17,7 +18,8 @@ function read(key: string, itemId?: string, taskId?: string | null): Draft {
       const legacy = itemId ? sessionStorage.getItem(`qingzhou:conversation:${itemId}`) : null;
       if (saved !== null) text = saved;
       else if (legacy) text = (JSON.parse(legacy) as { text: string }).text || text;
-      const savedImages = JSON.parse(sessionStorage.getItem(`qingzhou:shared-images:${key}`) || "[]") as ComposerImage[];
+      const imageKey = `qingzhou:shared-images:${key}`;
+      const savedImages = JSON.parse(restoredDesktopUiValue(imageKey) ?? sessionStorage.getItem(imageKey) ?? "[]") as ComposerImage[];
       if (Array.isArray(savedImages)) images = savedImages.filter((image) => typeof image.id === "string" && typeof image.name === "string" && typeof image.previewUrl === "string" && /^data:image\/(png|jpeg|gif|webp);base64,/.test(image.previewUrl));
     } catch { /* Storage failures leave the live editor usable. */ }
     drafts.set(key, { text, images });
@@ -35,16 +37,36 @@ async function saveImages(key: string, images: ComposerImage[]) {
       }
       return { ...image, previewUrl };
     }));
-    if (drafts.get(key)?.images.map((image) => image.id).join() === images.map((image) => image.id).join()) sessionStorage.setItem(`qingzhou:shared-images:${key}`, JSON.stringify(saved));
+    if (drafts.get(key)?.images !== images) return;
+    const name = `qingzhou:shared-images:${key}`;
+    const value = saved.length ? JSON.stringify(saved) : null;
+    persistDesktopUiState(name, value);
+    if (value === null) sessionStorage.removeItem(name);
+    else sessionStorage.setItem(name, value);
   } catch { /* File previews remain in memory if storage is full. */ }
 }
 function update(key: string, next: Draft) {
   if (!key) return;
   const previous = drafts.get(key);
   drafts.set(key, next);
+  if (previous?.text !== next.text) persistDesktopUiState(`qingzhou:shared-draft:${key}`, next.text || null);
   try { sessionStorage.setItem(`qingzhou:shared-draft:${key}`, next.text); } catch { /* Keep the live draft. */ }
-  if (previous?.images !== next.images) void saveImages(key, next.images);
+  if (previous?.images !== next.images) trackDesktopUiPreparation(saveImages(key, next.images));
   listeners.forEach((listener) => listener());
+}
+
+export async function prepareComposerImageIds(images: ComposerImage[]): Promise<string[]> {
+  return Promise.all(images.map(async (image) => {
+    // A restored preview survives a restart, whereas an upload ID belongs to the previous service.
+    if (image.id && !image.previewUrl.startsWith("data:")) return image.id;
+    const blob = await fetch(image.previewUrl).then((response) => response.blob());
+    const body = new FormData();
+    body.append("file", blob, image.name);
+    const response = await fetch("/uploads", { method: "POST", credentials: "same-origin", body });
+    if (!response.ok) throw new Error("恢复图片上传失败，请重试或重新添加图片。");
+    const uploaded = await response.json() as { id: string };
+    return uploaded.id;
+  }));
 }
 /** Requirement identity stays stable before a session exists and across every layout. */
 export function useConversationDraft(taskId: string | null | undefined, itemId?: string) {

@@ -13,17 +13,23 @@ afterEach(() => {
 });
 
 it.each([
-  { argument: "x64", architecture: "x64" },
-  { argument: "arm64", architecture: "arm64" },
-  { argument: undefined, architecture: "arm64" },
-])("downloads tools for target $architecture with argument $argument on an ARM host", async ({ argument, architecture }) => {
+  { args: ["x64"], architecture: "x64", platform: "darwin" },
+  { args: ["arm64"], architecture: "arm64", platform: "darwin" },
+  { args: [], architecture: "arm64", platform: "darwin" },
+  { args: ["x64", "vendor/windows-tools", "win32"], architecture: "x64", platform: "win32" },
+])("downloads $platform-$architecture tools with arguments $args on an ARM Mac", async ({ args, architecture, platform }) => {
   vi.stubGlobal("process", new Proxy(process, {
-    get: (target, key) => key === "arch" ? "arm64" : key === "argv" ? ["node", "bundle-pi-tools.ts", ...(argument ? [argument] : [])] : Reflect.get(target, key),
+    get(target, key) {
+      if (key === "arch") return "arm64";
+      if (key === "platform") return "darwin";
+      if (key === "argv") return ["node", "bundle-pi-tools.ts", ...args];
+      return Reflect.get(target, key);
+    },
   }));
   await import("../../scripts/bundle-pi-tools.ts");
   expect(downloadPinnedSearchTool).toHaveBeenCalledTimes(2);
   for (const tool of ["fd", "rg"]) {
-    expect(downloadPinnedSearchTool).toHaveBeenCalledWith(tool, expect.any(String), { architecture });
+    expect(downloadPinnedSearchTool).toHaveBeenCalledWith(tool, expect.any(String), { architecture, platform });
   }
 });
 

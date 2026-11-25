@@ -7,20 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       verify_only:
-        description: Run platform checks without packaging or publishing
+        description: Run platform checks and exercise Windows signed updates with a temporary test key
         type: boolean
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  CSC_IDENTITY_AUTO_DISCOVERY: "false"
-  ELECTRON_SKIP_BINARY_DOWNLOAD: "0"
 
 jobs:
   build:
@@ -34,15 +30,18 @@ jobs:
           - runner: macos-latest
             label: macOS arm64
             artifact: mac-arm64
-            pack: desktop:pack:mac:arm64
+            arch: arm64
+            target: aarch64-apple-darwin
           - runner: macos-latest
             label: macOS x64
             artifact: mac-x64
-            pack: desktop:pack:mac:x64
+            arch: x64
+            target: x86_64-apple-darwin
           - runner: windows-latest
             label: Windows x64
             artifact: win-x64
-            pack: desktop:pack:win
+            arch: x64
+            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v5
 
@@ -54,6 +53,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Configure Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install and verify
         shell: bash
@@ -69,23 +71,76 @@ jobs:
           pnpm typecheck
           pnpm test
           pnpm test:integration
+          cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --target "${{ matrix.target }}"
+
+      - name: Exercise Windows WebView2
+        if: ${{ runner.os == 'Windows' && !inputs.verify_only }}
+        shell: bash
+        env:
+          QINGZHOU_DESKTOP_E2E_BUILD: "1"
+        run: |
+          pnpm desktop:pack:tauri x64 win32
+          node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
+
+      - name: Exercise Windows system PAC resolver
+        if: ${{ runner.os == 'Windows' }}
+        run: cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc proxy::windows
 
       - name: Pack desktop app
         if: ${{ !inputs.verify_only }}
-        run: pnpm ${{ matrix.pack }}
+        shell: bash
+        env:
+          QINGZHOU_TAURI_UPDATE_PUBKEY: ${{ vars.QINGZHOU_TAURI_UPDATE_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          test -n "$QINGZHOU_TAURI_UPDATE_PUBKEY" && test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          pnpm desktop:pack:tauri "${{ matrix.arch }}"
+
+      - name: Build Windows signed update fixtures and exercise WebView2
+        if: ${{ inputs.verify_only && runner.os == 'Windows' }}
+        shell: bash
+        env:
+          QINGZHOU_DESKTOP_E2E_UPDATE_URL: http://127.0.0.1:4385/latest.json
+          QINGZHOU_DESKTOP_E2E_VERSION: 0.1.27
+        run: |
+          signing_dir="$(mktemp -d)"
+          signing_key="$signing_dir/qingzhou-test.key"
+          node apps/desktop/node_modules/@tauri-apps/cli/tauri.js signer generate --ci --password "" --write-keys "$signing_key"
+          export QINGZHOU_TAURI_UPDATE_PUBKEY="$(cat "$signing_key.pub")"
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key")"
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          pnpm desktop:pack:win
+          test -s apps/desktop/release/Qingzhou-win-x64-setup.exe.sig
+          QINGZHOU_DESKTOP_E2E_BUILD=1 pnpm --filter @qingzhou/desktop tauri:pack x64 win32
+          node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
+
+      - name: Verify Windows installed and portable candidates
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release
+
+      - name: Verify Windows in-app signed update
+        if: ${{ inputs.verify_only && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          node tests/desktop/windows-update.mjs `
+            apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/bundle/nsis/Qingzhou_0.1.27_x64-setup.exe `
+            apps/desktop/release/Qingzhou-win-x64-setup.exe
 
       - name: Verify macOS search tool architecture
         if: ${{ !inputs.verify_only && runner.os == 'macOS' }}
         shell: bash
         env:
           TARGET_ARCH: ${{ matrix.artifact == 'mac-arm64' && 'arm64' || 'x86_64' }}
-          APP_DIR: ${{ matrix.artifact == 'mac-arm64' && 'mac-arm64' || 'mac' }}
+          APP_DIR: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Qingzhou.app/Contents/Resources/runtime
         run: |
           for tool in fd rg; do
-            binary="apps/desktop/release/$APP_DIR/Qingzhou.app/Contents/Resources/tools/$tool"
+            binary="$APP_DIR/tools/$tool"
             lipo -info "$binary"
             lipo "$binary" -verify_arch "$TARGET_ARCH"
           done
+          lipo "$APP_DIR/bin/node" -verify_arch "$TARGET_ARCH"
 
       - name: Upload artifacts
         if: ${{ !inputs.verify_only }}
@@ -97,11 +152,14 @@ jobs:
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
-            apps/desktop/release/*.blockmap
+            apps/desktop/release/*.app.tar.gz
+            apps/desktop/release/*.sig
 
   publish:
     name: Publish GitHub Release
     if: ${{ !inputs.verify_only && startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: write
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -140,6 +198,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm exec tsx scripts/write-latest-json.ts "${{ github.ref_name }}" "${{ github.repository }}" dist/SHA256SUMS.txt dist/latest.json CHANGELOG.md
+          pnpm exec tsx scripts/write-tauri-update-json.ts "${{ github.ref_name }}" "${{ github.repository }}" dist
           cat dist/latest.json
 
       - name: Stable release from tag

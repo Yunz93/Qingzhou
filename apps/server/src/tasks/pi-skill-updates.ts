@@ -63,7 +63,7 @@ export function githubHttpsRemoteUrl(owner: string, repo: string, token?: string
   return `https://github.com/${owner}/${repo}.git`;
 }
 
-/** Force git@ / ssh GitHub remotes onto HTTPS so Electron can check without SSH keys. */
+/** Use HTTPS to check public GitHub remotes without SSH keys. */
 export function gitRemoteCommand(args: string[]): string[] {
   return [
     "-c",

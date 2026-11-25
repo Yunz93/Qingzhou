@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpCircle } from "lucide-react";
 import { useUpdateStore } from "../../stores/update-store";
+import { getDesktop } from "../../desktop-bridge";
 import { UpdateProgressPanel } from "../settings/UpdateProgressPanel";
 
 export function UpdateBanner() {
   const latest = useUpdateStore((state) => state.latest);
   const updateAvailable = useUpdateStore((state) => state.updateAvailable);
   const canUpdate = useUpdateStore((state) => state.canUpdate);
+  const url = useUpdateStore((state) => state.url);
   const installing = useUpdateStore((state) => state.installing);
   const notice = useUpdateStore((state) => state.notice);
   const skippedUpdateVersion = useUpdateStore((state) => state.skippedUpdateVersion);
@@ -17,6 +19,7 @@ export function UpdateBanner() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const skipped = Boolean(latest && skippedUpdateVersion === latest);
+  const portableUrl = !canUpdate && getDesktop()?.platform === "win32" ? url : null;
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
@@ -26,7 +29,7 @@ export function UpdateBanner() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  if (!updateAvailable || !canUpdate || !latest || skipped) return null;
+  if (!updateAvailable || !(canUpdate || portableUrl) || !latest || skipped) return null;
 
   return (
     <div ref={rootRef} className="relative app-no-drag">
@@ -57,9 +60,13 @@ export function UpdateBanner() {
                 <button type="button" className="pressable btn btn-ghost h-7" onClick={dismiss}>
                   稍后
                 </button>
-                <button type="button" className="pressable btn btn-primary h-7" onClick={() => void install()}>
-                  更新并重启
-                </button>
+                {portableUrl ? (
+                  <a className="pressable btn btn-primary h-7" href={portableUrl} target="_blank" rel="noreferrer">下载便携包</a>
+                ) : (
+                  <button type="button" className="pressable btn btn-primary h-7" onClick={() => void install()}>
+                    更新并重启
+                  </button>
+                )}
               </div>
             </>
           )}

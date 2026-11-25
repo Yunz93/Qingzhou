@@ -16,6 +16,10 @@ beforeAll(() => {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     writeFileSync(path.join(root, file), JSON.stringify({ version: "0.1.21" }));
   }
+  const native = path.join(root, "apps/desktop/src-tauri");
+  mkdirSync(native, { recursive: true });
+  writeFileSync(path.join(native, "tauri.conf.json"), JSON.stringify({ version: "0.1.21" }));
+  writeFileSync(path.join(native, "Cargo.toml"), '[package]\nversion = "0.1.21"\n');
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 function verify(tag: string) {

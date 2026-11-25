@@ -1,0 +1,6 @@
+{
+  "identifier": "bootstrap",
+  "description": "Start the managed service from the bundled startup page",
+  "webviews": ["main"],
+  "permissions": ["allow-start-workbench", "allow-open-logs"]
+}

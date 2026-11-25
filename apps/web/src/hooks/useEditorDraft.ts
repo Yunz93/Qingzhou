@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { persistDesktopUiState } from "../lib/desktop-ui-state";
 
 // Keep drafts across unmounts even when browser storage is unavailable or full.
 const memoryDrafts = new Map<string, string>();
@@ -26,6 +27,7 @@ export function useEditorDraft<T extends Record<string, string>>(key: string, ba
     // A slow save may finish after the user has reopened and revised this editor.
     if (expected && storedDraft(key) !== JSON.stringify(expected)) return;
     memoryDrafts.delete(key);
+    persistDesktopUiState(key, null);
     try { sessionStorage.removeItem(key); } catch { /* The in-memory copy is cleared. */ }
   }
   function update(next: T) {
@@ -33,6 +35,7 @@ export function useEditorDraft<T extends Record<string, string>>(key: string, ba
     const value = JSON.stringify(next);
     if (value === serialized) { clear(); return; }
     memoryDrafts.set(key, value);
+    persistDesktopUiState(key, value);
     try { sessionStorage.setItem(key, value); } catch { /* Keep the in-memory copy. */ }
   }
   return { draft, update, clear, discard: () => update(baseline) };

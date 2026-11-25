@@ -13,10 +13,11 @@ type Props = {
 };
 
 export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, onResume }: Props) {
-  const [cwd, setCwd] = useState(defaultCwd);
+  const [selectedCwd, setSelectedCwd] = useState<string>();
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const cwd = selectedCwd ?? defaultCwd;
 
   async function submitCreate(): Promise<void> {
     if (busy) return;
@@ -72,7 +73,7 @@ export function NewTaskDialog({ defaultCwd, sessions = [], onCancel, onCreate, o
         </div>
 
         <div className="dialog-body space-y-3">
-          <FolderField label="工作文件夹" value={cwd} onChange={(next) => { setCwd(next); setError(""); }} />
+          <FolderField label="工作文件夹" value={cwd} onChange={(next) => { setSelectedCwd(next); setError(""); }} />
 
           {error ? <p className="text-sm text-danger">{error}</p> : null}
 

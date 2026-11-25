@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#f7f8f5" />
+    <meta name="theme-color" content="#faf8f3" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <title>轻舟</title>
     <script>
@@ -19,22 +19,8 @@
         var dark = theme === "dark";
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = theme;
-        document.documentElement.style.background = dark ? "#18211c" : "#f7f8f5";
-        document.querySelector('meta[name="theme-color"]').setAttribute("content", dark ? "#18211c" : "#f7f8f5");
-
-        // Mark Electron shell before React mounts so macOS traffic-light inset
-        // CSS applies on first paint (local `pnpm desktop:dev` included).
-        var platform = null;
-        if (window.qingzhou && window.qingzhou.isDesktop) {
-          platform = window.qingzhou.platform || null;
-        } else if (/Electron/i.test(navigator.userAgent)) {
-          if (/Mac/i.test(navigator.userAgent)) platform = "darwin";
-          else if (/Windows/i.test(navigator.userAgent)) platform = "win32";
-          else platform = "linux";
-        }
-        document.documentElement.classList.toggle("desktop", Boolean(platform) || Boolean(window.qingzhou && window.qingzhou.isDesktop));
-        if (platform) document.documentElement.dataset.platform = platform;
-        else delete document.documentElement.dataset.platform;
+        document.documentElement.style.background = dark ? "#24272b" : "#faf8f3";
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", dark ? "#24272b" : "#faf8f3");
       })();
     </script>
   </head>

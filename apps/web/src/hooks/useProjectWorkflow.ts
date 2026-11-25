@@ -11,18 +11,26 @@ export function useProjectWorkflow(projectId: string | undefined) {
   const activeProject = useRef(projectId);
   activeProject.current = projectId;
   const generation = useRef(0);
+  const issued = useRef(0);
+  const applied = useRef(0);
   const invalidate = useCallback(() => { generation.current++; }, []);
   const refresh = useCallback(async () => {
     if (!projectId || activeProject.current !== projectId || connection !== "open") return;
-    const request = ++generation.current;
-    const live = () => request === generation.current && activeProject.current === projectId;
+    const activation = generation.current;
+    const request = ++issued.current;
+    const apply = () => {
+      if (activation !== generation.current || activeProject.current !== projectId || request <= applied.current) return false;
+      applied.current = request;
+      return true;
+    };
     try {
       const value = await socketClient.send<WorkflowProjectState>("workflow.state", { projectId });
-      if (live()) { setSnapshot({ projectId, value }); setError(""); }
-    } catch (reason) { if (live()) setError(reason instanceof Error ? reason.message : String(reason)); }
+      if (apply()) { setSnapshot({ projectId, value }); setError(""); }
+    } catch (reason) { if (apply()) setError(reason instanceof Error ? reason.message : String(reason)); }
   }, [projectId, connection]);
-  useEffect(() => { setSnapshot(null); setError(""); return invalidate; }, [projectId, invalidate]);
-  useEffect(() => { void refresh(); return invalidate; }, [refresh, items, invalidate]);
+  useEffect(() => { setSnapshot(null); setError(""); }, [projectId]);
+  useEffect(() => invalidate, [projectId, connection, invalidate]);
+  useEffect(() => { void refresh(); }, [refresh, items]);
   useEffect(() => {
     if (connection !== "open" || !projectId) return;
     const timer = setInterval(() => { if (!document.hidden) void refresh(); }, 5000);

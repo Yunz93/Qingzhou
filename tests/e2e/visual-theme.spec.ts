@@ -62,8 +62,8 @@ test("theme preference, page chrome and control contrast survive switching and r
   for (const theme of ["dark", "light"] as const) {
     if (theme === "light") await page.getByRole("button", { name: "切换到浅色", exact: true }).click();
     await expectThemeChrome(page);
-    await expectReadable(page.getByRole("navigation", { name: "模式", exact: true }).getByRole("link", { name: "对话", exact: true }));
-    await expectReadable(page.getByRole("navigation", { name: "模式", exact: true }).getByRole("link", { name: "工作", exact: true }));
+    await expectReadable(page.getByRole("navigation", { name: "工作区", exact: true }).getByRole("link", { name: "对话", exact: true }));
+    await expectReadable(page.getByRole("navigation", { name: "工作区", exact: true }).getByRole("link", { name: "项目", exact: true }));
     await page.getByRole("button", { name: "新对话", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "新对话", exact: true });
     await expectReadable(dialog.getByRole("button", { name: "创建对话", exact: true }));

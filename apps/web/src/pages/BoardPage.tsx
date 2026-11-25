@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Settings } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { FolderGit2, PanelLeft, Plus } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary } from "@qingzhou/protocol";
 import { WorkDashboard, type WorkFilter } from "../components/board/WorkDashboard";
 import { RequirementWorkroom } from "../components/board/RequirementWorkroom";
@@ -8,11 +8,10 @@ import { WorkObjectivePanel } from "../components/board/WorkObjectivePanel";
 import { WorkConversationDrawer, ensureWorkConversationTranscript } from "../components/board/WorkConversationDrawer";
 import { NewWorkItemDialog } from "../components/board/NewWorkItemDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
-import { WorkProjectPicker } from "../components/board/WorkProjectPicker";
 import { ProjectWorkflow } from "../components/board/ProjectWorkflow";
 import { WorkflowDashboard } from "../components/board/WorkflowDashboard";
 import { useProjectWorkflow } from "../hooks/useProjectWorkflow";
-import { ModeSwitcher } from "../components/app/ModeSwitcher";
+import { WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { ThemeToggle } from "../components/status/ThemeToggle";
 import { ApprovalSheet } from "../components/approval/ApprovalSheet";
@@ -32,12 +31,12 @@ export function BoardPage() {
   const workspaceRoot = useAgentStore((state) => state.workspaceRoot);
   const allowedRoots = useAgentStore((state) => state.allowedRoots);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<{ text: string; kind: "error" | "ok" } | null>(null);
   const [details, setDetails] = useState<WorkItemDetails | null>(null);
   const [conversationItem, setConversationItem] = useState<WorkItemSummary | null>(null);
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const filterValue = searchParams.get("filter") ?? "all";
   const filter: WorkFilter = ["all", "attention", "working", "ready", "completed", "archived"].includes(filterValue) ? filterValue as WorkFilter : "all";
@@ -174,34 +173,38 @@ export function BoardPage() {
       });
   }
 
+  const openedDetails = focusItemId && details && details.item.id === focusItemId && details.item.projectId === project?.id ? details : null;
+  const openWorkroom = openedDetails && workflow.state?.configs.length;
+
+  function selectProject(id: string) {
+    closeDetails();
+    setNavigationOpen(false);
+    void socketClient.send("workProject.select", { id }).catch((error: unknown) => showError(error, "切换项目失败"));
+  }
+
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-canvas text-ink">
+    <div className="relative flex h-dvh overflow-hidden bg-canvas text-ink">
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>
-      <header className="titlebar app-drag traffic-inline work-page-head px-3">
-        <div className="work-head-start">
-          <ModeSwitcher />
-        </div>
-        <WorkProjectPicker
-          projects={projects}
-          project={project}
-          onSelect={(id) => {
-            closeDetails();
-            void socketClient
-              .send("workProject.select", { id })
-              .catch((error: unknown) => showError(error, "切换项目失败"));
-          }}
-          onCreate={() => setCreatingProject(true)}
-        />
-        <div className="work-head-end app-no-drag">
-          <UpdateBanner />
-          <ThemeToggle />
-          <Link to="/settings" state={{ from: location.pathname + location.search }} aria-label="设置" className="pressable app-no-drag icon-btn">
-            <Settings size={15} />
-          </Link>
-        </div>
-      </header>
+      {navigationOpen ? <button className="fixed inset-0 z-20 bg-ink/20 md:hidden" type="button" aria-label="关闭导航" onClick={() => setNavigationOpen(false)} /> : null}
+      <div className={navigationOpen ? "fixed inset-y-0 left-0 z-30 md:static" : "hidden md:flex"}>
+        <WorkspaceRail section="projects">
+          <div className="px-2.5 py-2">
+            <div className="flex items-center justify-between px-2.5 text-xs text-mute"><h2>项目列表</h2><button className="pressable icon-btn" aria-label="添加项目" title="添加项目" onClick={() => setCreatingProject(true)}><Plus size={14} /></button></div>
+            {projects.map((entry) => <button key={entry.id} type="button" aria-current={entry.id === project?.id ? "page" : undefined}
+              className={`flex min-h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm ${entry.id === project?.id ? "bg-accent-soft text-accent" : "hover:bg-fill"}`}
+              onClick={() => selectProject(entry.id)}><FolderGit2 size={14} className="shrink-0" /><span className="truncate">{entry.name}</span></button>)}
+          </div>
+        </WorkspaceRail>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+      <WorkspaceToolbar>
+        <button type="button" className="pressable icon-btn md:hidden" aria-label="打开导航" onClick={() => setNavigationOpen(true)}><PanelLeft size={14} /></button>
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm"><span className="text-mute">项目</span>{project ? <><span aria-hidden="true" className="text-mute">/</span><button type="button" onClick={closeDetails} className="truncate font-semibold" title={project.name}>{project.name}</button></> : null}</div>
+        <UpdateBanner />
+        <ThemeToggle />
+      </WorkspaceToolbar>
       {notice && !(focusItemId && workflow.state?.configs.length) ? (
         <div
           className={`banner-note flex items-center justify-between gap-3 ${notice.kind === "error" ? "text-danger" : "text-ink"}`}
@@ -213,8 +216,12 @@ export function BoardPage() {
           </button>
         </div>
       ) : null}
-      <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
-        {project ? (
+      <main id="main-content" className={openWorkroom ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1 overflow-y-auto"}>
+        {openWorkroom && openedDetails && workflow.state && project ? (
+          <RequirementWorkroom key={openedDetails.item.id} details={openedDetails} state={workflow.state} items={projectItems} projectName={project.name}
+            error={notice?.kind === "error" ? notice.text : undefined} onClose={closeDetails} onSelect={openDetails} onRefresh={workflow.refresh} onStart={startItem} onStop={stopItem} onReopen={reopenItem} onOpenFull={openConversationFull}
+            onSave={(input) => socketClient.send("workItem.update", { id: openedDetails.item.id, ...input }).then(() => { setNotice(null); })} />
+        ) : project ? (
           <div className={`mx-auto w-full px-4 pb-12 pt-4 ${workflow.state?.configs.length ? "workflow-project-container" : "max-w-[1040px]"}`}>
             <h1 className="sr-only">{project.name}</h1>
             {workflow.error ? <p className="mb-3 text-sm text-danger" role="alert">{workflow.error}</p> : null}
@@ -242,18 +249,19 @@ export function BoardPage() {
             /> : null}
           </div>
         ) : (
-          <div className="mx-auto flex h-full max-w-[440px] flex-col items-center justify-center px-6 pb-16 text-center">
-            <h1 className="display-title text-[28px] text-ink">启动一个项目</h1>
+          <div className="mx-auto flex h-full max-w-[720px] flex-col items-start px-6 pt-[min(20vh,112px)] sm:px-10">
+            <h1 className="text-xl font-semibold text-ink">还没有项目</h1>
             <button
               type="button"
-              className="pressable btn btn-primary mt-7"
+              className="pressable btn btn-primary mt-4"
               onClick={() => setCreatingProject(true)}
             >
-              启动项目
+              <Plus size={14} />新建项目
             </button>
           </div>
         )}
       </main>
+      </div>
 
       {creatingProject ? (
         <NewWorkProjectDialog
@@ -292,15 +300,11 @@ export function BoardPage() {
           onOpenFull={() => openConversationFull(conversationItem)}
         />
       ) : null}
-      {focusItemId && details && workflow.state && details.item.id === focusItemId && details.item.projectId === project?.id ? workflow.state?.configs.length && project ? (
-        <RequirementWorkroom key={details.item.id} details={details} state={workflow.state} items={projectItems} projectName={project.name}
-          error={notice?.kind === "error" ? notice.text : undefined} onClose={closeDetails} onSelect={openDetails} onRefresh={workflow.refresh} onStart={startItem} onStop={stopItem} onReopen={reopenItem} onOpenFull={openConversationFull}
-          onSave={(input) => socketClient.send("workItem.update", { id: details.item.id, ...input }).then(() => { setNotice(null); })} />
-      ) : (
+      {focusItemId && openedDetails && workflow.state && !openWorkroom ? (
         <WorkObjectivePanel
-          key={details.item.id}
-          details={details}
-          hideConversation={workflow.state?.workspaces.some((entry) => entry.itemId === details.item.id && !!entry.removedAt)}
+          key={openedDetails.item.id}
+          details={openedDetails}
+          hideConversation={workflow.state.workspaces.some((entry) => entry.itemId === openedDetails.item.id && !!entry.removedAt)}
           onClose={closeDetails}
           onSave={(input) => {
             return socketClient.send("workItem.update", { id: focusItemId, ...input }).then(() => undefined);

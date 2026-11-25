@@ -4,37 +4,16 @@ import { describe, expect, it } from "vitest";
 import { exportFileUrl } from "../../apps/web/src/lib/open-export.ts";
 
 describe("desktop setup menu and export open", () => {
-  it("preload exposes openPath and onOpenSetup", () => {
-    const src = readFileSync(path.resolve("apps/desktop/src/preload/index.ts"), "utf8");
-    expect(src).toMatch(/qingzhou:open-path/);
-    expect(src).toMatch(/qingzhou:open-setup/);
-    expect(src).toMatch(/qingzhou:notify/);
-    expect(src).toMatch(/qingzhou:check-update/);
-    expect(src).toMatch(/relaunch\?: boolean/);
-  });
-
-  it("main process opens html paths and forwards the setup menu", () => {
-    const src = readFileSync(path.resolve("apps/desktop/src/main/index.ts"), "utf8");
-    expect(src).toMatch(/qingzhou:open-path/);
-    expect(src).toMatch(/qingzhou:open-setup/);
-    expect(src).toMatch(/再次打开设置/);
-    expect(src).toMatch(/检查更新/);
-    expect(src).toMatch(/qingzhou:notify/);
-    expect(src).not.toMatch(/extname\(filePath\)\.toLowerCase\(\) !== "\.html"/);
-    expect(src).toMatch(/ipcMain\.removeHandler/);
-    expect(src).toMatch(/if \(ipcReady\) return/);
-    expect(src).toMatch(/if \(booting\) return booting/);
-    expect(src).toMatch(/adoptSystemProxy/);
-    expect(src).toMatch(/https:\/\/github.com\/Yunz93\/Qingzhou/);
-    expect(src).toMatch(/payload\?\.relaunch !== false/);
-  });
-
-  it("adopts the system proxy for GitHub, OpenAI, pi.dev, and npm", () => {
-    const src = readFileSync(path.resolve("apps/desktop/src/main/system-proxy.ts"), "utf8");
-    expect(src).toContain("https://api.github.com");
-    expect(src).toContain("https://api.openai.com");
-    expect(src).toContain("https://pi.dev");
-    expect(src).toContain("https://registry.npmjs.org");
+  it("routes the native menu through the scoped main webview", () => {
+    const host = readFileSync(path.resolve("apps/desktop/src-tauri/src/main.rs"), "utf8");
+    const bridge = readFileSync(path.resolve("apps/web/src/desktop-bridge.ts"), "utf8");
+    for (const event of ["qingzhou://open-settings", "qingzhou://check-update"]) {
+      expect(host).toContain(event);
+      expect(bridge).toContain(event);
+    }
+    expect(host).toContain('"CmdOrCtrl+,"');
+    expect(host).toContain(".webview(MAIN)");
+    expect(host).toContain("verify_workbench");
   });
 
   it("checks skill updates without waiting on Pi reload_skills", () => {
@@ -44,14 +23,6 @@ describe("desktop setup menu and export open", () => {
     const block = src.slice(start, end);
     expect(block).toMatch(/emitResources/);
     expect(block).not.toMatch(/reloadResources/);
-  });
-
-  it("records the packaged app path for in-app replace", () => {
-    const src = readFileSync(path.resolve("apps/desktop/src/main/paths.ts"), "utf8");
-    expect(src).toMatch(/QINGZHOU_APP_PATH/);
-    expect(src).toMatch(/QINGZHOU_EXEC_PATH/);
-    expect(src).toMatch(/packagedAppPath/);
-    expect(src).toMatch(/macosElectronHelperBin/);
   });
 
   it("encodes export file URLs", () => {

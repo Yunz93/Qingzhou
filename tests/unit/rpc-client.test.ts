@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { RpcClient } from "../../apps/server/src/pi/rpc-client.ts";
@@ -22,13 +20,6 @@ describe("rpc client correlation", () => {
     expect(b.id).toBe("two");
     expect(b.command).toBe("get_available_models");
     await client.stop();
-  });
-
-  it("runs Electron as Node and prefers the macOS Helper binary so Dock stays clean", () => {
-    const src = readFileSync(path.resolve("apps/server/src/pi/rpc-client.ts"), "utf8");
-    expect(src).toContain("resolveElectronNodeBin(command)");
-    expect(src).toContain("envWithElectronAsNode(");
-    expect(src).toContain("windowsHide: true");
   });
 
   it.skipIf(process.platform === "win32")("waits for forced exit when Pi ignores SIGTERM", async () => {

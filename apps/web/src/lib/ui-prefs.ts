@@ -1,3 +1,5 @@
+import { persistDesktopUiState } from "./desktop-ui-state";
+
 export const LEFT_PINNED_KEY = "qingzhou.ui.leftPinned";
 export const RIGHT_PINNED_KEY = "qingzhou.ui.rightPinned";
 export const INSPECTOR_OPEN_KEY = "qingzhou.ui.inspectorOpen";
@@ -27,6 +29,7 @@ export function readUiFlag(key: string, fallback: boolean): boolean {
 }
 
 export function writeUiFlag(key: string, value: boolean): void {
+  persistDesktopUiState(key, value ? "1" : "0");
   try {
     localStorage.setItem(key, value ? "1" : "0");
   } catch {
@@ -46,6 +49,7 @@ export function readUiNumber(key: string, fallback: number): number {
 }
 
 export function writeUiNumber(key: string, value: number): void {
+  persistDesktopUiState(key, String(value));
   try {
     localStorage.setItem(key, String(value));
   } catch {
@@ -66,6 +70,7 @@ export function readBusySendMode(): BusySendMode {
 }
 
 export function writeBusySendMode(value: BusySendMode): void {
+  persistDesktopUiState(BUSY_SEND_MODE_KEY, value);
   try {
     localStorage.setItem(BUSY_SEND_MODE_KEY, value);
   } catch {

@@ -105,76 +105,81 @@ function UserMessage({
   const visible = stripModePrefix(message.text);
   const { structured, goal } = workPromptSummary(visible);
   const discussion = structured && visible.startsWith("请讨论并完善需求「");
+  const canEdit = canRewrite && Boolean(onRetry);
   return (
     <article
       id={conversationMessageDomId(message.id)}
-      className={`conversation-message conversation-user flex w-fit max-w-[78%] shrink-0 flex-col self-end rounded-[16px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.6] tracking-[-0.01em] text-ink ${
-        message.isError ? "opacity-70 ring-1 ring-danger/40" : ""
-      } ${highlighted ? "conversation-search-hit" : ""}`}
+      className="conversation-message conversation-user flex w-fit max-w-[78%] shrink-0 flex-col self-end"
     >
-      {editing ? (
-        <div className="space-y-2">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            className="min-h-20 w-full resize-y bg-transparent text-[13.5px] leading-6 text-ink"
-            aria-label="编辑消息"
-          />
-          <div className="flex justify-end gap-2">
-            <button type="button" className="pressable h-7 px-2 text-[12px] text-mute" onClick={() => setEditing(false)}>
-              取消
-            </button>
+      <div className={`conversation-user-bubble max-w-full self-end rounded-[16px] bg-bubble px-3.5 py-2 text-ink ${
+        message.isError ? "opacity-70 ring-1 ring-danger/40" : ""
+      } ${highlighted ? "conversation-search-hit" : ""}`}>
+        {editing ? (
+          <div className="space-y-2">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              className="min-h-20 w-full resize-y bg-transparent text-[13.5px] leading-6 text-ink"
+              aria-label="编辑消息"
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" className="pressable h-7 px-2 text-[12px] text-mute" onClick={() => setEditing(false)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="pressable h-7 px-2 text-[12px] text-accent"
+                onClick={() => {
+                  onRetry?.(message.id, draft);
+                  setEditing(false);
+                }}
+              >
+                从这里重来
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {message.images?.length ? <MessageImages images={message.images} /> : null}
+            {visible ? structured ? <><p className="text-xs text-mute mb-2">{discussion ? "需求讨论 · 只读" : "已确认的需求执行"}</p><p className="whitespace-pre-wrap">{goal}</p><details className="mt-2 text-xs text-mute"><summary>{discussion ? "查看完整讨论上下文" : "查看完整执行指令"}</summary><p className="whitespace-pre-wrap mt-2">{visible}</p></details></> : <p className="whitespace-pre-wrap">{visible}</p> : null}
+            {!visible && message.images?.length ? (
+              <p className="text-[12px] text-mute">附 {message.images.length} 张图</p>
+            ) : null}
+          </>
+        )}
+      </div>
+      {!editing && (message.isError || visible || canEdit) ? (
+        <div className={`conversation-message-actions flex flex-wrap items-center justify-end gap-x-2 px-1 ${message.isError || copyState !== "idle" ? "conversation-message-feedback" : ""}`}>
+          {message.isError ? <span className="text-[11px] text-danger">发送失败</span> : null}
+          {visible ? (
             <button
               type="button"
-              className="pressable h-7 px-2 text-[12px] text-accent"
+              className="pressable h-6 min-h-6 text-[11px] text-mute"
+              aria-label="复制消息"
               onClick={() => {
-                onRetry?.(message.id, draft);
-                setEditing(false);
+                void copyText(visible).then((ok) => {
+                  setCopyState(ok ? "copied" : "failed");
+                  window.setTimeout(() => setCopyState("idle"), 1600);
+                });
               }}
             >
-              从这里重来
+              {copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制"}
             </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {message.images?.length ? <MessageImages images={message.images} /> : null}
-          {visible ? structured ? <><p className="text-xs text-mute mb-2">{discussion ? "需求讨论 · 只读" : "已确认的需求执行"}</p><p className="whitespace-pre-wrap">{goal}</p><details className="mt-2 text-xs text-mute"><summary>{discussion ? "查看完整讨论上下文" : "查看完整执行指令"}</summary><p className="whitespace-pre-wrap mt-2">{visible}</p></details></> : <p className="whitespace-pre-wrap">{visible}</p> : null}
-          {!visible && message.images?.length ? (
-            <p className="text-[12px] text-mute">附 {message.images.length} 张图</p>
           ) : null}
-          <div className={`conversation-message-actions mt-1.5 flex flex-wrap gap-1.5 ${message.isError || copyState !== "idle" ? "conversation-message-feedback" : ""}`}>
-            {message.isError ? <span className="text-[11px] text-danger">发送失败</span> : null}
-            {visible ? (
-              <button
-                type="button"
-                className="pressable h-6 min-h-6 text-[11px] text-mute"
-                aria-label="复制消息"
-                onClick={() => {
-                  void copyText(visible).then((ok) => {
-                    setCopyState(ok ? "copied" : "failed");
-                    window.setTimeout(() => setCopyState("idle"), 1600);
-                  });
-                }}
-              >
-                {copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制"}
-              </button>
-            ) : null}
-            {canRewrite && onRetry ? (
-              <button
-                type="button"
-                className="pressable h-6 min-h-6 text-[11px] text-mute"
-                onClick={() => {
-                  setDraft(stripModePrefix(message.text));
-                  setEditing(true);
-                }}
-              >
-                编辑并重试
-              </button>
-            ) : null}
-          </div>
-        </>
-      )}
+          {canEdit ? (
+            <button
+              type="button"
+              className="pressable h-6 min-h-6 text-[11px] text-mute"
+              onClick={() => {
+                setDraft(visible);
+                setEditing(true);
+              }}
+            >
+              编辑并重试
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

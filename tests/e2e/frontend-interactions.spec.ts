@@ -30,8 +30,7 @@ async function createConversation(page: Page, title: string, cwd = project) {
 }
 async function createPlan(page: Page, title: string, description = "original goal") {
   await page.goto("/board");
-  await page.getByRole("button", { name: "项目", exact: true }).click();
-  await page.getByRole("menuitem", { name: "新项目…" }).click();
+  await page.getByRole("button", { name: "添加项目", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "启动项目" });
   await dialog.getByRole("button", { name: "输入路径" }).click();
   await dialog.getByLabel("项目文件夹").fill(project);
@@ -90,6 +89,29 @@ test("new conversation focus stays in the modal and Esc returns focus", async ({
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
+});
+
+test("IME confirmation preserves the draft before a real Shift+Enter queues it", async ({ page }) => {
+  const commands: string[] = [];
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    route.onMessage((message) => { commands.push(JSON.parse(String(message)).type); server.send(message); });
+  });
+  await createConversation(page, "中文输入法回归");
+  const composer = page.getByLabel("输入消息");
+  await composer.fill(`please stream this slowly ${"word ".repeat(80)}`);
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.getByRole("button", { name: "停止", exact: true })).toBeVisible();
+  await composer.fill("中文候选词");
+  await composer.evaluate((node) => {
+    const event = new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true });
+    Object.defineProperty(event, "keyCode", { value: 229 });
+    node.dispatchEvent(event);
+  });
+  await expect(composer).toHaveValue("中文候选词");
+  expect(commands).not.toContain("prompt.followUp");
+  await composer.press("Shift+Enter");
+  await expect.poll(() => commands.filter((command) => command === "prompt.followUp")).toHaveLength(1);
 });
 
 test("sidebar search, collapse, rename, and archive undo are recoverable", async ({ page }) => {
@@ -166,7 +188,7 @@ test("objective drafts survive close, reload, and settings round-trip until save
 
 test("rules drafts survive resource tab switches and reload", async ({ page }) => {
   await createConversation(page, "Rules draft");
-  await page.getByRole("button", { name: "详情", exact: true }).click();
+  await page.getByRole("button", { name: "工作区工具", exact: true }).click();
   await page.getByRole("button", { name: "资源", exact: true }).click();
   await page.getByRole("button", { name: "约定", exact: true }).click();
   const editor = page.getByLabel("约定内容");
@@ -176,7 +198,7 @@ test("rules drafts survive resource tab switches and reload", async ({ page }) =
   await page.getByRole("button", { name: "约定", exact: true }).click();
   await expect(editor).toHaveValue("# local unsaved rules");
   await page.reload();
-  await page.getByRole("button", { name: "详情", exact: true }).click();
+  await page.getByRole("button", { name: "工作区工具", exact: true }).click();
   await page.getByRole("button", { name: "资源", exact: true }).click();
   await page.getByRole("button", { name: "约定", exact: true }).click();
   await expect(editor).toBeEnabled();
@@ -206,7 +228,7 @@ test("rule file switching is paused during a slow save", async ({ page }) => {
   });
   await createConversation(page, "Rules other project", otherProject);
   await createConversation(page, "Rules saving");
-  await page.getByRole("button", { name: "详情", exact: true }).click();
+  await page.getByRole("button", { name: "工作区工具", exact: true }).click();
   await page.getByRole("button", { name: "固定详情", exact: true }).click();
   await page.getByRole("button", { name: "资源", exact: true }).click();
   const editor = page.getByLabel("约定内容");
@@ -507,9 +529,17 @@ test("a question displays waiting feedback and empty Enter cannot bypass a disab
 });
 
 test("compact directory selection keeps a typed path when an older browse request returns", async ({ page }) => {
+  let releaseSetup!: () => void;
+  const setupReady = new Promise<void>((resolve) => { releaseSetup = resolve; });
+  await page.route("**/api/setup", async (route) => {
+    await setupReady;
+    await route.continue();
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "新对话", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "新对话", exact: true });
+  await expect(dialog.locator(".folder-field-summary")).toContainText("请选择文件夹");
+  releaseSetup();
   await expect(dialog.locator(".folder-field-summary")).toContainText(project);
   await expect(dialog.getByRole("tree")).toHaveCount(0);
   let releaseBrowse: (() => Promise<void>) | undefined;

@@ -50,25 +50,10 @@ $names = @(
   "MyPi-win-x64-setup.exe"
 )
 
-$tmp = Join-Path $env:TEMP "qingzhou-install"
-New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-$installer = $null
-$sumsPath = Join-Path $tmp "SHA256SUMS.txt"
-$sums = $null
-try {
-  Invoke-WebRequest -Uri "$base/SHA256SUMS.txt" -OutFile $sumsPath -UseBasicParsing
-  if (Test-Path $sumsPath) {
-    $sums = Get-Content -Path $sumsPath
-    Write-Host "OK  downloaded SHA256SUMS.txt"
-  }
-} catch {
-  Write-Host "warning: this release has no SHA256SUMS.txt; skipping integrity check."
-}
-
-function Assert-ReleaseChecksum([string] $FilePath) {
-  if (-not $sums) { return }
+function Assert-ReleaseChecksum([string] $FilePath, [string[]] $Sums) {
+  if (-not $Sums) { return }
   $name = Split-Path -Leaf $FilePath
-  $line = $sums | Where-Object { $_ -match "(^|\s)\*?$([regex]::Escape($name))\s*$" } | Select-Object -First 1
+  $line = $Sums | Where-Object { $_ -match "(^|\s)\*?$([regex]::Escape($name))\s*$" } | Select-Object -First 1
   if (-not $line) {
     Write-Host "warning: SHA256SUMS.txt does not list $name; skipping."
     return
@@ -81,28 +66,50 @@ function Assert-ReleaseChecksum([string] $FilePath) {
   Write-Host "OK  $name checksum verified"
 }
 
-foreach ($name in $names) {
-  $url = "$base/$name"
-  $out = Join-Path $tmp $name
-  Write-Host "-> Downloading $url"
+$tmp = Join-Path $env:TEMP "qingzhou-install-$([Guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $tmp | Out-Null
+try {
+  $installer = $null
+  $sumsPath = Join-Path $tmp "SHA256SUMS.txt"
+  $sums = $null
   try {
-    Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
-    if (Test-Path $out) {
-      Assert-ReleaseChecksum $out
-      $installer = $out
-      break
+    Invoke-WebRequest -Uri "$base/SHA256SUMS.txt" -OutFile $sumsPath -UseBasicParsing
+    if (Test-Path $sumsPath) {
+      $sums = Get-Content -Path $sumsPath
+      Write-Host "OK  downloaded SHA256SUMS.txt"
     }
   } catch {
-    Write-Host "   missed $name"
-    Remove-Item -Force -ErrorAction SilentlyContinue $out
+    Write-Host "warning: this release has no SHA256SUMS.txt; skipping integrity check."
   }
-}
 
-if (-not $installer) {
-  throw "Could not download a $AppName installer from $base. Create a GitHub Release first, or pack locally with pnpm desktop:pack:win."
-}
+  foreach ($name in ($names | Select-Object -Unique)) {
+    $url = "$base/$name"
+    $out = Join-Path $tmp $name
+    Write-Host "-> Downloading $url"
+    try {
+      Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+      if (Test-Path $out) {
+        Assert-ReleaseChecksum -FilePath $out -Sums $sums
+        $installer = $out
+        break
+      }
+    } catch {
+      Write-Host "   missed $name"
+      Remove-Item -Force -LiteralPath $out -ErrorAction SilentlyContinue
+    }
+  }
 
-Unblock-File -Path $installer -ErrorAction SilentlyContinue
-Write-Host "-> Starting installer $installer"
-Start-Process -FilePath $installer -Wait
-Write-Host "OK  $AppName setup finished. Open Qingzhou from the Start menu and follow the on-screen guide."
+  if (-not $installer) {
+    throw "Could not download a $AppName installer from $base. Create a GitHub Release first, or pack locally with pnpm desktop:pack:win."
+  }
+
+  Unblock-File -Path $installer -ErrorAction SilentlyContinue
+  Write-Host "-> Starting installer $installer"
+  $process = Start-Process -FilePath $installer -Wait -PassThru
+  if ($process.ExitCode -ne 0) {
+    throw "轻舟安装程序退出，退出码为 $($process.ExitCode)。"
+  }
+  Write-Host "OK  $AppName setup finished. Open Qingzhou from the Start menu and follow the on-screen guide."
+} finally {
+  Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}

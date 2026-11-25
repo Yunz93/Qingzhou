@@ -3,20 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   isUnsupportedRegionError,
   normalizeProxyEnv,
-  parsePacProxyResult,
   proxiedFetch,
   readProxyUrl,
 } from "../../apps/server/src/setup/http-proxy.ts";
 import { humanizeAuthHttpError, humanizeUserFacingError } from "../../apps/server/src/setup/pi-agent-dir.ts";
 
 describe("HTTP proxy and region errors", () => {
-  it("parses Chromium PAC proxy results", () => {
-    expect(parsePacProxyResult("DIRECT")).toBeNull();
-    expect(parsePacProxyResult("PROXY 127.0.0.1:7890; DIRECT")).toBe("http://127.0.0.1:7890");
-    expect(parsePacProxyResult("HTTPS 127.0.0.1:7890")).toBe("http://127.0.0.1:7890");
-    expect(parsePacProxyResult("SOCKS5 127.0.0.1:7890")).toBe("http://127.0.0.1:7890");
-  });
-
   it("copies ALL_PROXY into HTTPS_PROXY and keeps localhost direct", () => {
     const env: NodeJS.ProcessEnv = { ALL_PROXY: "http://127.0.0.1:7890" };
     expect(readProxyUrl(env)).toBe("http://127.0.0.1:7890");

@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
+const backendAddress = `127.0.0.1:${Number(process.env.PORT ?? 4310)}`;
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -15,14 +17,14 @@ export default defineConfig({
     port: 5173,
     watch: process.env.QINGZHOU_STABLE === "1" ? null : undefined,
     proxy: {
-      "/ws": { target: "ws://127.0.0.1:4310", ws: true },
-      "/api": { target: "http://127.0.0.1:4310" },
-      "/uploads": { target: "http://127.0.0.1:4310" },
-      "/health": { target: "http://127.0.0.1:4310" },
+      "/ws": { target: `ws://${backendAddress}`, ws: true },
+      "/api": { target: `http://${backendAddress}` },
+      "/uploads": { target: `http://${backendAddress}` },
+      "/health": { target: `http://${backendAddress}` },
     },
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    sourcemap: false,
   },
 });

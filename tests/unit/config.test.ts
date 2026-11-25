@@ -2,18 +2,14 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  asNodeEnv,
   defaultAllowedRoots,
   defaultDataDir,
-  envWithElectronAsNode,
   expandHome,
   isAllowedHost,
   isAllowedOrigin,
-  isMacosElectronHelperPath,
   loadConfig,
   parseAllowedRoots,
   readPiVersion,
-  resolveElectronNodeBin,
   resolvePiRuntime,
 } from "../../apps/server/src/config.ts";
 import { loadDotEnv } from "../../apps/server/src/env.ts";
@@ -138,7 +134,7 @@ describe("portable config", () => {
     });
     expect(runtime.command).toBe(process.execPath);
     expect(runtime.prefixArgs[0]).toBe(entry);
-    expect(runtime.extraEnv.ELECTRON_RUN_AS_NODE).toBe("1");
+    expect(runtime.extraEnv).toEqual({});
   });
 
   it("launches a JavaScript PI_BIN via the current node executable", () => {
@@ -146,7 +142,7 @@ describe("portable config", () => {
     const runtime = resolvePiRuntime({ PI_BIN: script });
     expect(runtime.command).toBe(process.execPath);
     expect(runtime.prefixArgs).toEqual([script]);
-    expect(runtime.extraEnv.ELECTRON_RUN_AS_NODE).toBe("1");
+    expect(runtime.extraEnv).toEqual({});
   });
 
   it("launches the CLI behind an npm Pi shim without spawning a batch file", async () => {
@@ -158,7 +154,7 @@ describe("portable config", () => {
       await writeFile(entry, "console.log('0.0.0-test');");
       await writeFile(shim, "@echo off\r\n");
       const runtime = resolvePiRuntime({ PI_BIN: shim });
-      expect(runtime.command).toBe(resolveElectronNodeBin(process.execPath));
+      expect(runtime.command).toBe(process.execPath);
       expect(runtime.prefixArgs).toEqual([entry]);
       const custom = path.join(root, "custom-agent.cmd");
       await writeFile(custom, "@echo off\r\n");
@@ -166,42 +162,6 @@ describe("portable config", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
-
-  it("marks the current executable as a Node interpreter", () => {
-    expect(asNodeEnv(process.execPath).ELECTRON_RUN_AS_NODE).toBe("1");
-    expect(asNodeEnv("/usr/bin/pi").ELECTRON_RUN_AS_NODE).toBeUndefined();
-  });
-
-  it("keeps ELECTRON_RUN_AS_NODE on even if an env layer clears it", () => {
-    expect(
-      envWithElectronAsNode(process.execPath, { ELECTRON_RUN_AS_NODE: "", PATH: "/bin" }).ELECTRON_RUN_AS_NODE,
-    ).toBe("1");
-  });
-
-  it("spawns the macOS Electron Helper so Pi does not take a Dock slot", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "qingzhou-helper-"));
-    const macos = path.join(root, "Qingzhou.app", "Contents", "MacOS");
-    const helperDir = path.join(
-      root,
-      "Qingzhou.app",
-      "Contents",
-      "Frameworks",
-      "Qingzhou Helper.app",
-      "Contents",
-      "MacOS",
-    );
-    await mkdir(macos, { recursive: true });
-    await mkdir(helperDir, { recursive: true });
-    const execPath = path.join(macos, "Qingzhou");
-    const helper = path.join(helperDir, "Qingzhou Helper");
-    await writeFile(execPath, "");
-    await writeFile(helper, "");
-    expect(resolveElectronNodeBin(execPath, "linux")).toBe(execPath);
-    expect(resolveElectronNodeBin(execPath, "darwin")).toBe(helper);
-    expect(isMacosElectronHelperPath(helper)).toBe(true);
-    expect(asNodeEnv(helper).ELECTRON_RUN_AS_NODE).toBe("1");
-    expect(resolveElectronNodeBin("/usr/bin/pi", "darwin")).toBe("/usr/bin/pi");
   });
 
   it("reads bundled Pi version from package.json without spawning", async () => {
@@ -212,7 +172,7 @@ describe("portable config", () => {
     const cli = path.join(dist, "cli.js");
     await writeFile(cli, "throw new Error('should not spawn');\n");
     const result = await readPiVersion({
-      piCommand: path.join(root, "missing-electron"),
+      piCommand: path.join(root, "missing-node"),
       piPrefixArgs: [cli],
       piExtraEnv: {},
     });

@@ -101,8 +101,7 @@ done
 
 [[ "$VERSION" == "latest" || "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "版本必须是 latest 或正式版本号（例如 v0.1.21）。"
 
-# In-app updates launch this script detached, then quit the running Electron
-# process. Wait for it to disappear before replacing the application bundle.
+# Honor the wait argument used by older callers before replacing the app.
 UPDATE_PARENT_PID="${QINGZHOU_UPDATE_PARENT_PID:-${MOWEN_UPDATE_PARENT_PID:-}}"
 if [[ -n "${UPDATE_PARENT_PID}" && "${UPDATE_PARENT_PID}" =~ ^[0-9]+$ ]]; then
   while kill -0 "${UPDATE_PARENT_PID}" 2>/dev/null; do sleep 0.2; done
@@ -157,57 +156,49 @@ mount_dmg() {
   mkdir -p "$mountpoint"
   if hdiutil attach "$dmg" -nobrowse -readonly -noverify -mountpoint "$mountpoint" >/dev/null 2>&1; then
     ATTACHED_DMG="$mountpoint"
-    echo "$mountpoint"
     return
   fi
   output="$(hdiutil attach "$dmg" -nobrowse -readonly -noverify 2>&1)" || die "无法打开磁盘映像: $dmg"
   ATTACHED_DMG="$(printf '%s\n' "$output" | parse_hdiutil_mount)"
   [[ -n "${ATTACHED_DMG}" ]] || die "挂载 DMG 失败。"
-  echo "${ATTACHED_DMG}"
 }
 
 unpack_source() {
   local input="${1:-}"
   [[ -n "$input" ]] || die "没有提供安装包路径。"
   if [[ -d "$input" && "$input" == *.app ]]; then
-    echo "$input"
+    APP_SRC="$input"
     return
   fi
   if [[ -f "$input" && "$input" == *.dmg ]]; then
-    local volume app
-    volume="$(mount_dmg "$input")"
-    app="$(find_app_in_dir "$volume")"
-    if [[ -z "$app" ]]; then
-      die "DMG 里没有找到 ${APP_NAME}.app（已挂载: ${volume}）
-$(ls -la "$volume" 2>/dev/null || true)"
+    mount_dmg "$input"
+    APP_SRC="$(find_app_in_dir "$ATTACHED_DMG")"
+    if [[ -z "$APP_SRC" ]]; then
+      die "DMG 里没有找到 ${APP_NAME}.app（已挂载: ${ATTACHED_DMG}）
+$(ls -la "$ATTACHED_DMG" 2>/dev/null || true)"
     fi
-    echo "$app"
     return
   fi
   if [[ -f "$input" && "$input" == *.zip ]]; then
-    local unzip_dir app
+    local unzip_dir
     ensure_tmp_dir
     unzip_dir="${TMP_DIR}/unpacked"
     mkdir -p "$unzip_dir"
     unzip -q "$input" -d "$unzip_dir" || die "解压失败: ${input}"
-    app="$(find_app_in_dir "$unzip_dir")"
-    [[ -n "$app" ]] || die "ZIP 里没有找到 ${APP_NAME}.app"
-    echo "$app"
+    APP_SRC="$(find_app_in_dir "$unzip_dir")"
+    [[ -n "$APP_SRC" ]] || die "ZIP 里没有找到 ${APP_NAME}.app"
     return
   fi
   die "不支持的安装包: ${input} (需要 .app / .dmg / .zip)"
 }
 
 locate_packaged_app() {
-  [[ -n "${RELEASE_DIR}" && -d "${RELEASE_DIR}" ]] || { echo ""; return; }
-  local app dmg zip
-  app="$(find_app_in_dir "$RELEASE_DIR")"
-  if [[ -n "$app" ]]; then echo "$app"; return; fi
-  dmg="$(find "$RELEASE_DIR" -maxdepth 3 -name "*.dmg" -type f 2>/dev/null | head -n 1 || true)"
-  if [[ -n "$dmg" ]]; then unpack_source "$dmg"; return; fi
-  zip="$(find "$RELEASE_DIR" -maxdepth 3 -name "*.zip" -type f 2>/dev/null | head -n 1 || true)"
-  if [[ -n "$zip" ]]; then unpack_source "$zip"; return; fi
-  echo ""
+  [[ -n "${RELEASE_DIR}" && -d "${RELEASE_DIR}" ]] || return 0
+  local arch package
+  arch="$(mac_arch)"
+  for package in "${RELEASE_DIR}/Qingzhou-mac-${arch}.zip" "${RELEASE_DIR}/Qingzhou-mac-${arch}.dmg"; do
+    if [[ -f "$package" ]]; then unpack_source "$package"; return; fi
+  done
 }
 
 maybe_build() {
@@ -220,7 +211,7 @@ maybe_build() {
 
 download_release() {
   local arch="$1"
-  TMP_DIR="$(mktemp -d -t qingzhou-install)"
+  ensure_tmp_dir
   local tag="$VERSION"
   local base
   if [[ "$tag" == "latest" ]]; then
@@ -249,7 +240,7 @@ download_release() {
     if curl_github -o "$out" "${base}/${name}"; then
       verify_release_file "$out" || { rm -f "$out"; continue; }
       ok "已下载 $name"
-      echo "$out"
+      PACKAGE="$out"
       return
     fi
     rm -f "$out"
@@ -445,18 +436,19 @@ fi
 
 APP_SRC=""
 if [[ -n "$SOURCE" ]]; then
-  APP_SRC="$(unpack_source "$SOURCE")"
+  unpack_source "$SOURCE"
 elif [[ "$BUILD" == "1" ]]; then
   maybe_build
-  APP_SRC="$(locate_packaged_app)"
+  locate_packaged_app
   [[ -n "$APP_SRC" ]] || die "打包后仍未找到 ${APP_NAME}.app。请检查 apps/desktop/release。"
 elif [[ "$LOCAL" == "1" ]]; then
-  APP_SRC="$(locate_packaged_app)"
+  locate_packaged_app
   [[ -n "$APP_SRC" ]] || die "本地没有安装包。请先 pnpm desktop:pack:mac，或去掉 --local 从 GitHub 下载。"
 else
-  PACKAGE="$(download_release "$(mac_arch)")"
+  PACKAGE=""
+  download_release "$(mac_arch)"
   [[ -n "${PACKAGE}" && -f "${PACKAGE}" ]] || die "下载失败。"
-  APP_SRC="$(unpack_source "${PACKAGE}")"
+  unpack_source "$PACKAGE"
 fi
 
 [[ -n "${APP_SRC}" && -d "${APP_SRC}" ]] || die "找不到 ${APP_NAME}.app（得到: '${APP_SRC:-}'）。"

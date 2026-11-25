@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@11.21.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "dev": "pnpm --filter @qingzhou/protocol build && pnpm --parallel --filter @qingzhou/server --filter @qingzhou/web dev",
@@ -18,12 +18,13 @@
     "build": "pnpm --filter @qingzhou/protocol build && pnpm --filter @qingzhou/web build && pnpm --filter @qingzhou/server build",
     "start": "node apps/server/dist/index.js",
     "doctor": "tsx scripts/doctor.ts",
-    "desktop:dev": "pnpm --filter @qingzhou/protocol build && pnpm --filter @qingzhou/server build && pnpm --filter @qingzhou/desktop build && pnpm --parallel --filter @qingzhou/web --filter @qingzhou/desktop dev",
-    "desktop:pack": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack",
-    "desktop:pack:mac": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack:mac",
-    "desktop:pack:mac:arm64": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts arm64 && pnpm --filter @qingzhou/desktop pack:mac:arm64",
-    "desktop:pack:mac:x64": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts x64 && pnpm --filter @qingzhou/desktop pack:mac:x64",
-    "desktop:pack:win": "pnpm build && tsx scripts/bundle-pi.ts && tsx scripts/bundle-pi-tools.ts && pnpm --filter @qingzhou/desktop pack:win",
+    "desktop:dev": "pnpm build && pnpm --filter @qingzhou/desktop tauri:dev",
+    "desktop:pack:tauri": "pnpm build && pnpm --filter @qingzhou/desktop tauri:pack",
+    "desktop:pack": "pnpm desktop:pack:tauri",
+    "desktop:pack:mac": "pnpm desktop:pack:tauri native darwin",
+    "desktop:pack:mac:arm64": "pnpm desktop:pack:tauri arm64 darwin",
+    "desktop:pack:mac:x64": "pnpm desktop:pack:tauri x64 darwin",
+    "desktop:pack:win": "pnpm desktop:pack:tauri x64 win32",
     "desktop:install:mac": "bash scripts/install-macos.sh",
     "desktop:install:win": "pwsh -File scripts/install-windows.ps1",
     "smoke:real": "tsx scripts/smoke-real.ts"

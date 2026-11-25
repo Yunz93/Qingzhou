@@ -177,7 +177,7 @@ function ensurePtyHelperExecutable(): void {
     const helper = path.join(packageDir, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
     chmodSync(helper, 0o755);
   } catch {
-    // The helper may be unpacked by Electron; node-pty will report a useful error if it is unavailable.
+    // node-pty reports a useful error if the helper is unavailable.
   }
 }
 

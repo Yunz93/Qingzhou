@@ -1,3 +1,5 @@
+import { persistDesktopUiState } from "./desktop-ui-state";
+
 export type Theme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "qingzhou.theme";
@@ -5,8 +7,8 @@ export const LEGACY_THEME_STORAGE_KEY = "mowen.theme";
 export const LEGACY_OHMYPI_THEME_STORAGE_KEY = "ohmypi.theme";
 export const THEME_EVENT = "qingzhou-theme";
 
-const DARK_THEME_COLOR = "#18211c";
-const LIGHT_THEME_COLOR = "#f7f8f5";
+const DARK_THEME_COLOR = "#24272b";
+const LIGHT_THEME_COLOR = "#faf8f3";
 
 export function readTheme(): Theme {
   try {
@@ -39,6 +41,7 @@ export function applyTheme(theme: Theme): void {
 }
 
 export function persistTheme(theme: Theme): void {
+  persistDesktopUiState(THEME_STORAGE_KEY, theme);
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {

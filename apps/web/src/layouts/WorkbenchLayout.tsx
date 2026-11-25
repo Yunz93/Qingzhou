@@ -2,7 +2,7 @@ import { ArchivedTasksDialog } from "../components/tasks/ArchivedTasksDialog";
 import { hasDialogLayer } from "../hooks/useDialogLayer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, ClipboardList, MessageSquare, PanelRight, Pencil, Settings } from "lucide-react";
+import { ArrowUpRight, ClipboardList, PanelBottom, PanelLeft, Pencil, Plus } from "lucide-react";
 import { TaskSidebar } from "../components/tasks/TaskSidebar";
 import { ConversationTimeline } from "../components/timeline/ConversationTimeline";
 import { PromptComposer, type ComposerImage } from "../components/composer/PromptComposer";
@@ -15,7 +15,7 @@ import { ContextMeter } from "../components/status/ContextMeter";
 import { RunStatusBar } from "../components/status/RunStatusBar";
 import { useAgentStore } from "../stores/agent-store";
 import { socketClient } from "../transport/socket-client";
-import { ModeSwitcher } from "../components/app/ModeSwitcher";
+import { WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { CommandPalette } from "../components/command-palette/CommandPalette";
 import { NewTaskDialog } from "../components/tasks/NewTaskDialog";
@@ -29,23 +29,19 @@ import { tasksInSidebarOrder } from "../lib/task-list";
 import { OPEN_CONVERSATION_SEARCH_EVENT } from "../lib/conversation-search";
 import { showOsNotification } from "../lib/notify";
 import { isEditableTarget } from "../lib/hotkeys";
-import { useConversationDraft } from "../lib/conversation-draft";
+import { prepareComposerImageIds, useConversationDraft } from "../lib/conversation-draft";
 import { ChatToRequirementDialog } from "../components/board/ChatToRequirementDialog";
 import { useViewPreference } from "../hooks/useViewPreference";
 import { clientErrorMessage, reportRequestError } from "../lib/client-error";
 import { getDesktop } from "../desktop-bridge";
+import { reconnectDesktopUiState } from "../lib/desktop-ui-state";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   INSPECTOR_OPEN_KEY,
-  INSPECTOR_WIDTH_DEFAULT,
-  INSPECTOR_WIDTH_KEY,
   LEFT_PINNED_KEY,
   RIGHT_PINNED_KEY,
-  clampInspectorWidth,
   readUiFlag,
-  readUiNumber,
   writeUiFlag,
-  writeUiNumber,
 } from "../lib/ui-prefs";
 
 function WorkbenchConversation({
@@ -133,14 +129,8 @@ export function WorkbenchLayout() {
     () => readUiFlag(RIGHT_PINNED_KEY, false) && readUiFlag(INSPECTOR_OPEN_KEY, false),
   );
   const isMd = useMediaQuery("(min-width: 768px)");
-  const isXl = useMediaQuery("(min-width: 1100px)");
   const dockLeft = leftPinned && isMd;
-  const dockRight = rightPinned && inspectorOpen && isXl;
-  const [inspectorWidth, setInspectorWidth] = useState(() =>
-    clampInspectorWidth(readUiNumber(INSPECTOR_WIDTH_KEY, INSPECTOR_WIDTH_DEFAULT)),
-  );
   const overlayLeft = taskOpen && !dockLeft;
-  const overlayRight = inspectorOpen && !dockRight;
   const [notice, setNotice] = useState("");
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [archivedTask, setArchivedTask] = useState<{ id: string; title: string } | null>(null);
@@ -208,7 +198,8 @@ export function WorkbenchLayout() {
     reconnectingRef.current = true;
     setReconnecting(true);
     try {
-      await getDesktop()?.ensureBackend?.();
+      const ensureBackend = getDesktop()?.ensureBackend;
+      if (ensureBackend && await reconnectDesktopUiState(ensureBackend)) return;
       if (useAgentStore.getState().connection !== "open") {
         // The connection effect activates the selected task after reconnect.
         await socketClient.reconnect();
@@ -258,10 +249,6 @@ export function WorkbenchLayout() {
   useEffect(() => {
     writeUiFlag(INSPECTOR_OPEN_KEY, inspectorOpen);
   }, [inspectorOpen]);
-
-  useEffect(() => {
-    writeUiNumber(INSPECTOR_WIDTH_KEY, inspectorWidth);
-  }, [inspectorWidth]);
 
   useEffect(() => {
     if (!pendingDraft || !task) return;
@@ -438,8 +425,9 @@ export function WorkbenchLayout() {
     useAgentStore.getState().clearRequestError();
 
     try {
+      const imageIds = await prepareComposerImageIds(images);
       if (linkedWorkItem && !["running", "waiting_approval", "aborting"].includes(task.status)) {
-        await socketClient.send(task.mode === "ask" || task.mode === "plan" || task.mode === "review" ? "workItem.discuss" : "workItem.feedback", { id: linkedWorkItem.id, text: text || "请根据附图继续当前需求。", imageIds: images.map((item) => item.id) });
+        await socketClient.send(task.mode === "ask" || task.mode === "plan" || task.mode === "review" ? "workItem.discuss" : "workItem.feedback", { id: linkedWorkItem.id, text: text || "请根据附图继续当前需求。", imageIds });
       } else {
         if (type === "prompt.send" && (task.status === "stopped" || task.status === "error" || task.status === "booting")) {
           // activate is safe while booting — it awaits the shared boot Promise.
@@ -451,7 +439,7 @@ export function WorkbenchLayout() {
           type,
           {
             message: text,
-            imageIds: images.map((item) => item.id),
+            imageIds,
             ...(optimistic ? { clientMessageId } : {}),
           },
           task.id,
@@ -487,7 +475,7 @@ export function WorkbenchLayout() {
   async function retryLastPrompt() {
     if (sendingRef.current || !task || !retryPrompt || retryPrompt.taskId !== task.id) return;
     const text = retryPrompt.text;
-    let images = retryPrompt.images;
+    const images = retryPrompt.images;
     const clientMessageId = crypto.randomUUID();
     // Drop previous failed optimistic bubble(s) with the same text before retrying.
     const failed = useAgentStore
@@ -506,19 +494,11 @@ export function WorkbenchLayout() {
     sendingRef.current = true;
     setPromptSending(true);
     try {
-      images = await Promise.all(images.map(async (image) => {
-        if (image.id) return image;
-        const blob = await fetch(image.previewUrl).then((response) => response.blob());
-        const body = new FormData(); body.append("file", blob, image.name);
-        const response = await fetch("/uploads", { method: "POST", credentials: "same-origin", body });
-        if (!response.ok) throw new Error("重试图片上传失败，请重新添加图片。");
-        const uploaded = await response.json() as { id: string };
-        return { ...image, id: uploaded.id };
-      }));
+      const imageIds = await prepareComposerImageIds(images);
       if (task.status === "stopped" || task.status === "error") {
         await socketClient.send("task.activate", {}, task.id);
       }
-      await socketClient.send("prompt.send", { message: text, imageIds: images.map((image) => image.id), clientMessageId }, task.id);
+      await socketClient.send("prompt.send", { message: text, imageIds, clientMessageId }, task.id);
       setRetryPrompt(null);
       setDraft((current) => current === text ? "" : current);
       setComposerImages((current) => current.filter((image) => !images.some((sent) => sent.id === image.id)));
@@ -596,7 +576,7 @@ export function WorkbenchLayout() {
 
   function renderSidebar(onClose?: () => void) {
     return (
-      <TaskSidebar
+      <WorkspaceRail section="conversation"><TaskSidebar
         tasks={tasks.filter((entry) => !hiddenConversations.includes(entry.id))}
         activeTaskId={activeTaskId}
         waitingInputTaskIds={new Set(pendingInteractions.map((entry) => entry.taskId))}
@@ -622,21 +602,20 @@ export function WorkbenchLayout() {
         pinned={leftPinned}
         onPinToggle={isMd ? toggleLeftPinned : undefined}
         workTaskIds={workTaskIds}
-        onOpenBoard={() => navigate("/board")}
         onReorder={(cwd, taskIds) => void socketClient.send("task.reorder", { cwd, taskIds }).catch((error: unknown) => setNotice(error instanceof Error ? error.message : "调整顺序失败"))}
         onNew={() => {
           setTaskOpen(false);
           setCreating(true);
         }}
         onClose={onClose}
-      />
+      /></WorkspaceRail>
     );
   }
 
-  function renderInspector(drawer: boolean) {
+  function renderInspector() {
     return (
       <InspectorPanel
-        drawer={drawer}
+        drawer={false}
         pinned={rightPinned}
         onPinToggle={toggleRightPinned}
         taskId={task?.id ?? null}
@@ -746,21 +725,19 @@ export function WorkbenchLayout() {
         跳到正文
       </a>
       {dockLeft ? <div className="flex h-full">{renderSidebar()}</div> : null}
-      <div className="flex min-w-0 flex-1 flex-col bg-surface">
-        <header
-          className={`titlebar conversation-titlebar app-drag items-center px-3 ${dockLeft ? "" : "traffic-inline"}`}
-        >
+      <div className="flex min-w-0 flex-1 flex-col bg-canvas">
+        <WorkspaceToolbar>
+          {!dockLeft ? (
           <button
             type="button"
-            className={`conversation-list-trigger pressable app-no-drag hover-fill inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px] text-ink ${dockLeft ? "md:hidden" : ""}`}
-            aria-label="会话"
+            className="pressable grid size-10 shrink-0 place-items-center rounded-md hover:bg-fill"
+            aria-label="打开导航"
             onClick={() => setTaskOpen(true)}
           >
-            <MessageSquare size={14} />
-            <span className="conversation-list-label">会话</span>
+            <PanelLeft size={14} />
           </button>
-          <ModeSwitcher />
-          <div className="conversation-heading app-no-drag flex min-w-0 flex-1 items-center gap-2">
+          ) : null}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <PiStatusRing status={status} size={16} />
             {editingTitle && task ? (
               <input
@@ -792,8 +769,8 @@ export function WorkbenchLayout() {
               />
             ) : task ? (
               <div className="group/title flex min-w-0 flex-1 items-center gap-1.5">
-                <p
-                  className="shrink truncate text-[12.5px] font-medium tracking-tight text-ink"
+                <h1
+                  className="shrink truncate text-sm font-semibold text-ink"
                   title="双击重命名"
                   onDoubleClick={() => {
                     setTitleDraft(task.title);
@@ -801,7 +778,7 @@ export function WorkbenchLayout() {
                   }}
                 >
                   {task.title}
-                </p>
+                </h1>
                 <button
                   type="button"
                   className="pressable icon-btn title-rename-btn"
@@ -813,8 +790,8 @@ export function WorkbenchLayout() {
                 >
                   <Pencil size={12} />
                 </button>
-                <div className="titlebar-context">
-                  <span className="titlebar-meta" title={task.cwd}>
+                <div className="hidden min-w-0 items-center gap-2 lg:flex">
+                  <span className="truncate text-xs text-mute" title={task.cwd}>
                     {headerSubtitle(task.cwd, true)}
                   </span>
                   {linkedWorkItem ? (
@@ -830,10 +807,10 @@ export function WorkbenchLayout() {
                 </div>
               </div>
             ) : (
-              <div className="min-w-0 flex-1" />
+              <h1 className="text-sm font-semibold text-ink">对话</h1>
             )}
           </div>
-          <div className="conversation-actions app-no-drag flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             {task && !linkedWorkItem ? <button className="conversation-convert icon-btn" aria-label="整理为需求" title="整理为需求" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /></button> : null}
             {task ? (
               <div className="hidden sm:block">
@@ -853,20 +830,18 @@ export function WorkbenchLayout() {
             ) : null}
             <UpdateBanner />
             <ThemeToggle />
-            <button
+            {task ? <button
               type="button"
               className="pressable icon-btn"
-              aria-label="详情"
+              aria-label="工作区工具"
+              title="工作区工具"
               aria-pressed={inspectorOpen}
               onClick={() => setInspectorOpen((open) => !open)}
             >
-              <PanelRight size={15} />
-            </button>
-            <Link to="/settings" state={{ from: "/" }} aria-label="设置" className="pressable icon-btn">
-              <Settings size={15} />
-            </Link>
+              <PanelBottom size={15} />
+            </button> : null}
           </div>
-        </header>
+        </WorkspaceToolbar>
         <RunStatusBar
           status={status}
           tools={tools}
@@ -990,8 +965,8 @@ export function WorkbenchLayout() {
               onStarter={(prompt) => setDraft(prompt)}
             />
           ) : (
-            <div className="workspace-welcome">
-              <button type="button" className="pressable btn btn-primary" onClick={() => setCreating(true)}>新建对话</button>
+            <div className="mx-auto flex h-full max-w-[720px] items-start px-6 pt-[min(20vh,112px)] sm:px-10">
+              <button type="button" className="pressable btn btn-primary" onClick={() => setCreating(true)}><Plus size={14} />新建对话</button>
             </div>
           )}
         </main>
@@ -1086,59 +1061,18 @@ export function WorkbenchLayout() {
             onFastMode={(enabled) => void socketClient.send("runtime.set", { fastMode: enabled }, task.id)}
           />
         ) : null}
+        {inspectorOpen ? <section aria-label="辅助工具" className="flex h-[min(38vh,360px)] min-h-36 shrink-0 border-t border-divider [&>aside]:w-full [&>aside]:border-0">{renderInspector()}</section> : null}
       </div>
-
-      {dockRight ? (
-        <div className="relative flex h-full shrink-0" style={{ width: inspectorWidth }}>
-          <button
-            type="button"
-            className="inspector-resize"
-            aria-label="调整详情宽度"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              const startX = event.clientX;
-              const startWidth = inspectorWidth;
-              const onMove = (move: MouseEvent) => {
-                setInspectorWidth(clampInspectorWidth(startWidth + (startX - move.clientX)));
-              };
-              const onUp = () => {
-                window.removeEventListener("mousemove", onMove);
-                window.removeEventListener("mouseup", onUp);
-              };
-              window.addEventListener("mousemove", onMove);
-              window.addEventListener("mouseup", onUp);
-            }}
-          />
-          {renderInspector(false)}
-        </div>
-      ) : null}
 
       {overlayLeft ? (
         <div className="fixed inset-0 z-30">
           <button
             type="button"
-            className="absolute inset-0 bg-canvas/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-ink/20"
             aria-label="关闭会话列表"
             onClick={() => setTaskOpen(false)}
           />
           <div className="absolute inset-y-0 left-0 z-40 shadow-dialog">{renderSidebar(() => setTaskOpen(false))}</div>
-        </div>
-      ) : null}
-
-      {overlayRight ? (
-        <div className="fixed inset-0 z-30">
-          <button
-            type="button"
-            className="absolute inset-0 bg-canvas/40 backdrop-blur-[2px]"
-            aria-label="关闭详情"
-            onClick={() => setInspectorOpen(false)}
-          />
-          <div
-            className="slide-in-right absolute inset-y-0 right-0 z-40 max-w-full"
-            style={{ width: Math.min(inspectorWidth, typeof window === "undefined" ? inspectorWidth : window.innerWidth) }}
-          >
-            {renderInspector(true)}
-          </div>
         </div>
       ) : null}
 

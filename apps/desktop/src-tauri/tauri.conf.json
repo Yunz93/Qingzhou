@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Qingzhou",
+  "version": "0.1.28",
+  "identifier": "com.qingzhou.desktop",
+  "build": {
+    "frontendDist": "../bootstrap"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "icon": ["../build/icon.png"],
+    "macOS": { "minimumSystemVersion": "11.0" },
+    "windows": { "nsis": { "installMode": "currentUser" } }
+  }
+}

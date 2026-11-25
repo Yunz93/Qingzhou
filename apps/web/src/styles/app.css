@@ -3,33 +3,33 @@
 @import "./workflow.css";
 
 @theme {
-  /* Paper, sage and forest tones adapted from YiMu. */
-  --color-canvas: #f7f8f5;
-  --color-sidebar: #f0f2ec;
-  --color-surface: #fdfefb;
-  --color-elevated: #ffffff;
-  --color-line: #dfe5da;
-  --color-ink: #29362e;
-  --color-mute: #606b5b;
-  --color-accent: #426650;
-  --color-accent-soft: #eaf0e7;
-  --color-on-accent: #ffffff;
-  --color-selection: #426650;
-  --color-selection-ink: #ffffff;
+  --color-canvas: #faf8f3;
+  --color-sidebar: #faf8f3;
+  --color-surface: #fffdf8;
+  --color-elevated: #fffdf8;
+  --color-line: #ded9d0;
+  --color-divider: #2c2b281a;
+  --color-ink: #2c2b28;
+  --color-mute: #6f6a62;
+  --color-accent: #8f4e37;
+  --color-accent-soft: #f1e3d9;
+  --color-on-accent: #fffaf4;
+  --color-selection: #f1e3d9;
+  --color-selection-ink: #2c2b28;
   --color-snow: #ffffff;
-  --color-warn: #936620;
-  --color-success: #426b45;
-  --color-danger: #b5453e;
-  --color-info: #416b7c;
-  --color-fill: #f0f3ec;
-  --color-fill-strong: #e5ebdf;
-  --color-bubble: #eaf0e7;
+  --color-warn: #8a5a18;
+  --color-success: #39734d;
+  --color-danger: #b33936;
+  --color-info: #326a91;
+  --color-fill: #eae5dc;
+  --color-fill-strong: #f1e3d9;
+  --color-bubble: #f1e3d9;
   --color-control-line: var(--color-mute);
-  --color-accent-action: var(--color-accent);
+  --color-accent-action: #a65f43;
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+    "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --font-mono: "Commit Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-  --font-display: "Noto Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", "SimSun", serif;
+  --font-display: var(--font-sans);
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
@@ -41,37 +41,45 @@
   --text-sm--line-height: 1.45;
   --text-base: 0.84375rem;
   --text-base--line-height: 1.6;
-  --shadow-card: 0 1px 3px #29362e04;
-  --shadow-dialog: 0 0 0 1px #29362e0a, 0 16px 48px #29362e1f;
-  --shadow-composer: 0 0 0 1px #dfe5da, 0 5px 18px #29362e06;
+  --shadow-card: none;
+  --shadow-dialog: 0 12px 32px #2c2b281c;
+  --shadow-composer: 0 0 0 1px #ded9d0;
 }
 
 html.dark {
   color-scheme: dark;
-  --color-canvas: #18211c;
-  --color-sidebar: #1c2820;
-  --color-surface: #1e2922;
-  --color-elevated: #253129;
-  --color-line: #3e4d40;
-  --color-ink: #e6eddf;
-  --color-mute: #a4b39d;
-  --color-accent: #a0c4a7;
-  --color-accent-soft: #304536;
-  --color-on-accent: #18271d;
-  --color-selection: #36543f;
-  --color-selection-ink: #f0f5e9;
+  --color-canvas: #24272b;
+  --color-sidebar: #24272b;
+  --color-surface: #2b2f35;
+  --color-elevated: #2b2f35;
+  --color-line: #3a4047;
+  --color-divider: #ffffff14;
+  --color-ink: #e4e1d9;
+  --color-mute: #aaa79e;
+  --color-accent: #d49b7e;
+  --color-accent-soft: #363d45;
+  --color-on-accent: #231e19;
+  --color-selection: #363d45;
+  --color-selection-ink: #e4e1d9;
   --color-warn: #dec18b;
   --color-success: #a3c798;
   --color-danger: #eea59b;
   --color-info: #9dc4cd;
-  --color-fill: #29362c;
-  --color-fill-strong: #344335;
-  --color-bubble: #304536;
-  --shadow-card: 0 1px 3px #00000008;
-  --shadow-dialog: 0 0 0 1px #3e4d40, 0 18px 54px #00000055;
-  --shadow-composer: 0 0 0 1px #3e4d40, 0 5px 18px #00000015;
+  --color-fill: #30353b;
+  --color-fill-strong: #363d45;
+  --color-bubble: #30353b;
+  --shadow-card: none;
+  --shadow-dialog: 0 16px 36px #00000055;
+  --shadow-composer: 0 0 0 1px #3a4047;
   --color-control-line: var(--color-mute);
   --color-accent-action: var(--color-accent);
+}
+
+.settings-page .settings-card {
+  border: 0;
+  border-radius: 0;
+  background: var(--color-canvas);
+  box-shadow: none;
 }
 
 @layer base {
@@ -90,7 +98,7 @@ html.dark {
     background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.55;
     letter-spacing: 0;
     font-synthesis: none;
@@ -1793,17 +1801,6 @@ html.dark {
   }
 }
 
-/* Unlayered + !important so this beats Tailwind utilities like px-3 / pl-*.
-   Without this, 「会话」 / ModeSwitcher sit under macOS traffic lights
-   (hiddenInset at x:16), especially in local `pnpm desktop:dev`. */
-html.desktop[data-platform="darwin"] {
-  --traffic-lights-inset: 80px;
-}
-
-html.desktop[data-platform="darwin"] .traffic-inline {
-  padding-left: var(--traffic-lights-inset) !important;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2735,10 +2732,6 @@ html.desktop[data-platform="darwin"] .traffic-inline {
   .work-panel {
     width: 100%;
     border-left: 0;
-  }
-
-  html.desktop[data-platform="darwin"] .work-panel-head {
-    padding-left: var(--traffic-lights-inset) !important;
   }
 
   .work-panel-body {

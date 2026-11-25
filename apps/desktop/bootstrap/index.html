@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>轻舟</title>
+    <style>
+      :root { color-scheme: light dark; font: 15px system-ui, sans-serif; background: #faf8f3; color: #2c2b28; }
+      main { max-width: 34rem; margin: 16vh auto; padding: 0 24px; }
+      h1 { font-size: 20px; font-weight: 600; }
+      p { line-height: 1.75; }
+      button { font: inherit; border: 1px solid currentColor; border-radius: 6px; color: inherit; background: none; min-height: 40px; padding: 0 14px; margin-right: 8px; cursor: pointer; }
+      button:focus-visible { outline: 2px solid #a65f43; outline-offset: 2px; }
+      @media (prefers-color-scheme: dark) { :root { background: #24272b; color: #e4e1d9; } button:focus-visible { outline-color: #d49b7e; } }
+    </style>
+    <script src="./startup.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>轻舟</h1>
+      <p id="status" role="status">正在启动本地服务…</p>
+      <div id="actions" hidden>
+        <button id="retry" type="button">重试</button>
+        <button id="logs" type="button">打开日志位置</button>
+      </div>
+    </main>
+  </body>
+</html>

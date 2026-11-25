@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -51,6 +52,101 @@ describe("install-macos.sh", () => {
     expect(src).not.toMatch(/\$name[，。]/);
     expect(src).toContain("${name}，跳过");
   });
+
+  it.skipIf(process.platform !== "darwin").each(["zip", "dmg", "local", "release", "bad-release"])(
+    "cleans temporary resources after a %s installation attempt",
+    (source) => {
+      const root = mkdtempSync(path.join(os.tmpdir(), "qingzhou-install-test-"));
+      const home = path.join(root, "home");
+      const temp = path.join(root, "temp");
+      const bin = path.join(root, "bin");
+      const app = path.join(root, "Qingzhou.app");
+      const archive = path.join(root, "Qingzhou.zip");
+      const dmg = path.join(root, "Qingzhou.dmg");
+      const detachLog = path.join(root, "detach.log");
+      try {
+        for (const dir of [home, temp, bin, app]) mkdirSync(dir);
+        writeFileSync(path.join(app, "fixture.txt"), "isolated install\n");
+        writeFileSync(dmg, "fake image\n");
+        execFileSync("zip", ["-q", "-r", archive, "Qingzhou.app"], { cwd: root });
+        for (const [name, commands] of Object.entries({
+          sudo: "exit 1",
+          xattr: "exit 0",
+          codesign: "exit 0",
+          spctl: "exit 0",
+          hdiutil: String.raw`
+            case "$1" in
+              attach) cp -R "$FIXTURE_APP" "$7/Qingzhou.app" ;;
+              detach) printf '%s\n' "$2" >> "$FIXTURE_DETACH_LOG" ;;
+              *) exit 1 ;;
+            esac
+          `,
+          curl: String.raw`
+            while [ "$1" != -o ]; do shift; done
+            case "$3" in
+              */SHA256SUMS.txt)
+                asset_file="Qingzhou-mac-$(uname -m | sed 's/x86_64/x64/').zip"
+                digest="$(shasum -a 256 "$FIXTURE_ZIP" | cut -d ' ' -f 1)"
+                if [ "$FIXTURE_SOURCE" = bad-release ]; then
+                  digest=0000000000000000000000000000000000000000000000000000000000000000
+                fi
+                printf '%s  dist/%s\n' "$digest" "$asset_file" > "$2"
+                ;;
+              */Qingzhou-mac-*.zip) cp "$FIXTURE_ZIP" "$2" ;;
+              *) exit 22 ;;
+            esac
+          `,
+        })) writeFileSync(path.join(bin, name), `#!/bin/sh\n${commands}\n`, { mode: 0o755 });
+        const args = [script, "--user", "--no-open"];
+        if (source === "zip") args.push(archive);
+        if (source === "dmg") args.push(dmg);
+        if (source === "local") {
+          const scripts = path.join(root, "scripts");
+          const release = path.join(root, "apps", "desktop", "release");
+          const intel = execFileSync("/bin/bash", ["-c", "uname -m"], { encoding: "utf8" }).trim() === "x86_64";
+          mkdirSync(scripts);
+          mkdirSync(release, { recursive: true });
+          args[0] = path.join(scripts, "install-macos.sh");
+          copyFileSync(script, args[0]);
+          copyFileSync(archive, path.join(release, `Qingzhou-mac-${intel ? "x64" : "arm64"}.zip`));
+          copyFileSync(dmg, path.join(release, `Qingzhou-mac-${intel ? "arm64" : "x64"}.dmg`));
+          args.push("--local");
+        }
+        const result = spawnSync("/bin/bash", args, {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            HOME: home,
+            TMPDIR: temp,
+            PATH: `${bin}:${process.env.PATH}`,
+            GITHUB_TOKEN: "",
+            GH_TOKEN: "",
+            QINGZHOU_VERSION: "latest",
+            QINGZHOU_UPDATE_PARENT_PID: "",
+            FIXTURE_APP: app,
+            FIXTURE_ZIP: archive,
+            FIXTURE_SOURCE: source,
+            FIXTURE_DETACH_LOG: detachLog,
+          },
+        });
+        const installed = path.join(home, "Applications", "Qingzhou.app", "fixture.txt");
+        if (source === "bad-release") {
+          expect(result.status, result.stderr).not.toBe(0);
+          expect(result.stderr).toContain("校验和不匹配");
+          expect(readdirSync(home)).toEqual([]);
+        } else {
+          expect(result.status, result.stderr).toBe(0);
+          expect(readFileSync(installed, "utf8")).toBe("isolated install\n");
+        }
+        if (source === "dmg") expect(readFileSync(detachLog, "utf8").trim()).toMatch(/\/volume$/);
+        if (source === "local") expect(readdirSync(root)).not.toContain("detach.log");
+        expect(readdirSync(temp)).toEqual([]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    20_000,
+  );
 });
 
 

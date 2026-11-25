@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { normalizePackageSource, packageSourceInstalled, packageSourcesEqual } from "@qingzhou/protocol";
-import { envWithElectronAsNode, qingzhouEnv } from "../config.js";
+import { qingzhouEnv } from "../config.js";
 import { isInsideRoot } from "../security/path-policy.js";
 import { extractErrorText, humanizeUserFacingError, piNpmEnv } from "../setup/pi-agent-dir.js";
 
@@ -166,7 +166,7 @@ export async function runPiCliInstall(input: {
       timeout: PI_PACKAGE_INSTALL_TIMEOUT_MS,
       windowsHide: true,
       maxBuffer: 2 * 1024 * 1024,
-      env: envWithElectronAsNode(input.piCommand, process.env, input.env, input.extraEnv, npmEnv),
+      env: { ...process.env, ...input.env, ...input.extraEnv, ...npmEnv },
     });
     const text = `${stdout}\n${stderr}`.trim();
     if (text) logs.push(text);

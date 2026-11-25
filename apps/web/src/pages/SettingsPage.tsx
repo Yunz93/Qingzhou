@@ -1,4 +1,5 @@
 import { getDesktop } from "../desktop-bridge";
+import { WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
 import { settingsReturnPath } from "../lib/settings-navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -320,26 +321,27 @@ export function SettingsPage() {
     updateDetail = "已是最新";
   }
   return (
-    <div className="settings-page flex h-dvh flex-col bg-canvas text-ink">
+    <div className="settings-page flex h-dvh overflow-hidden bg-canvas text-ink">
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>
-      <header className="titlebar app-drag traffic-inline flex shrink-0 items-center gap-2 px-3">
+      <div className="hidden md:flex"><WorkspaceRail section="settings" /></div>
+      <div className="flex min-w-0 flex-1 flex-col">
+      <WorkspaceToolbar>
         <Link
           to={returnPath}
-          className="pressable app-no-drag inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[13px] text-accent"
+          className="pressable inline-flex min-h-10 items-center gap-1 rounded-md px-2 text-sm text-accent"
         >
           <ChevronLeft size={16} />
           {returnPath.startsWith("/board") ? "返回工作" : "返回对话"}
         </Link>
-        <h1 className="flex-1 text-center text-[13px] font-semibold tracking-tight">设置</h1>
-        <div className="app-no-drag flex w-[72px] justify-end">
-          <UpdateBanner />
-        </div>
-      </header>
+        <h1 className="flex-1 text-sm font-semibold">设置</h1>
+        <UpdateBanner />
+      </WorkspaceToolbar>
       <main id="main-content" className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
-        <div className="settings-shell space-y-7">
-          <nav className="settings-nav" aria-label="设置分组">{[["auth", "账号与认证"], ["engine", "模型与引擎"], ["project", "项目"], ["appearance", "外观"], ["about", "关于与更新"]].map(([id, label]) => <Link key={id} className="pressable hover-fill" to={`#settings-${id}`} state={{ from: returnPath }} replace aria-current={section === id ? "page" : undefined}>{label}</Link>)}</nav>
+        <div className="mx-auto flex max-w-[960px] flex-col gap-6 xl:flex-row">
+          <nav className="flex shrink-0 gap-1 overflow-x-auto xl:w-40 xl:flex-col xl:border-r xl:border-divider xl:pr-4" aria-label="设置分组">{[["auth", "账号与认证"], ["engine", "模型与引擎"], ["project", "项目"], ["appearance", "外观"], ["about", "关于与更新"]].map(([id, label]) => <Link key={id} className={`flex min-h-10 shrink-0 items-center rounded-md px-2.5 text-sm ${section === id ? "bg-accent-soft font-medium text-accent" : "hover:bg-fill"}`} to={`#settings-${id}`} state={{ from: returnPath }} replace aria-current={section === id ? "page" : undefined}>{label}</Link>)}</nav>
+          <div className="w-full min-w-0 max-w-[720px] space-y-5">
           {setupLoading ? <p role="status" className="settings-load-note">正在读取设置…</p> : setupError ? <div className="settings-load-note text-danger" role="alert"><span>{setupError}</span><button type="button" className="pressable text-accent" onClick={() => void loadSetup()}>重试</button></div> : null}
 
 
@@ -702,8 +704,10 @@ export function SettingsPage() {
           >
             打开设置向导
           </button>
+          </div>
         </div>
       </main>
+      </div>
 
       {wizardOpen ? (
         <SetupWizard

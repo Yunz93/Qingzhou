@@ -164,8 +164,6 @@
 .workflow-workroom .workflow-history-layout { grid-template-columns: minmax(0, 1fr); }
 .workflow-workroom .workflow-history-layout > .workflow-timeline { max-height: 240px; }
 .workflow-workroom .workflow-history-layout > .workflow-replay { max-height: none; }
-html.desktop[data-platform="darwin"] .workflow-workroom-head { padding-left: 78px; -webkit-app-region: drag; }
-html.desktop[data-platform="darwin"] .workflow-workroom-head button { -webkit-app-region: no-drag; }
 @media (max-width: 760px) { .workflow-history-layout { grid-template-columns: minmax(0, 1fr); } .workflow-history-layout > .workflow-timeline { max-height: 260px; } }
 .workflow-integration-queue ol { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .workflow-integration-card { display: flex; align-items: center; gap: 18px; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); font-size: 13px; }

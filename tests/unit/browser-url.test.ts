@@ -21,14 +21,13 @@ describe("normalizeBrowserUrl", () => {
 });
 
 describe("inspector browser", () => {
-  it("uses an Electron webview for internet pages in the desktop shell", () => {
+  it("opens desktop websites in an isolated native window", () => {
     const browser = readFileSync(path.resolve("apps/web/src/components/inspector/InspectorBrowser.tsx"), "utf8");
-    const desktop = readFileSync(path.resolve("apps/desktop/src/main/index.ts"), "utf8");
-    expect(browser).toMatch(/createElement\("webview"/);
-    expect(browser).toMatch(/partition: "persist:qingzhou-browser"/);
-    expect(browser).toMatch(/用系统浏览器打开/);
-    expect(desktop).toMatch(/webviewTag:\s*true/);
-    expect(desktop).toMatch(/will-attach-webview/);
-    expect(desktop).toMatch(/sandbox:\s*true/);
+    const desktop = readFileSync(path.resolve("apps/desktop/src-tauri/src/main.rs"), "utf8");
+    expect(browser).toMatch(/preview\("open", url\)/);
+    expect(browser).toContain("用系统浏览器打开");
+    expect(desktop).toContain("WebviewWindowBuilder::new(&app, PREVIEW");
+    expect(desktop).toContain(".incognito(true)");
+    expect(desktop).toContain("!navigation_app.state::<Backend>().allows(url)");
   });
 });

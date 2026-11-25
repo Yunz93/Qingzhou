@@ -153,39 +153,16 @@ test("keyboard and viewports", async ({ page }) => {
   }
 });
 
-test("macOS traffic lights leave room for the sidebar title", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
+test("workspace navigation stays usable at the minimum desktop viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 533, height: 600 });
   await page.goto("/");
-  await page.evaluate(() => {
-    document.documentElement.classList.add("desktop");
-    document.documentElement.dataset.platform = "darwin";
-  });
-  const sidebar = page.getByRole("complementary", { name: "会话" });
-  await expect(sidebar).toBeVisible();
-  const header = sidebar.locator(".traffic-inline");
-  const paddingLeft = await header.evaluate((el) => getComputedStyle(el).paddingLeft);
-  expect(Number.parseFloat(paddingLeft)).toBeGreaterThanOrEqual(80);
-  const titleLeft = await sidebar.locator("p", { hasText: /^会话$/ }).evaluate((el) => el.getBoundingClientRect().left);
-  expect(titleLeft).toBeGreaterThanOrEqual(80);
-});
-
-test("macOS traffic lights leave room when the session list is unpinned", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/");
-  await page.evaluate(() => {
-    document.documentElement.classList.add("desktop");
-    document.documentElement.dataset.platform = "darwin";
-  });
-  const sidebar = page.getByRole("complementary", { name: "会话" });
-  await expect(sidebar).toBeVisible();
-  await sidebar.getByRole("button", { name: "取消固定会话列表" }).click();
-  const sessionsBtn = page.getByRole("button", { name: "会话", exact: true });
-  await expect(sessionsBtn).toBeVisible();
-  const titlebar = page.locator("header.titlebar");
-  const paddingLeft = await titlebar.evaluate((el) => getComputedStyle(el).paddingLeft);
-  expect(Number.parseFloat(paddingLeft)).toBeGreaterThanOrEqual(80);
-  const btnLeft = await sessionsBtn.evaluate((el) => el.getBoundingClientRect().left);
-  expect(btnLeft).toBeGreaterThanOrEqual(80);
+  const nav = page.getByRole("complementary", { name: "轻舟导航" });
+  await expect(nav).toBeHidden();
+  await page.getByRole("button", { name: "打开导航" }).click();
+  await expect(nav.getByRole("heading", { name: "最近对话" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "设置" })).toBeInViewport();
+  await page.keyboard.press("Escape");
+  await expect(nav).toBeHidden();
 });
 
 test("reduced motion disables the status ring spin", async ({ page }) => {
@@ -198,6 +175,38 @@ test("reduced motion disables the status ring spin", async ({ page }) => {
     return getComputedStyle(el).animationDuration;
   });
   expect(duration === "0s" || duration === "0.01ms").toBeTruthy();
+});
+
+test("Windows portable updates offer the release zip in settings and the toolbar", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" });
+    Object.defineProperties(window, {
+      isTauri: { value: true },
+      __TAURI_INTERNALS__: {
+        value: {
+          transformCallback: () => 1,
+          async invoke(command: string) {
+            if (command === "check_signed_update") return { version: "0.2.0", body: "便携包测试", canInstall: false };
+            if (command === "plugin:event|listen") return 1;
+          },
+        },
+      },
+    });
+  });
+  await page.route("**/api/desktop/ui", (route) => route.request().method() === "GET"
+    ? route.fulfill({ json: {} })
+    : route.fulfill({ status: 204 }));
+
+  const portableZip = "https://github.com/Yunz93/Qingzhou/releases/download/v0.2.0/Qingzhou-win-x64-portable.zip";
+  await page.goto("/");
+  await page.getByRole("button", { name: "轻舟 0.2.0 可用", exact: true }).click();
+  await expect(page.getByRole("link", { name: "下载便携包", exact: true })).toHaveAttribute("href", portableZip);
+  await expect(page.getByRole("button", { name: "更新并重启", exact: true })).toHaveCount(0);
+
+  await page.goto("/settings#settings-about");
+  await page.getByRole("button", { name: "更新详情", exact: true }).click();
+  await expect(page.getByRole("link", { name: "下载新版便携包", exact: true })).toHaveAttribute("href", portableZip);
+  await expect(page.getByRole("button", { name: "下载安装更新", exact: true })).toHaveCount(0);
 });
 
 test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) => {
@@ -228,7 +237,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await page.getByRole("link", { name: "模型与引擎", exact: true }).click();
   await expect(page.getByText("models.json", { exact: true })).toBeVisible();
   await expect(page.getByText(/已配置.*个模型/)).toBeVisible();
-  await page.getByRole("link", { name: "项目", exact: true }).click();
+  await page.getByRole("navigation", { name: "设置分组" }).getByRole("link", { name: "项目", exact: true }).click();
   await expect(page.getByText("信任默认工作区")).toBeVisible();
   await expect(page.getByText("默认工作文件夹", { exact: true })).toBeVisible();
   await expect(page.getByText("应用数据目录")).toBeVisible();
@@ -251,7 +260,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await page.getByRole("button", { name: "创建对话" }).click();
   await expect(page.getByRole("banner").getByText("MVP task")).toBeVisible();
 
-  await page.getByRole("button", { name: "详情" }).click();
+  await page.getByRole("button", { name: "工作区工具" }).click();
   await page.getByRole("button", { name: "资源" }).click();
   await page.getByRole("button", { name: "约定" }).click();
   await expect(page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "AGENTS.md" }).first()).toBeVisible({
@@ -295,7 +304,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByRole("button", { name: "正在安装…" })).toHaveCount(0);
   await page.getByRole("button", { name: "完成" }).click();
   await expect(page.getByRole("dialog", { name: "插件中心" })).toHaveCount(0);
-  await page.getByRole("button", { name: "关闭详情" }).click();
+  await page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "关闭", exact: true }).click();
 
   await page.getByRole("button", { name: "上下文用量" }).click();
   await expect(page.getByRole("dialog", { name: "上下文用量" }).getByText(/20 \/ .+ tokens/)).toBeVisible();
@@ -328,8 +337,9 @@ test("visual workbench at required viewports", async ({ page, browser }) => {
       const overlaps = await headerOverlapLabels(page);
       await page.screenshot({ animations: "disabled", path: `.qingzhou-test/ui-audit/viewport-${size.name}-${theme}.png`, fullPage: true });
       expect(overlaps, `${size.name} ${theme}`).toEqual([]);
-      for (const name of ["追加", "排队"]) {
-        expect(await page.getByRole("button", { name, exact: true }).evaluate((button) => button.scrollHeight <= button.clientHeight)).toBe(true);
+      const tools = [page.locator('label[aria-label="添加图片"]'), page.getByRole("button", { name: "发送", exact: true })];
+      for (const tool of tools) {
+        expect(await tool.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
       }
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
@@ -348,14 +358,14 @@ test("visual workbench at required viewports", async ({ page, browser }) => {
 });
 
 async function headerOverlapLabels(page: import("@playwright/test").Page) {
-return page.locator(".conversation-titlebar").evaluate((header) => {
-  const boxes = [...header.querySelectorAll("button, nav a, a[aria-label='设置']")]
-    .map((node) => ({ label: node.getAttribute("aria-label") || node.textContent?.trim(), rect: node.getBoundingClientRect() }))
-    .filter(({ rect }) => rect.width && rect.height);
-  return boxes.flatMap((a, index) => boxes.slice(index + 1).filter((b) =>
-    Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left) > 1 && Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top) > 1)
-    .map((b) => [a.label, b.label]));
-});
+  return page.getByRole("banner").evaluate((header) => {
+    const boxes = [...header.querySelectorAll("button, a")]
+      .map((node) => ({ label: node.getAttribute("aria-label") || node.textContent?.trim(), rect: node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.width && rect.height);
+    return boxes.flatMap((a, index) => boxes.slice(index + 1).filter((b) =>
+      Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left) > 1 && Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top) > 1)
+      .map((b) => [a.label, b.label]));
+  });
 }
 
 async function chooseTypePath(page: import("@playwright/test").Page): Promise<void> {
@@ -405,7 +415,7 @@ async function createTask(page: import("@playwright/test").Page, title: string):
   await expect(page.getByRole("banner").getByText(title)).toBeVisible();
 }
 
-test("stacked user bubbles stay separated", async ({ page }) => {
+test("stacked user bubbles stay separated and keep their actions outside the bubble", async ({ page, browser }) => {
   await createTask(page, "Bubble task");
   await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
   for (const text of ["alpha bubble", "beta bubble"]) {
@@ -425,6 +435,38 @@ test("stacked user bubbles stay separated", async ({ page }) => {
   expect(boxes.length).toBeGreaterThanOrEqual(2);
   for (let i = 1; i < boxes.length; i += 1) {
     expect(boxes[i]?.top ?? 0).toBeGreaterThanOrEqual((boxes[i - 1]?.bottom ?? 0) - 0.5);
+  }
+
+  const message = page.locator(".conversation-user").first();
+  const actions = message.locator(".conversation-message-actions");
+  const copy = message.getByRole("button", { name: "复制消息" });
+  await page.locator(".conversation-assistant").first().hover();
+  await expect(actions).toHaveCSS("opacity", "0");
+  await message.locator(".conversation-user-bubble").hover();
+  await expect(actions).toHaveCSS("opacity", "1");
+  await page.locator(".conversation-assistant").first().hover();
+  await copy.focus();
+  await expect(copy).toBeFocused();
+  await expect(actions).toHaveCSS("opacity", "1");
+  for (const width of [1280, 533, 375]) {
+    await page.setViewportSize({ width, height: 820 });
+    const bubble = await message.locator(".conversation-user-bubble").boundingBox();
+    const button = await copy.boundingBox();
+    expect(bubble?.height).toBeLessThanOrEqual(44);
+    expect(button?.height).toBeGreaterThanOrEqual(40);
+    expect(button?.y).toBeGreaterThanOrEqual((bubble?.y ?? 0) + (bubble?.height ?? 0) - 0.5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  const touch = await browser.newContext({ viewport: { width: 375, height: 820 }, hasTouch: true, isMobile: true, storageState: await page.context().storageState() });
+  try {
+    const touchPage = await touch.newPage();
+    await touchPage.goto(page.url());
+    const touchActions = touchPage.locator(".conversation-user .conversation-message-actions").first();
+    await expect(touchActions).toHaveCSS("opacity", "1");
+    const size = await touchActions.getByRole("button", { name: "复制消息" }).boundingBox();
+    expect(size?.height).toBeGreaterThanOrEqual(40);
+  } finally {
+    await touch.close();
   }
 });
 
@@ -522,7 +564,7 @@ test("copy reply, rename session, and find in conversation", async ({ page, cont
   await page.keyboard.press("Escape");
   await expect(search).toHaveCount(0);
 
-  await page.getByRole("button", { name: "详情" }).click();
+  await page.getByRole("button", { name: "工作区工具" }).click();
   await page.getByRole("button", { name: "资源" }).click();
   await page.getByRole("button", { name: "技能" }).click();
   await expect(page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "检查更新" })).toBeVisible();
@@ -562,7 +604,7 @@ test("queue follow-up while running and retry after abort", async ({ page }) => 
   await expect(page.getByLabel("输入消息")).toHaveValue("streaming draft");
   await expect(page.getByLabel("输入消息")).toBeFocused();
   await page.getByLabel("输入消息").fill("");
-  await expect(page.locator("header.titlebar")).not.toContainText("回车补充");
+  await expect(page.getByRole("banner")).not.toContainText("回车补充");
   await expect(page.getByLabel("输入消息")).toHaveAttribute(
     "placeholder",
       "回车补充，Shift+Enter 排队",
@@ -713,40 +755,31 @@ test("pasting one image attaches a single preview", async ({ page }) => {
   await expectPreviewAboveInput(page);
 });
 
-test("sidebars can pin into the layout and the terminal tab embeds zsh", async ({ page }) => {
+test("navigation can be docked and the tool panel embeds a terminal", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await createTask(page, "Pin term task");
-
-  const sessions = page.getByRole("complementary", { name: "会话" });
-  await expect(sessions).toBeVisible();
+  const sessions = page.getByRole("complementary", { name: "会话", exact: true });
   await sessions.getByRole("button", { name: "取消固定会话列表" }).click();
-  await expect(page.getByRole("button", { name: "会话", exact: true })).toBeVisible();
+  const openNav = page.getByRole("button", { name: "打开导航" });
   await expect(sessions).toHaveCount(0);
+  await openNav.click();
+  await sessions.getByRole("button", { name: "固定会话列表", exact: true }).click();
+  await expect(sessions).toBeVisible();
 
-  await page.getByRole("button", { name: "会话", exact: true }).click();
-  await expect(page.getByRole("complementary", { name: "会话" })).toBeVisible();
-  await page.getByRole("button", { name: "固定会话列表" }).click();
-  await expect(page.getByRole("complementary", { name: "会话" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "关闭会话列表" })).toHaveCount(0);
-
-  await page.getByRole("button", { name: "详情" }).click();
-  await expect(page.getByRole("complementary", { name: "详情" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "关闭详情" })).toBeVisible();
-  await page.getByRole("button", { name: "固定详情" }).click();
-  await expect(page.getByRole("button", { name: "关闭详情" })).toHaveCount(0);
-  await expect(page.getByRole("complementary", { name: "详情" })).toBeVisible();
-
-  await page.getByRole("button", { name: "终端" }).click();
-  await expect(page.getByLabel("终端")).toBeVisible();
+  await page.getByRole("button", { name: "工作区工具" }).click();
+  const tools = page.getByRole("region", { name: "辅助工具" });
+  await tools.getByRole("button", { name: "固定详情", exact: true }).click();
+  await tools.getByRole("button", { name: "终端", exact: true }).click();
+  await expect(tools.getByLabel("终端")).toBeVisible();
+  await page.reload();
+  await expect(tools.getByRole("button", { name: "取消固定详情", exact: true })).toBeVisible();
 });
 
-test("work project picker is a centered titlebar button", async ({ page }) => {
+test("projects are available from the workspace navigation", async ({ page }) => {
   await page.goto("/board");
-  const button = page.getByRole("button", { name: "项目", exact: true });
-  await expect(button).toBeVisible();
-  await expect(page.locator("header.titlebar select")).toHaveCount(0);
-  const fontSize = await button.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
-  expect(fontSize).toBeGreaterThanOrEqual(15);
+  const nav = page.getByRole("complementary", { name: "轻舟导航" });
+  await expect(nav.getByRole("link", { name: "项目", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("button", { name: "添加项目", exact: true })).toBeVisible();
 });
 
 test("work titlebar theme and settings stay clickable", async ({ page }) => {
@@ -764,9 +797,8 @@ test("work titlebar theme and settings stay clickable", async ({ page }) => {
 
 test("work mode creates an objective and starts an agent run", async ({ page }) => {
   await page.goto("/board");
-  await expect(page.getByRole("link", { name: "工作" })).toBeVisible();
-  await page.getByRole("button", { name: "项目", exact: true }).click();
-  await page.getByRole("menuitem", { name: "新项目…" }).click();
+  await expect(page.getByRole("link", { name: "项目", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "添加项目", exact: true }).click();
   await page.getByRole("button", { name: "输入路径" }).click();
   await page.getByLabel("项目文件夹").fill(project);
   await page.getByLabel("项目名称").fill("E2E project");

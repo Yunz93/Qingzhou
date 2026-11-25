@@ -8,4 +8,9 @@ for (const file of ["package.json", "apps/desktop/package.json", "apps/server/pa
   const { version } = JSON.parse(readFileSync(file, "utf8")) as { version?: string };
   if (`v${version}` !== tag) throw new Error(`${file} 的版本 ${version} 与发布标签 ${tag} 不一致。`);
 }
+const tauriConfig = JSON.parse(readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8")) as { version?: string };
+const cargoVersion = /^version\s*=\s*"([^"]+)"/m.exec(readFileSync("apps/desktop/src-tauri/Cargo.toml", "utf8"))?.[1];
+if (`v${tauriConfig.version}` !== tag || `v${cargoVersion}` !== tag) {
+  throw new Error(`Tauri 和 Cargo 版本必须与发布标签 ${tag} 一致。`);
+}
 console.log(`发布版本校验通过：${tag}`);

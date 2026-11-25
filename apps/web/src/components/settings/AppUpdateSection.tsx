@@ -43,6 +43,7 @@ export function AppUpdateSection() {
 
   const desktop = getDesktop();
   const isMac = desktop?.platform === "darwin";
+  const portableUrl = desktop?.platform === "win32" && updateAvailable && !canUpdate ? url : null;
   const lastCheckedLabel = formatTimestamp(lastUpdateCheckAt);
   const publishedLabel = formatTimestamp(publishedAt);
   const notes = body.trim();
@@ -170,7 +171,7 @@ export function AppUpdateSection() {
 
         <div className="settings-row flex-col items-stretch gap-2 text-[12px] leading-6 text-mute">
           <p>
-            {isMac
+            {portableUrl ? "退出轻舟后，将新版便携包解压到您正在使用的目录。" : isMac
               ? "应用内更新会下载已校验的安装包，替换当前应用后自动重启。不要双击 DMG。"
               : "应用内更新会下载已校验的安装包并安装，完成后自动打开。"}
           </p>
@@ -181,7 +182,7 @@ export function AppUpdateSection() {
               rel="noreferrer"
               className="text-accent underline decoration-transparent underline-offset-4 hover:decoration-current"
             >
-              打开 GitHub Releases
+              {portableUrl ? "下载新版便携包" : "打开 GitHub Releases"}
             </a>
           </p>
         </div>

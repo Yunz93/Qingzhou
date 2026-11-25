@@ -100,9 +100,9 @@ export function TaskSidebar({
   const groups = groupTasksByProject(filtered);
 
   return (
-    <aside className="material-sidebar flex h-full w-[min(228px,90vw)] shrink-0 flex-col border-r border-line" aria-label="会话">
-      <div className="traffic-inline app-drag flex h-[52px] items-center gap-1 px-3">
-          <p className="flex-1 text-[12px] font-semibold tracking-tight text-ink">会话</p>
+    <section role="complementary" className="flex h-full min-h-0 w-full flex-col bg-canvas" aria-label="会话">
+      <div className="flex min-h-10 items-center gap-1 px-3">
+          <h2 className="flex-1 text-xs font-medium text-mute">最近对话</h2>
         {onShowArchived ? <button type="button" className="pressable app-no-drag icon-btn" aria-label="已归档会话" title="已归档会话" onClick={onShowArchived}><Archive size={14} /></button> : null}
         {onNew ? (
           <button
@@ -270,6 +270,6 @@ export function TaskSidebar({
           </button>
         </div>
       ) : null}
-    </aside>
+    </section>
   );
 }

@@ -1,0 +1,37 @@
+[package]
+name = "qingzhou"
+version = "0.1.28"
+edition = "2021"
+
+[features]
+desktop-e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.5", features = [] }
+
+[dependencies]
+http = "1"
+hyper-util = { version = "0.1", features = ["client-proxy-system"] }
+open = "5"
+reqwest = { version = "0.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "=2.12.6", features = ["dynamic-acl"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "=2.14.1"
+tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+objc2 = { version = "0.6", optional = true }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSApplication", "NSEvent", "NSGraphicsContext", "NSMenu", "NSOpenPanel", "NSResponder", "NSSavePanel", "NSTextInputClient", "NSTextInputContext", "NSView", "NSWindow"], optional = true }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSGeometry", "NSObjCRuntime", "NSRange", "NSString"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WinHttp"] }

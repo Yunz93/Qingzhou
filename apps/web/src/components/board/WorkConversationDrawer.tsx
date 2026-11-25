@@ -1,4 +1,4 @@
-import { useConversationDraft } from "../../lib/conversation-draft";
+import { prepareComposerImageIds, useConversationDraft } from "../../lib/conversation-draft";
 import { useViewPreference } from "../../hooks/useViewPreference";
 import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -120,10 +120,11 @@ export function WorkConversationDrawer({ item, onClose, onOpenFull, embedded = f
     setSendPending(true);
     useAgentStore.getState().clearRequestError();
     try {
+      const imageIds = await prepareComposerImageIds(attached);
       if (!task || !["running", "waiting_approval", "aborting"].includes(status)) {
-        await socketClient.send(intent === "discussion" ? "workItem.discuss" : "workItem.feedback", { id: item.id, text: text || "请结合附图讨论当前需求。", imageIds: attached.map((image) => image.id) }, task?.id);
+        await socketClient.send(intent === "discussion" ? "workItem.discuss" : "workItem.feedback", { id: item.id, text: text || "请结合附图讨论当前需求。", imageIds }, task?.id);
       } else {
-        await socketClient.send(type, { message: text, imageIds: attached.map((image) => image.id) }, task!.id);
+        await socketClient.send(type, { message: text, imageIds }, task!.id);
       }
       draftEditor.clear(text, attached);
     } catch (error) {

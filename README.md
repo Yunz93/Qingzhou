@@ -32,18 +32,20 @@ irm https://github.com/Yunz93/Qingzhou/releases/latest/download/install-windows.
 
 装好后打开轻舟，粘贴 API Key，选一个工作文件夹。密钥保存在 `~/.pi/agent/auth.json`，界面里不会再显示完整密钥。对话会发给你选择的 AI 服务商，不会经过轻舟的服务器。
 
+Windows 便携版会提示新版本。更新时退出轻舟，将新版便携 ZIP 解压到正在使用的目录。
+
 ### 发布稳定版
 
-先同步所有 `package.json` 的版本号并更新 `CHANGELOG.md`，再创建对应的正式版本标签：
+先同步所有 `package.json`、Tauri 配置和 Cargo 的版本号并更新 `CHANGELOG.md`，再创建对应的正式版本标签：
 
 ```bash
 git tag v0.1.28
 git push origin v0.1.28
 ```
 
-这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt` 和 `latest.json`。正式版本会设为 GitHub `latest`，安装与应用内更新统一读取它。`main` 推送只运行 CI；手动发布也须选择与各 `package.json` 版本一致的 `vX.Y.Z` 标签。安装脚本会校验清单（旧版本没有清单时只警告）。
+这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt`、旧版升级清单 `latest.json` 和 Tauri 签名更新清单 `tauri-update.json`。正式版本会设为 GitHub `latest`。更新签名使用仓库变量 `QINGZHOU_TAURI_UPDATE_PUBKEY` 及发布环境中的 `TAURI_SIGNING_PRIVATE_KEY`。`main` 推送只运行 CI。安装脚本会校验清单（旧版本没有清单时只警告）。
 
-合入前可手动运行 Release 工作流并勾选 `verify_only`，只执行三个平台的安装、lint、类型检查、单测和集成测试，不打包或发布。macOS 正式打包后还会检查内置 fd / rg 的目标架构，避免交叉编译时混入宿主架构的工具。
+合入前可手动运行 Release 工作流并勾选 `verify_only`，执行三个平台的依赖安装、lint、类型检查、单测和集成测试，并验证 Windows 的安装、便携启动、旧版升级及应用内签名更新。该模式使用临时更新密钥，不发布版本。macOS 正式打包后还会检查内置 fd / rg 的目标架构，避免交叉编译时混入宿主架构的工具。
 
 ## 项目与 Agent 协作
 
@@ -60,16 +62,17 @@ bash scripts/install-macos.sh --user      # ~/Applications，不需要管理员
 bash scripts/install-macos.sh --trust-only /Applications/Qingzhou.app
 ```
 
-本机打包（在对应系统上）：
+本机开发和打包需要 Node.js 22.19 或以上与 Rust 工具链。
 
 ```bash
 corepack enable
 pnpm install
-pnpm desktop:pack:mac   # → apps/desktop/release/Qingzhou-mac-*.dmg
-pnpm desktop:pack:win   # → apps/desktop/release/Qingzhou-win-*-setup.exe
+pnpm desktop:pack:tauri  # → apps/desktop/release 下的本机架构安装包
 ```
 
-打包时会带上 Pi，用户不必再装 Node。
+桌面包自带 Node、Pi 和搜索工具。运行界面使用 macOS WKWebView 或 Windows WebView2。
+
+macOS 可用 `QINGZHOU_CROSS_WINDOWS=1 pnpm desktop:pack:win` 生成 Windows x64 候选。交叉构建需要 `x86_64-pc-windows-msvc` Rust 目标、`cargo-xwin`、Clang、LLD 和 NSIS。安装、便携启动及 WebView2 联调在 Windows 上验证。
 
 浏览器开发模式：
 
@@ -78,8 +81,10 @@ pnpm install
 cp .env.example .env
 pnpm dev                 # http://127.0.0.1:5173
 pnpm dev:stable          # 关闭热重载；用本仓库当工作区跑任务时用这个
-pnpm desktop:dev         # Electron + web
+pnpm desktop:dev         # Tauri 宿主与本机服务，默认使用工作区内的 .qingzhou 资料
 ```
+
+服务端口被占用时，可用 `PORT=4378 pnpm dev` 同时调整本机服务和 Vite 的代理目标。
 
 不要把「正在 `pnpm dev` 的轻舟源码目录」同时设成任务工作区：改文件会触发 Vite / `tsx watch` 重启，正在跑的会话会被打断。要么换一个工作文件夹，要么用 `pnpm dev:stable`。
 
@@ -109,7 +114,7 @@ NODE_ENV=production pnpm start   # http://127.0.0.1:4310
 |------|------|------|
 | `HOST` / `PORT` | `127.0.0.1` / `4310` | 服务监听地址（默认本机；环回会话 cookie 约 12 小时滑动过期） |
 | `PI_BIN` | `pi` | PATH 上的 Pi |
-| `QINGZHOU_PI_ENTRY` | （桌面版会设置） | 用 Node/Electron 跑的 Pi CLI |
+| `QINGZHOU_PI_ENTRY` | （桌面版会设置） | 用独立 Node 运行的 Pi CLI |
 | `QINGZHOU_DATA_DIR` | `~/.qingzhou` | 会话和设置 |
 | `QINGZHOU_ALLOWED_ROOTS` | 家目录或向导所选文件夹 | 允许访问的根目录 |
 | `QINGZHOU_MUTATIONS` | `approval` | `approval` 或 `disabled` |

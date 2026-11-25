@@ -1,4 +1,5 @@
 import { requirementPrdSchema, moduleChangeSchema, moduleRevisionSchema, type RequirementPrd } from "@qingzhou/protocol";
+import { persistDesktopUiState } from "./desktop-ui-state";
 
 export type PrdDraft = Pick<RequirementPrd, "content" | "reason" | "moduleChanges"> & { expectedPrdId: string | null };
 // Local drafts can contain unfinished text, but must have the protocol's structure.
@@ -25,7 +26,10 @@ export function applySavedPrd(current: PrdDraft, submitted: PrdDraft, prd: Requi
 }
 
 type DraftStorage = Pick<Storage, "getItem" | "setItem">;
-const browserStorage: DraftStorage = { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value) };
+const browserStorage: DraftStorage = { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => {
+  sessionStorage.setItem(key, value);
+  persistDesktopUiState(key, value);
+} };
 // Only failed writes need an in-memory fallback. Normal reads still observe storage changes.
 const pendingDrafts = new Map<string, string>();
 export const readPrdDraftCache = (key: string, storage = browserStorage): string | null => pendingDrafts.get(key) ?? storage.getItem(key);

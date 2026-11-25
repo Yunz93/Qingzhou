@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Play, Square } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Play, Square } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary, WorkflowProjectState } from "@qingzhou/protocol";
 import { requirementProgress } from "../../lib/workflow-progress";
 import { Link, useSearchParams } from "react-router-dom";
@@ -7,7 +7,7 @@ import { useViewPreference } from "../../hooks/useViewPreference";
 import { useConversationDraft } from "../../lib/conversation-draft";
 import { socketClient } from "../../transport/socket-client";
 import { useAgentStore } from "../../stores/agent-store";
-import { useDialogLayer } from "../../hooks/useDialogLayer";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { WorkConversationDrawer } from "./WorkConversationDrawer";
 import { WorkObjectivePanel } from "./WorkObjectivePanel";
 import { RequirementWorkflow } from "./RequirementWorkflow";
@@ -44,12 +44,12 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
     valid: status.valid, accepted, merged: integrated, hasDelivery: !!status.delivery,
   });
   const canStart = !prd?.frozenAt && designReady && (scopeCanStart || (!!prd && status.implementationTicket?.prdId !== prd.id));
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [savedView, setView] = useViewPreference<View>(`qingzhou:workroom-view:${item.id}`, ["delivery", "merged"].includes(status.lane) ? "delivery" : "design");
   const requested = searchParams.get("panel");
   const candidateView = requested ?? savedView;
   const view: View = candidateView === "scope" || !["design", "modules", "delivery", "acceptance", "history"].includes(candidateView) ? "design" : candidateView as View;
-  const [focus, setFocus] = useViewPreference(`qingzhou:workroom-focus:${item.id}`, "split");
+  const [focus, setFocus] = useViewPreference<"split" | "conversation" | "inspector">(`qingzhou:workroom-focus:${item.id}`, "inspector");
   const [width, setWidth] = useViewPreference("qingzhou:workroom-width:v3", 61);
   const inspectorRef = useRef<HTMLDivElement>(null);
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
@@ -57,14 +57,13 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
   const scrollPositions = useRef<Partial<Record<View, number>>>((() => {
     try { return JSON.parse(sessionStorage.getItem(`qingzhou:inspector-scroll:${item.id}`) || "{}"); } catch { return {}; }
   })());
-  const [, setSearchParams] = useSearchParams();
   const selectView = (next: View) => {
     if (searchParams.has("panel")) setSearchParams((previous) => { previous.delete("panel"); return previous; }, { replace: true });
     if (inspectorRef.current) scrollPositions.current[view] = inspectorRef.current.scrollTop;
     setView(next);
   };
   useLayoutEffect(() => { if (inspectorRef.current) inspectorRef.current.scrollTop = scrollPositions.current[view] ?? 0; }, [view]);
-  const [pane, setPane] = useViewPreference(`qingzhou:workroom-pane:${item.id}`, "conversation");
+  const [pane, setPane] = useViewPreference<"conversation" | "inspector">(`qingzhou:workroom-pane:${item.id}`, "inspector");
   useLayoutEffect(() => {
     if (["design", "modules", "scope", "delivery", "acceptance", "history"].includes(requested ?? "")) {
       if (requested === "scope") setSettingsOpen(true);
@@ -79,8 +78,18 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
     setActionBusy(true); setActionError("");
     void Promise.resolve().then(action).catch((reason: unknown) => setActionError(reason instanceof Error ? reason.message : "操作失败，请重试")).finally(() => setActionBusy(false));
   };
-  const ref = useRef<HTMLElement>(null);
-  useDialogLayer(ref, onClose);
+  const wide = useMediaQuery("(min-width: 1120px)");
+  const showReview = focus === "inspector" || (focus === "split" && (wide || pane === "inspector"));
+  const showConversation = focus === "conversation" || (focus === "split" && (wide || pane === "conversation"));
+  const split = showReview && showConversation;
+  function openConversation() {
+    setFocus("split");
+    setPane("conversation");
+  }
+  function openReview() {
+    setFocus("inspector");
+    setPane("inspector");
+  }
   const sorted = items.filter((entry) => entry.state !== "archived" || entry.id === item.id).slice().sort((a, b) => a.rank - b.rank);
   const index = sorted.findIndex((entry) => entry.id === item.id);
   const workspace = state.workspaces.find((entry) => entry.itemId === item.id);
@@ -90,15 +99,18 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
   const compactStatus = integrated ? "已合入" : prd?.frozenAt ? "已验收" : running ? status.implementation : status.verification?.status === "running" ? "检查中" : accepted ? "待合入" : status.valid ? "待验收" : stage === 1 ? "待封存" : !designReady ? "待确认设计" : "待实施";
   const executionActions = item.state === "open" && !workspace?.removedAt ? running
     ? <button className="btn btn-secondary" disabled={actionBusy} onClick={() => act(() => onStop(item.id))}><Square size={12} />停止本轮</button>
-    : canStart ? <button className="btn btn-primary" disabled={actionBusy} onClick={() => act(() => onStart(item.id))}><Play size={13} />{status.implementationTicket?.status === "finished" ? "开始新一轮" : status.implementationTicket ? "重新执行" : "开始执行"}</button> : null
+    : canStart ? <button className="btn btn-primary" disabled={actionBusy} onClick={() => act(async () => { await onStart(item.id); openConversation(); })}><Play size={13} />{status.implementationTicket?.status === "finished" ? "开始新一轮" : status.implementationTicket ? "重新执行" : "开始执行"}</button> : null
     : item.state === "completed" && !workspace?.removedAt ? <button className="btn btn-secondary" disabled={actionBusy} onClick={() => act(() => onReopen(item.id))}>重新打开</button> : null;
-  return <div className="workflow-workroom-layer">
-    <section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="requirement-workroom-title" className="workflow-workroom" data-focus={focus} style={{ "--inspector-width": `${Math.min(70, Math.max(30, width))}%` } as CSSProperties}>
-      <header role="presentation" className="workflow-workroom-head">
-        <button className="btn btn-ghost" aria-label="关闭" onClick={onClose}><ArrowLeft size={16} /><span>项目</span></button>
-        <div className="min-w-0 flex-1"><p>{projectName}</p><h2 id="requirement-workroom-title">{item.title}</h2></div>
+  return (
+    <section aria-labelledby="requirement-workroom-title" data-requirement-workspace className="workflow-workroom min-h-0 flex-1">
+      <header className="flex min-h-14 shrink-0 items-center gap-2 px-3 sm:px-5">
+        <button className="icon-btn" aria-label="返回项目" title={`返回 ${projectName}`} onClick={onClose}><ArrowLeft size={15} /></button>
+        <h1 id="requirement-workroom-title" className="min-w-0 flex-1 truncate text-xl font-semibold" title={item.title}>{item.title}</h1>
         {sorted.length > 1 ? <div className="workflow-item-pagination"><button className="icon-btn" aria-label="上一个需求" disabled={index <= 0} onClick={() => onSelect(sorted[index - 1]!)}><ChevronLeft size={17} /></button><span>{index + 1} / {sorted.length}</span><button className="icon-btn" aria-label="下一个需求" disabled={index < 0 || index >= sorted.length - 1} onClick={() => onSelect(sorted[index + 1]!)}><ChevronRight size={17} /></button></div> : null}
         <span className="review-status" role="status" aria-label={headline} title={headline}>{compactStatus}</span>
+        <button type="button" className="btn btn-ghost" aria-pressed={showConversation} onClick={showConversation ? openReview : openConversation}>
+          <MessageSquare size={14} />{showConversation && !showReview ? "审阅" : "对话"}
+        </button>
         <WorkflowMenu label="需求更多操作" actions={[
           { label: "需求设置", run: () => setSettingsOpen(true) },
           { label: focus === "conversation" ? "恢复双栏" : "专注对话", run: () => { setFocus(focus === "conversation" ? "split" : "conversation"); setPane("conversation"); } },
@@ -106,26 +118,25 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
         ]} />
       </header>
       {error || actionError ? <p className="workflow-workroom-error" role="alert">{error || actionError}</p> : null}
-      <div className="workflow-mobile-tabs"><WorkflowTabs id="workroom" label="工作区面板" value={pane} onChange={setPane} tabs={[{ id: "conversation", label: "连续对话" }, { id: "inspector", label: "需求与交付" }]} /></div>
-      <div className="workflow-workroom-body" data-pane={pane}>
-        <div className="workflow-workroom-chat" id="workroom-panel-conversation">
-          {workspace?.removedAt ? <div className="workflow-empty"><h3>工作区已清理</h3><p>执行内容与工具记录仍可在“历史”中查看。</p><button className="btn btn-secondary" onClick={() => { selectView("history"); setPane("inspector"); }}>查看历史</button></div> : <WorkConversationDrawer key={item.id} embedded discussionRequest={discussionRequest} item={item} onClose={onClose} onOpenFull={() => onOpenFull(item)} />}
-        </div>
-        <div className="workflow-splitter" role="separator" tabIndex={0} aria-label="调整对话与审阅宽度" aria-orientation="vertical" aria-valuemin={30} aria-valuemax={70} aria-valuenow={width} onDoubleClick={() => setWidth(61)} onKeyDown={(event) => { if (["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) { event.preventDefault(); setWidth(event.key === "Home" ? 61 : Math.min(70, Math.max(30, width + (event.key === "ArrowLeft" ? 3 : -3)))); } }} onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { const box = event.currentTarget.parentElement!.getBoundingClientRect(); setWidth(Math.min(70, Math.max(30, (box.right - event.clientX) / box.width * 100))); } }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />
-        <div className="workflow-workroom-inspector" id="workroom-panel-inspector">
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-col" style={{ flex: split ? `0 0 ${width}%` : "1 1 0" }} hidden={!showReview} id="workroom-panel-inspector">
           <WorkflowTabs id="requirement" label="需求工作区视图" value={view} onChange={selectView} tabs={[
             { id: "design", label: "设计" }, { id: "modules", label: "模块设计" }, { id: "delivery", label: "交付" }, { id: "acceptance", label: "验收" }, { id: "history", label: "历史" },
           ]} />
-          <div ref={inspectorRef} className="workflow-inspector-scroll" onScroll={(event) => { scrollPositions.current[view] = event.currentTarget.scrollTop; try { sessionStorage.setItem(`qingzhou:inspector-scroll:${item.id}`, JSON.stringify(scrollPositions.current)); } catch { /* Optional reading position. */ } }}>
-            <div hidden={view !== "design" && view !== "modules"}><RequirementDesign view={view === "modules" ? "modules" : "design"} onDesign={() => selectView("design")} actionsTarget={view === "design" || view === "modules" ? actionsTarget : null} executionActions={executionActions} state={state} item={item} onRefresh={onRefresh} onScope={() => setSettingsOpen(true)} onConversation={() => { setFocus("split"); setPane("conversation"); setDiscussionRequest((value) => value + 1); if (item.taskId) act(async () => { await socketClient.send("task.policy.set", { mode: "ask", approvalPolicy: "read_only" }, item.taskId!); }); }} /></div>
+          <div ref={inspectorRef} className="workflow-inspector-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain" onScroll={(event) => { scrollPositions.current[view] = event.currentTarget.scrollTop; try { sessionStorage.setItem(`qingzhou:inspector-scroll:${item.id}`, JSON.stringify(scrollPositions.current)); } catch { /* Optional reading position. */ } }}>
+            <div hidden={view !== "design" && view !== "modules"} className="mx-auto max-w-[720px]"><RequirementDesign view={view === "modules" ? "modules" : "design"} onDesign={() => selectView("design")} actionsTarget={view === "design" || view === "modules" ? actionsTarget : null} executionActions={executionActions} state={state} item={item} onRefresh={onRefresh} onScope={() => setSettingsOpen(true)} onConversation={() => { openConversation(); setDiscussionRequest((value) => value + 1); if (item.taskId) act(async () => { await socketClient.send("task.policy.set", { mode: "ask", approvalPolicy: "read_only" }, item.taskId!); }); }} /></div>
             <RequirementWorkflow actionsTarget={view !== "design" ? actionsTarget : null} onViewChange={selectView} canStart={canStart && !running && item.state === "open"} settingsOpen={settingsOpen} onCloseSettings={() => setSettingsOpen(false)} state={state} item={item} items={items} onRefresh={onRefresh} view={view}
-              scopeContent={<><DocumentPath projectId={item.projectId} path={prd?.document?.path} /><RequirementSource item={item} />{sourcePrd ? <p className="text-sm mt-3">子需求来源：{state.scopes.find((entry) => entry.id === sourcePrd.scopeId)?.title} · 已固化 PRD v{sourcePrd.version}</p> : null}{prd?.frozenAt ? <p className="workflow-design-note">需求已固化，范围编辑已关闭；请在“设计”创建关联子需求。</p> : <WorkObjectivePanel embedded details={details} onClose={onClose} onSave={onSave} onFeedback={async () => undefined} onAccept={() => undefined} onReopen={() => onReopen(item.id)} onDelete={async () => undefined} onOpenConversation={() => setPane("conversation")} />}</>} />
+              scopeContent={<><DocumentPath projectId={item.projectId} path={prd?.document?.path} /><RequirementSource item={item} />{sourcePrd ? <p className="text-sm mt-3">子需求来源：{state.scopes.find((entry) => entry.id === sourcePrd.scopeId)?.title} · 已固化 PRD v{sourcePrd.version}</p> : null}{prd?.frozenAt ? <p className="workflow-design-note">需求已固化，范围编辑已关闭；请在“设计”创建关联子需求。</p> : <WorkObjectivePanel embedded details={details} onClose={onClose} onSave={onSave} onFeedback={async () => undefined} onAccept={() => undefined} onReopen={() => onReopen(item.id)} onDelete={async () => undefined} onOpenConversation={openConversation} />}</>} />
           </div>
           <div ref={setActionsTarget} className="workflow-review-footer" aria-label="当前页操作" />
         </div>
+        {split ? <div className="w-1 shrink-0 cursor-col-resize border-l border-divider hover:bg-accent focus-visible:bg-accent" role="separator" tabIndex={0} aria-label="调整对话与审阅宽度" aria-orientation="vertical" aria-valuemin={40} aria-valuemax={70} aria-valuenow={width} onDoubleClick={() => setWidth(61)} onKeyDown={(event) => { if (["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) { event.preventDefault(); setWidth(event.key === "Home" ? 61 : Math.min(70, Math.max(40, width + (event.key === "ArrowLeft" ? -3 : 3)))); } }} onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { const box = event.currentTarget.parentElement!.getBoundingClientRect(); setWidth(Math.min(70, Math.max(40, (event.clientX - box.left) / box.width * 100))); } }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} /> : null}
+        <aside className="flex min-h-0 min-w-0 flex-1 flex-col" id="workroom-panel-conversation" hidden={!showConversation}>
+          {workspace?.removedAt ? <div className="workflow-empty"><h3>工作区已清理</h3><p>执行内容与工具记录仍可在“历史”中查看。</p><button className="btn btn-secondary" onClick={() => { selectView("history"); openReview(); }}>查看历史</button></div> : <WorkConversationDrawer key={item.id} embedded discussionRequest={discussionRequest} item={item} onClose={onClose} onOpenFull={() => onOpenFull(item)} />}
+        </aside>
       </div>
     </section>
-  </div>;
+  );
 }
 
 function RequirementSource({ item }: { item: WorkItemSummary }) {

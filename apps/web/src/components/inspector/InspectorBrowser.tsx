@@ -1,17 +1,25 @@
-import { createElement, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, ExternalLink, RotateCw } from "lucide-react";
-import { isDesktopApp } from "../../desktop-bridge";
+import { getDesktop, type WebPreviewAction } from "../../desktop-bridge";
 import { normalizeBrowserUrl } from "../../lib/browser-url";
 
 export function InspectorBrowser() {
-  const desktop = isDesktopApp();
+  const desktop = getDesktop();
+  const nativePreview = desktop?.previewNavigation;
   const [draft, setDraft] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [index, setIndex] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
+  const [previewError, setPreviewError] = useState("");
   const url = index >= 0 ? (history[index] ?? "") : "";
-  const canBack = index > 0;
-  const canForward = index >= 0 && index < history.length - 1;
+  const canBack = nativePreview ? Boolean(url) : index > 0;
+  const canForward = nativePreview ? Boolean(url) : index >= 0 && index < history.length - 1;
+
+  function preview(action: WebPreviewAction, address?: string) {
+    if (!nativePreview) return;
+    setPreviewError("");
+    void nativePreview(action, address).catch((error: unknown) => setPreviewError(String(error)));
+  }
 
   function navigate(raw: string): void {
     const next = normalizeBrowserUrl(raw);
@@ -21,6 +29,7 @@ export function InspectorBrowser() {
     setIndex(trimmed.length);
     setDraft(next);
     setReloadKey((value) => value + 1);
+    preview("open", next);
   }
 
   function onSubmit(event: FormEvent): void {
@@ -44,6 +53,7 @@ export function InspectorBrowser() {
           disabled={!canBack}
           onClick={() => {
             if (!canBack) return;
+            if (nativePreview) { preview("back"); return; }
             const next = index - 1;
             setIndex(next);
             setDraft(history[next] ?? "");
@@ -58,6 +68,7 @@ export function InspectorBrowser() {
           disabled={!canForward}
           onClick={() => {
             if (!canForward) return;
+            if (nativePreview) { preview("forward"); return; }
             const next = index + 1;
             setIndex(next);
             setDraft(history[next] ?? "");
@@ -70,7 +81,7 @@ export function InspectorBrowser() {
           className="pressable icon-btn"
           aria-label="刷新"
           disabled={!url}
-          onClick={() => setReloadKey((value) => value + 1)}
+          onClick={() => nativePreview ? preview("reload") : setReloadKey((value) => value + 1)}
         >
           <RotateCw size={13} />
         </button>
@@ -87,25 +98,25 @@ export function InspectorBrowser() {
             type="button"
             className="pressable icon-btn"
             aria-label="用系统浏览器打开"
-            onClick={() => window.open(url, "_blank", "noopener")}
+            onClick={() => {
+              if (desktop?.openExternal) {
+                void desktop.openExternal(url).catch((error: unknown) => setPreviewError(String(error)));
+              } else {
+                window.open(url, "_blank", "noopener");
+              }
+            }}
           >
             <ExternalLink size={13} />
           </button>
         ) : null}
       </form>
+      {previewError ? <p className="px-3 py-2 text-sm text-danger" role="alert">{previewError}</p> : null}
       {url ? (
-        desktop ? (
-          createElement("webview", {
-            key: `${url}:${reloadKey}`,
-            src: url,
-            // Disable Node/preload inside guest pages; main process also enforces this.
-            webpreferences: "contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes",
-            title: "浏览器",
-            partition: "persist:qingzhou-browser",
-            allowpopups: "on",
-            className: "min-h-0 flex-1 border-0 bg-surface",
-            style: { width: "100%", height: "100%" },
-          })
+        nativePreview ? (
+          <div className="space-y-2 px-3 py-4 text-sm">
+            <p className="break-all text-mute">{url}</p>
+            <button type="button" className="btn btn-secondary" onClick={() => preview("open", url)}>打开预览窗口</button>
+          </div>
         ) : (
           <iframe
             key={`${url}:${reloadKey}`}
@@ -119,7 +130,7 @@ export function InspectorBrowser() {
         <div className="flex min-h-0 flex-1 items-start p-3">
           <p className="text-sm leading-6 text-mute">
             输入网址打开网页，例如 <span className="font-mono text-[12px] text-ink">example.com</span>
-            。桌面版用内置网页容器，不受网站禁止嵌入限制。
+            。{nativePreview ? "网页在独立预览窗口中打开。" : null}
           </p>
         </div>
       )}

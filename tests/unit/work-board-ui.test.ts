@@ -6,41 +6,21 @@ describe("agent-native work mode", () => {
   it("exposes /board with explicit goal and execution actions", () => {
     const router = readFileSync(path.resolve("apps/web/src/app/router.tsx"), "utf8");
     const layout = readFileSync(path.resolve("apps/web/src/layouts/WorkbenchLayout.tsx"), "utf8");
-    const mode = readFileSync(path.resolve("apps/web/src/components/app/ModeSwitcher.tsx"), "utf8");
+    const navigation = readFileSync(path.resolve("apps/web/src/components/workspace/WorkspaceChrome.tsx"), "utf8");
     const board = readFileSync(path.resolve("apps/web/src/pages/BoardPage.tsx"), "utf8");
     const dashboard = readFileSync(path.resolve("apps/web/src/components/board/WorkDashboard.tsx"), "utf8");
     const panel = readFileSync(path.resolve("apps/web/src/components/board/WorkObjectivePanel.tsx"), "utf8");
 
     expect(router).toMatch(/path="\/board"/);
-    expect(layout).toMatch(/ModeSwitcher/);
-    expect(layout).toMatch(/titlebar-work-link/);
-    expect(layout).toMatch(/titlebar-work-link[\s\S]*?任务/);
-    expect(mode).toMatch(/对话/);
-    expect(mode).toMatch(/工作/);
-    expect(board).toMatch(/启动项目/);
-    expect(board).toMatch(/WorkProjectPicker/);
+    expect(layout).toMatch(/WorkspaceRail section="conversation"/);
+    expect(layout).toMatch(/返回需求/);
+    expect(navigation).toMatch(/对话/);
+    expect(navigation).toMatch(/项目/);
+    expect(navigation).toMatch(/设置/);
+    expect(board).toMatch(/添加项目/);
+    expect(board).toMatch(/WorkspaceRail section="projects"/);
     expect(board).toMatch(/onCreate=\{project \? \(\) => setCreating\(true\) : undefined\}/);
-    expect(board).not.toMatch(/work-project-select/);
-    expect(board).not.toMatch(/<select/);
-    expect(board).toMatch(/work-head-end app-no-drag/);
-    expect(board).toMatch(/aria-label="设置"/);
     expect(board).toMatch(/ThemeToggle/);
-    const themeToggle = readFileSync(path.resolve("apps/web/src/components/status/ThemeToggle.tsx"), "utf8");
-    expect(themeToggle).toMatch(/app-no-drag icon-btn/);
-    expect(board).not.toMatch(/max-w-\[240px\]/);
-    const picker = readFileSync(path.resolve("apps/web/src/components/board/WorkProjectPicker.tsx"), "utf8");
-    const styles = readFileSync(path.resolve("apps/web/src/styles/app.css"), "utf8");
-    expect(picker).toMatch(/work-project-button/);
-    expect(picker).toMatch(/新项目…/);
-    expect(picker).not.toMatch(/<select/);
-    expect(styles).toMatch(/\.app-drag a[\s\S]*app-region:\s*no-drag/);
-    expect(styles).toMatch(/\.work-page-head[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
-    expect(styles).toMatch(/@media \(max-width: 640px\)[\s\S]*\.titlebar\.work-page-head[\s\S]*height:\s*auto/);
-    expect(styles).toMatch(/@media \(max-width: 640px\)[\s\S]*\.work-page-head[\s\S]*grid-template-rows:\s*52px auto/);
-    expect(styles).not.toMatch(/\.work-page-head[\s\S]*min-height:\s*88px/);
-    expect(styles).toMatch(/\.work-project-button[\s\S]*font-size:\s*16px/);
-    expect(styles).toMatch(/\.work-project-button[\s\S]*min-height:\s*36px/);
-    expect(styles).toMatch(/\.work-toolbar[\s\S]*gap:\s*8px/);
     expect(dashboard).toMatch(/新建任务/);
     expect(dashboard).toMatch(/onCreate/);
     expect(dashboard).toMatch(/btn btn-primary h-7/);
@@ -60,7 +40,6 @@ describe("agent-native work mode", () => {
     expect(drawer).toMatch(/app-no-drag flex shrink-0/);
     expect(drawer).toMatch(/messagesByTask\[taskId\] \?\? EMPTY_MESSAGES/);
     expect(drawer).not.toMatch(/messagesByTask\[taskId\] \?\? state\.messages/);
-    expect(styles).toMatch(/html\.desktop\[data-platform="darwin"\] \.work-panel-head/);
     expect(dashboard).not.toMatch(/<select/);
   });
 

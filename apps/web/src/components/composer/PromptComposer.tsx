@@ -3,7 +3,7 @@ import type { ApprovalPolicy, InteractionMode, TaskStatus, ThinkingLevel } from 
 import { extractAtMentions } from "@qingzhou/protocol";
 import { ArrowUp, Check, Clock3, CornerUpRight, Pencil, Plus, Square, X } from "lucide-react";
 import { useDialogLayer } from "../../hooks/useDialogLayer";
-import { composerCanSubmit, filesFromClipboard, nextComposerDomValue, shouldSubmitOnEnter } from "../../lib/composer-input";
+import { composerCanSubmit, filesFromClipboard, isImeKey, nextComposerDomValue, shouldSubmitOnEnter } from "../../lib/composer-input";
 import { composerPlaceholder } from "../../copy";
 import { busySubmitKind, readBusySendMode, writeBusySendMode, type BusySendMode } from "../../lib/ui-prefs";
 import { ComposerCapsules } from "./ComposerCapsules";
@@ -221,7 +221,7 @@ export function PromptComposer({
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (menuOpen) return;
-    if (event.key === "Enter" && event.shiftKey && running && !composingRef.current) {
+    if (event.key === "Enter" && event.shiftKey && running && !composingRef.current && !isImeKey(event)) {
       event.preventDefault();
       submit(true);
       return;
@@ -273,11 +273,12 @@ export function PromptComposer({
             className="min-w-0 flex-1 bg-transparent text-ink outline-none"
             onChange={(event) => setQueueEdit({ ...queueEdit, message: event.target.value })}
             onKeyDown={(event) => {
+              if (isImeKey(event)) return;
               if (event.key === "Escape") {
                 event.preventDefault();
                 setQueueEdit(null);
               }
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              if (event.key === "Enter") {
                 event.preventDefault();
                 void saveQueueEdit();
               }
