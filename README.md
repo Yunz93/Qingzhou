@@ -1,4 +1,4 @@
-# 轻舟 / Qingzhou
+# 墨问 / Mowen
 
 本机运行的 [Pi](https://pi.dev) 编程助手。API 密钥只存在这台电脑上，改文件或跑命令前会先问你。
 
@@ -16,12 +16,12 @@
 curl -fsSL https://github.com/Yunz93/Qingzhou/releases/latest/download/install-macos.sh | bash
 ```
 
-脚本会下载应用、拷到 `/Applications`、去掉隔离属性、在本机做 ad-hoc 签名，然后打开轻舟。
+脚本会下载应用、拷到 `/Applications`、去掉隔离属性、在本机做 ad-hoc 签名，然后打开墨问。
 
 若仍无法打开：系统设置 → 隐私与安全性 → 仍要打开。或再跑一次：
 
 ```bash
-bash <(curl -fsSL https://github.com/Yunz93/Qingzhou/releases/latest/download/install-macos.sh) --trust-only /Applications/Qingzhou.app
+bash <(curl -fsSL https://github.com/Yunz93/Qingzhou/releases/latest/download/install-macos.sh) --trust-only /Applications/Mowen.app
 ```
 
 **Windows（PowerShell）**
@@ -30,9 +30,9 @@ bash <(curl -fsSL https://github.com/Yunz93/Qingzhou/releases/latest/download/in
 irm https://github.com/Yunz93/Qingzhou/releases/latest/download/install-windows.ps1 | iex
 ```
 
-装好后打开轻舟，粘贴 API Key，选一个工作文件夹。密钥保存在 `~/.pi/agent/auth.json`，界面里不会再显示完整密钥。对话会发给你选择的 AI 服务商，不会经过轻舟的服务器。
+装好后打开墨问，粘贴 API Key，选一个工作文件夹。密钥保存在 `~/.pi/agent/auth.json`，界面里不会再显示完整密钥。对话会发给你选择的 AI 服务商，不会经过墨问的服务器。
 
-Windows 便携版会提示新版本。更新时退出轻舟，将新版便携 ZIP 解压到正在使用的目录。
+Windows 便携版会提示新版本。更新时退出墨问，将新版便携 ZIP 解压到正在使用的目录。
 
 ### 发布稳定版
 
@@ -59,7 +59,7 @@ git push origin v0.1.28
 bash scripts/install-macos.sh             # 下载 latest 正式版
 bash scripts/install-macos.sh --build     # 本机打包再安装
 bash scripts/install-macos.sh --user      # ~/Applications，不需要管理员
-bash scripts/install-macos.sh --trust-only /Applications/Qingzhou.app
+bash scripts/install-macos.sh --trust-only /Applications/Mowen.app
 ```
 
 本机开发和打包需要 Node.js 22.19 或以上与 Rust 工具链。
@@ -86,7 +86,7 @@ pnpm desktop:dev         # Tauri 宿主与本机服务，默认使用工作区�
 
 服务端口被占用时，可用 `PORT=4378 pnpm dev` 同时调整本机服务和 Vite 的代理目标。
 
-不要把「正在 `pnpm dev` 的轻舟源码目录」同时设成任务工作区：改文件会触发 Vite / `tsx watch` 重启，正在跑的会话会被打断。要么换一个工作文件夹，要么用 `pnpm dev:stable`。
+不要把「正在 `pnpm dev` 的墨问源码目录」同时设成任务工作区：改文件会触发 Vite / `tsx watch` 重启，正在跑的会话会被打断。要么换一个工作文件夹，要么用 `pnpm dev:stable`。
 
 可选：不走桌面包时，把 Pi 装到 PATH。浏览器开发模式的设置向导也可以点「安装 Pi」，直接运行官方脚本：
 

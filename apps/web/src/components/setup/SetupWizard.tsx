@@ -96,7 +96,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
         setProvider(pickDefaultProvider(nextCatalog, "oauth", nextCatalog.find((entry) => findAuthEntry(next.authEntries ?? [], entry.id, "oauth"))?.id));
         setStep("welcome");
       })
-      .catch(() => setError("连不上轻舟。确认应用正在运行。"));
+      .catch(() => setError("连不上墨问。确认应用正在运行。"));
   }, []);
 
   const panelRef = useRef<HTMLDivElement>(null);
@@ -236,7 +236,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
   }
 
   const titles: Record<Step, string> = {
-    welcome: "准备使用轻舟",
+    welcome: "准备使用墨问",
     pi: status?.piBundled ? "AI 引擎出了点问题" : "需要安装 Pi",
     auth: "连接一个 AI",
     workspace: "选一个工作文件夹",
@@ -258,7 +258,10 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
       <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-solid dialog-panel-lg" role="dialog" aria-modal="true" aria-labelledby="setup-title">
         <div className="dialog-head">
           <div className="dialog-head-text">
-            <p className="dialog-kicker">{isDesktopApp() ? "欢迎使用轻舟" : "轻舟设置"}</p>
+            <p className="dialog-kicker flex items-center gap-2">
+              <img src="/mowen.svg" alt="" width={22} height={22} />
+              {isDesktopApp() ? "欢迎使用墨问" : "墨问设置"}
+            </p>
             <h1 id="setup-title" className="dialog-title">
               {titles[step]}
             </h1>
@@ -290,8 +293,8 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
             <>
               <p className="text-sm leading-6 text-mute">
                 {status?.piBundled
-                  ? "内置 AI 引擎没能启动。请退出后重新打开轻舟。如果还是不行，重新安装一次。"
-                  : "Pi 是轻舟使用的 AI 引擎。点「安装 Pi」会在这台电脑上运行官方安装脚本。装好后也可以点「再检查」。"}
+                  ? "内置 AI 引擎没能启动。请退出后重新打开墨问。如果还是不行，重新安装一次。"
+                  : "Pi 是墨问使用的 AI 引擎。点「安装 Pi」会在这台电脑上运行官方安装脚本。装好后也可以点「再检查」。"}
               </p>
               <div className="rounded-md border border-line bg-canvas px-3 py-2 text-[12px] text-mute">
                 {status?.piAvailable

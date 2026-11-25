@@ -201,6 +201,6 @@ export async function fetchPiPackageCatalog(input: {
   }
 
   const detail = lastError instanceof Error ? lastError.message : "";
-  const hint = "请检查网络，或设置 HTTPS_PROXY 后重启轻舟。";
+  const hint = "请检查网络，或设置 HTTPS_PROXY 后重启墨问。";
   throw new Error(detail ? `无法加载插件中心。${detail} ${hint}` : `无法加载插件中心。${hint}`);
 }

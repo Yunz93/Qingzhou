@@ -4,7 +4,7 @@ import { loadConfig } from "../config.js";
 
 export class ProfileBusyError extends Error {
   constructor() {
-    super("这个轻舟资料目录已被另一个实例打开。请关闭该实例后重试。");
+    super("这个墨问资料目录已被另一个实例打开。请关闭该实例后重试。");
   }
 }
 

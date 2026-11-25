@@ -86,7 +86,7 @@ export function humanizeSearchToolDownloadError(text: string): string | null {
     "找不到搜索工具 fd / ripgrep，GitHub 拒绝了自动下载。",
     "在终端运行：",
     "  brew install fd ripgrep",
-    "然后重新打开轻舟。",
+    "然后重新打开墨问。",
   ].join("\n");
 }
 

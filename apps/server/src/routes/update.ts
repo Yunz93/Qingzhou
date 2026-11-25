@@ -74,13 +74,13 @@ export function registerUpdateRoutes(
 
   app.post("/api/update/install", async (request, reply) => {
     if (options.env?.QINGZHOU_TAURI === "1") {
-      return reply.code(400).send({ error: "请从轻舟设置中安装已签名的更新。" });
+      return reply.code(400).send({ error: "请从墨问设置中安装已签名的更新。" });
     }
     if (!isQingzhouDesktop(options.env)) {
       return reply.code(400).send({ error: "开发模式不支持替换当前源码，请使用桌面版更新。" });
     }
     const parsed = installSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: "请选择有效的轻舟版本。" });
+    if (!parsed.success) return reply.code(400).send({ error: "请选择有效的墨问版本。" });
 
     const accept = String(request.headers.accept ?? "");
     const wantsStream = accept.includes("text/event-stream");

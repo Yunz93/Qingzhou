@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     `Auth configured: ${auth ? "yes" : "no"}`,
     providers.length ? `Providers: ${providers.join(", ")}` : "Providers: (none)",
     `Setup ready: ${setup.ready ? "yes" : "no"}`,
-    setup.needsSetup ? "Next: open 轻舟 in the browser and finish the setup wizard." : "Ready to use.",
+    setup.needsSetup ? "Next: open Mowen in the browser and finish the setup wizard." : "Ready to use.",
   ].filter(Boolean);
 
   for (const line of lines) console.log(line);

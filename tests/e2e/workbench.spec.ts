@@ -156,7 +156,7 @@ test("keyboard and viewports", async ({ page }) => {
 test("workspace navigation stays usable at the minimum desktop viewport", async ({ page }) => {
   await page.setViewportSize({ width: 533, height: 600 });
   await page.goto("/");
-  const nav = page.getByRole("complementary", { name: "轻舟导航" });
+  const nav = page.getByRole("complementary", { name: "墨问导航" });
   await expect(nav).toBeHidden();
   await page.getByRole("button", { name: "打开导航" }).click();
   await expect(nav.getByRole("heading", { name: "最近对话" })).toBeVisible();
@@ -199,7 +199,7 @@ test("Windows portable updates offer the release zip in settings and the toolbar
 
   const portableZip = "https://github.com/Yunz93/Qingzhou/releases/download/v0.2.0/Qingzhou-win-x64-portable.zip";
   await page.goto("/");
-  await page.getByRole("button", { name: "轻舟 0.2.0 可用", exact: true }).click();
+  await page.getByRole("button", { name: "墨问 0.2.0 可用", exact: true }).click();
   await expect(page.getByRole("link", { name: "下载便携包", exact: true })).toHaveAttribute("href", portableZip);
   await expect(page.getByRole("button", { name: "更新并重启", exact: true })).toHaveCount(0);
 
@@ -785,7 +785,12 @@ test("navigation can be docked and the tool panel embeds a terminal", async ({ p
 
 test("projects are available from the workspace navigation", async ({ page }) => {
   await page.goto("/board");
-  const nav = page.getByRole("complementary", { name: "轻舟导航" });
+  const nav = page.getByRole("complementary", { name: "墨问导航" });
+  await expect(page).toHaveTitle("墨问");
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/mowen.svg");
+  const logo = nav.getByRole("link", { name: "墨问", exact: true }).locator("img");
+  await expect(logo).toBeVisible();
+  await expect.poll(() => logo.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await expect(nav.getByRole("link", { name: "项目", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("button", { name: "添加项目", exact: true })).toBeVisible();
 });

@@ -1023,7 +1023,7 @@ test("late project responses and failures cannot replace the newly selected proj
   await createRequirement(page,"项目 B 的需求","B 的独立目标");
   expect(lastProject).not.toBe(projectA);
   const select = async (name:string) => {
-    await page.getByRole("complementary", { name: "轻舟导航" }).getByRole("button", { name, exact: true }).click();
+    await page.getByRole("complementary", { name: "墨问导航" }).getByRole("button", { name, exact: true }).click();
   };
   for(const result of ["fail","succeed"] as const) {
     hold=true;

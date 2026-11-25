@@ -1,9 +1,31 @@
 !define QINGZHOU_LEGACY_GUID "b217ef67-1b56-53a8-ae48-833d59642d92"
 !define QINGZHOU_LEGACY_INSTALL "Software\${QINGZHOU_LEGACY_GUID}"
 !define QINGZHOU_LEGACY_UNINSTALL "Software\Microsoft\Windows\CurrentVersion\Uninstall\${QINGZHOU_LEGACY_GUID}"
+!define QINGZHOU_TAURI_INSTALL "${MANUKEY}\Qingzhou"
+!define QINGZHOU_TAURI_UNINSTALL "Software\Microsoft\Windows\CurrentVersion\Uninstall\Qingzhou"
 Var QingzhouLegacyRoot
+Var QingzhouTauriRoot
 
 !macro NSIS_HOOK_PREINSTALL
+  !if "${PRODUCTNAME}" != "Qingzhou"
+    ReadRegStr $QingzhouTauriRoot HKCU "${QINGZHOU_TAURI_INSTALL}" ""
+    ${If} $QingzhouTauriRoot != ""
+    ${AndIf} ${FileExists} "$QingzhouTauriRoot\${MAINBINARYNAME}.exe"
+    ${AndIf} ${FileExists} "$QingzhouTauriRoot\runtime\service.mjs"
+    ${AndIf} ${FileExists} "$QingzhouTauriRoot\uninstall.exe"
+      ReadRegStr $R8 HKCU "${MANUPRODUCTKEY}" ""
+      ${If} $R8 == ""
+        ${If} $UpdateMode = 1
+        ${OrIf} $INSTDIR == "$LOCALAPPDATA\${PRODUCTNAME}"
+          StrCpy $INSTDIR "$QingzhouTauriRoot"
+          SetOutPath "$INSTDIR"
+        ${EndIf}
+      ${EndIf}
+    ${Else}
+      StrCpy $QingzhouTauriRoot ""
+    ${EndIf}
+  !endif
+
   ; The previous in-app updater invokes this installer silently, then reopens the same executable.
   ${If} ${Silent}
     ReadRegStr $QingzhouLegacyRoot HKCU "${QINGZHOU_LEGACY_INSTALL}" "InstallLocation"
@@ -21,6 +43,26 @@ Var QingzhouLegacyRoot
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  !if "${PRODUCTNAME}" != "Qingzhou"
+    ${If} $QingzhouTauriRoot != ""
+    ${AndIf} $QingzhouTauriRoot == $INSTDIR
+      DeleteRegKey HKCU "${QINGZHOU_TAURI_INSTALL}"
+      DeleteRegKey HKCU "${QINGZHOU_TAURI_UNINSTALL}"
+      !insertmacro IsShortcutTarget "$SMPROGRAMS\Qingzhou.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+      Pop $R8
+      ${If} $R8 = 1
+      ${AndIfNot} ${FileExists} "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+        Rename "$SMPROGRAMS\Qingzhou.lnk" "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+      ${EndIf}
+      !insertmacro IsShortcutTarget "$DESKTOP\Qingzhou.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+      Pop $R8
+      ${If} $R8 = 1
+      ${AndIfNot} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
+        Rename "$DESKTOP\Qingzhou.lnk" "$DESKTOP\${PRODUCTNAME}.lnk"
+      ${EndIf}
+    ${EndIf}
+  !endif
+
   ${If} $QingzhouLegacyRoot != ""
   ${AndIf} $QingzhouLegacyRoot == $INSTDIR
     ; Application data lives outside the install directory. Remove only old runtime assets.

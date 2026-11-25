@@ -255,7 +255,7 @@ export async function runPiOAuthLogin(options: {
       completed: false,
       loginId,
       openedUrl: null,
-      hint: `在终端运行 pi，然后输入 /login 登录。完成后点「刷新状态」。轻舟找不到本机 Pi 安装，无法代开浏览器登录。`,
+      hint: `在终端运行 pi，然后输入 /login 登录。完成后点「刷新状态」。墨问找不到本机 Pi 安装，无法代开浏览器登录。`,
     };
   }
 
@@ -311,7 +311,7 @@ export async function runPiOAuthLogin(options: {
         completed: false,
         loginId,
         openedUrl,
-        hint: `在终端运行 pi，然后输入 /login。完成后点「刷新状态」。轻舟无法加载 Pi 的登录组件。`,
+        hint: `在终端运行 pi，然后输入 /login。完成后点「刷新状态」。墨问无法加载 Pi 的登录组件。`,
       };
     }
     return {

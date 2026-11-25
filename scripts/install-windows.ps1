@@ -1,4 +1,4 @@
-# Qingzhou one-click installer for Windows.
+# Mowen one-click installer for Windows.
 # Downloads the latest GitHub Release setup exe and runs it.
 #
 # Usage (PowerShell):
@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppName = "Qingzhou"
+$AppName = "Mowen"
 if ($Version -notmatch '^(latest|v?[0-9]+\.[0-9]+\.[0-9]+)$') {
   throw "版本必须是 latest 或正式版本号（例如 v0.1.21）。"
 }
@@ -107,9 +107,9 @@ try {
   Write-Host "-> Starting installer $installer"
   $process = Start-Process -FilePath $installer -Wait -PassThru
   if ($process.ExitCode -ne 0) {
-    throw "轻舟安装程序退出，退出码为 $($process.ExitCode)。"
+    throw "墨问安装程序退出，退出码为 $($process.ExitCode)。"
   }
-  Write-Host "OK  $AppName setup finished. Open Qingzhou from the Start menu and follow the on-screen guide."
+  Write-Host "OK  $AppName setup finished. Open $AppName from the Start menu and follow the on-screen guide."
 } finally {
   Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

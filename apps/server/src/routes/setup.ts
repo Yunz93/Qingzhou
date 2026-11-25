@@ -251,7 +251,7 @@ export function registerSetupRoutes(
 
   app.post("/api/setup/install-pi", async (request, reply) => {
     if (!options.installPi) {
-      return reply.code(501).send({ error: "这台轻舟不支持在界面里安装 Pi。" });
+      return reply.code(501).send({ error: "这台墨问不支持在界面里安装 Pi。" });
     }
     const force =
       z.object({ force: z.boolean().optional() }).safeParse(request.body ?? {}).data?.force === true;

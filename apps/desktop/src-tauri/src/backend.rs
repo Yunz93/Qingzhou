@@ -139,7 +139,7 @@ impl Running {
                 let _ = child.kill();
                 let _ = child.wait();
                 if ready.as_deref() == Some("QINGZHOU_PROFILE_BUSY") {
-                    return Err("这个轻舟资料目录已被另一个实例打开。请关闭该实例后重试。".into());
+                    return Err("这个墨问资料目录已被另一个实例打开。请关闭该实例后重试。".into());
                 }
                 Err("本地服务未能启动。请查看启动日志后重试。".into())
             }

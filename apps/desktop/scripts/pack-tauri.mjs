@@ -11,13 +11,15 @@ const desktop = fileURLToPath(new URL("../", import.meta.url));
 const root = path.resolve(desktop, "../..");
 const release = path.join(desktop, "release");
 const stagingRoot = path.join(desktop, "vendor");
-const { version } = JSON.parse(await readFile(path.join(desktop, "src-tauri/tauri.conf.json"), "utf8"));
+const { productName, version } = JSON.parse(await readFile(path.join(desktop, "src-tauri/tauri.conf.json"), "utf8"));
 const requireServer = createRequire(path.join(root, "apps/server/package.json"));
 const requireRoot = createRequire(path.join(root, "package.json"));
 const nodeVersion = "22.22.0";
 const [requestedArch = "native", requiredPlatform] = process.argv.slice(2);
 const arch = requestedArch === "native" ? process.arch : requestedArch;
 const host = process.platform;
+// Git Bash's GNU tar treats the colon in a drive letter as a remote archive host.
+const tar = host === "win32" ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
 const platform = requiredPlatform ?? host;
 const crossWindows = platform === "win32" && host === "darwin" && process.env.QINGZHOU_CROSS_WINDOWS === "1";
 if (platform !== host && !crossWindows) {
@@ -82,7 +84,7 @@ async function stageNode() {
   const archivePath = path.join(staging, archiveName);
   const binaryPath = win ? "node.exe" : "bin/node";
   await writeFile(archivePath, archive);
-  run("tar", ["-xf", archivePath, "-C", staging, `${folder}/${binaryPath}`, `${folder}/LICENSE`]);
+  run(tar, ["-xf", archivePath, "-C", staging, `${folder}/${binaryPath}`, `${folder}/LICENSE`]);
   await mkdir(path.join(runtime, "bin"));
   const executable = path.join(runtime, "bin", path.basename(binaryPath));
   const original = path.join(staging, folder, binaryPath);
@@ -148,9 +150,10 @@ run(process.execPath, [requireRoot.resolve("tsx/cli"), "scripts/bundle-pi-tools.
 
 const cli = path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js");
 const icons = path.join(staging, "icons");
-run(process.execPath, [cli, "icon", path.join(desktop, "build/icon.png"), "--output", icons]);
+run(process.execPath, [cli, "icon", path.join(root, "apps/web/public/mowen.svg"), "--output", icons]);
 const config = {
-  ...(testBuild && !testWindowsInstaller ? { productName: "Qingzhou Desktop Test", identifier: "com.qingzhou.desktop.test" } : {}),
+  ...(testBuild && !testWindowsInstaller ? { productName: "Mowen Desktop Test", identifier: "com.qingzhou.desktop.test" } : {}),
+  ...(testWindowsInstaller ? { productName: "Qingzhou" } : {}),
   ...(testVersion ? { version: testVersion } : {}),
   bundle: {
     resources: { [`${runtime}/`]: "runtime/" },
@@ -179,8 +182,11 @@ if (testBuild) {
     await cp(runtime, testRuntime, { recursive: true });
   }
 } else if (mac) {
-  const app = path.join(bundleFolder, "macos/Qingzhou.app");
-  run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", app, path.join(release, `Qingzhou-mac-${arch}.zip`)]);
+  const app = path.join(bundleFolder, "macos", `${productName}.app`);
+  // The last Electron release requires this exact bundle name inside its ZIP.
+  const legacyZipApp = path.join(staging, "Qingzhou.app");
+  run("ditto", [app, legacyZipApp]);
+  run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", legacyZipApp, path.join(release, `Qingzhou-mac-${arch}.zip`)]);
   if (signUpdates) {
     await cp(`${app}.tar.gz`, path.join(release, `Qingzhou-mac-${arch}.app.tar.gz`));
     await cp(`${app}.tar.gz.sig`, path.join(release, `Qingzhou-mac-${arch}.app.tar.gz.sig`));
@@ -193,12 +199,12 @@ if (testBuild) {
   await mkdir(portable);
   await cp(path.join(bundleFolder, "../qingzhou.exe"), path.join(portable, "Qingzhou.exe"));
   await cp(runtime, path.join(portable, "runtime"), { recursive: true });
-  run("tar", ["-a", "-c", "-f", path.join(release, "Qingzhou-win-x64-portable.zip"), "-C", portable, "."]);
+  run(tar, ["-a", "-c", "-f", path.join(release, "Qingzhou-win-x64-portable.zip"), "-C", portable, "."]);
 }
 
 async function copyBundle(folder, suffix, name) {
   const directory = path.join(bundleFolder, folder);
-  const bundles = (await readdir(directory)).filter((file) => file.startsWith(`Qingzhou_${version}_`) && file.endsWith(suffix));
+  const bundles = (await readdir(directory)).filter((file) => file.startsWith(`${productName}_${version}_`) && file.endsWith(suffix));
   if (bundles.length !== 1) throw new Error(`无法确定待交付的安装包：${directory}`);
   await cp(path.join(directory, bundles[0]), path.join(release, name));
 }

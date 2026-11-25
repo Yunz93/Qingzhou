@@ -80,7 +80,7 @@ export function AppUpdateSection() {
       <h2 className="settings-label">关于与更新</h2>
       <div className="settings-card">
         <div className="settings-row items-center">
-          <div className="min-w-0"><p className="text-[13px] text-ink">轻舟 <span className="ml-2 font-mono text-mute">{current || "—"}</span></p><p className={`mt-1 text-[12px] ${statusTone === "danger" ? "text-danger" : "text-mute"}`}>{busy ? "正在检查…" : status}</p></div>
+          <div className="min-w-0"><p className="text-[13px] text-ink">墨问 <span className="ml-2 font-mono text-mute">{current || "—"}</span></p><p className={`mt-1 text-[12px] ${statusTone === "danger" ? "text-danger" : "text-mute"}`}>{busy ? "正在检查…" : status}</p></div>
           <div className="flex shrink-0 items-center gap-2">{updateAvailable && canUpdate && !expanded && !installing ? <button type="button" className="pressable btn btn-primary" disabled={busy} onClick={() => void install()}>{installLabel}</button> : null}<button type="button" className="pressable btn btn-ghost" disabled={installing} aria-expanded={expanded || installing} onClick={() => setExpanded(!expanded)}>{installing ? "安装进度" : expanded ? "收起详情" : "更新详情"}</button></div>
         </div>
         <div hidden={!expanded && !installing}>
@@ -171,7 +171,7 @@ export function AppUpdateSection() {
 
         <div className="settings-row flex-col items-stretch gap-2 text-[12px] leading-6 text-mute">
           <p>
-            {portableUrl ? "退出轻舟后，将新版便携包解压到您正在使用的目录。" : isMac
+            {portableUrl ? "退出墨问后，将新版便携包解压到您正在使用的目录。" : isMac
               ? "应用内更新会下载已校验的安装包，替换当前应用后自动重启。不要双击 DMG。"
               : "应用内更新会下载已校验的安装包并安装，完成后自动打开。"}
           </p>

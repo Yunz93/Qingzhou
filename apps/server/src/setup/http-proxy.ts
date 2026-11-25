@@ -28,8 +28,8 @@ export function humanizeUnsupportedRegionError(error: unknown): string | null {
   if (!isUnsupportedRegionError(raw)) return null;
   return [
     "OpenAI 拒绝了这个地区的请求（HTTP 403 unsupported_country_region_territory）。",
-    "请检查轻舟与浏览器是否使用同一个代理。",
-    "可设置 HTTPS_PROXY（例如 http://127.0.0.1:7890），或调整系统代理后重启轻舟。",
+    "请检查墨问与浏览器是否使用同一个代理。",
+    "可设置 HTTPS_PROXY（例如 http://127.0.0.1:7890），或调整系统代理后重启墨问。",
   ].join("\n");
 }
 

@@ -133,7 +133,7 @@ jobs:
         shell: bash
         env:
           TARGET_ARCH: ${{ matrix.artifact == 'mac-arm64' && 'arm64' || 'x86_64' }}
-          APP_DIR: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Qingzhou.app/Contents/Resources/runtime
+          APP_DIR: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Mowen.app/Contents/Resources/runtime
         run: |
           for tool in fd rg; do
             binary="$APP_DIR/tools/$tool"

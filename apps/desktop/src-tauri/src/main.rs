@@ -102,7 +102,7 @@ fn verify_workbench(app: &AppHandle, window: &WebviewWindow) -> Result<(), Strin
     {
         return Ok(());
     }
-    Err("仅在轻舟主窗口中可使用此操作。".into())
+    Err("仅在墨问主窗口中可使用此操作。".into())
 }
 
 #[tauri::command]
@@ -198,7 +198,7 @@ async fn open_external(app: AppHandle, window: WebviewWindow, url: String) -> Re
     verify_workbench(&app, &window)?;
     let url = parse_website(&url)?;
     if app.state::<Backend>().allows(&url) {
-        return Err("请在轻舟主窗口中打开这个地址。".into());
+        return Err("请在墨问主窗口中打开这个地址。".into());
     }
     open::that_detached(url.as_str()).map_err(error_text)
 }
@@ -241,7 +241,7 @@ async fn preview_navigation(
 
     let target = parse_website(url.as_deref().unwrap_or_default())?;
     if app.state::<Backend>().allows(&target) {
-        return Err("该地址仅可在轻舟主窗口中打开。".into());
+        return Err("该地址仅可在墨问主窗口中打开。".into());
     }
     if let Some(preview) = existing {
         preview.navigate(target).map_err(error_text)?;
@@ -251,7 +251,7 @@ async fn preview_navigation(
     let navigation_app = app.clone();
     let popup_app = app.clone();
     WebviewWindowBuilder::new(&app, PREVIEW, WebviewUrl::External(target))
-        .title("轻舟 · 网页预览")
+        .title("墨问 · 网页预览")
         .inner_size(1024.0, 720.0)
         .incognito(true)
         .on_navigation(move |url| is_website(url) && !navigation_app.state::<Backend>().allows(url))
@@ -291,7 +291,7 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     let handle = app.clone();
     let popup_app = app.clone();
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
-        .title("轻舟")
+        .title("墨问")
         .inner_size(1280.0, 840.0)
         .min_inner_size(533.0, 600.0)
         .disable_drag_drop_handler()
@@ -326,7 +326,7 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
 fn install_menu(app: &AppHandle) -> tauri::Result<()> {
     let settings = MenuItem::with_id(app, "settings", "设置…", true, Some("CmdOrCtrl+,"))?;
     let updates = MenuItem::with_id(app, "updates", "检查更新…", true, None::<&str>)?;
-    let application = SubmenuBuilder::new(app, "轻舟")
+    let application = SubmenuBuilder::new(app, "墨问")
         .item(&settings)
         .item(&updates)
         .separator()
@@ -441,7 +441,7 @@ fn main() {
                         app.state::<ExitState>().0.store(0, Ordering::Release);
                         app.dialog()
                             .message(error)
-                            .title("轻舟未能退出")
+                            .title("墨问未能退出")
                             .show(|_| {});
                     }
                 }

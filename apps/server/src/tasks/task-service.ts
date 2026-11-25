@@ -957,7 +957,7 @@ export class TaskService {
       const authHint = isMissingCredentialError(raw);
       const visible = (
         authHint
-          ? "连不上 AI 服务商。打开设置登录或粘贴密钥。轻舟不会显示完整密钥。"
+          ? "连不上 AI 服务商。打开设置登录或粘贴密钥。墨问不会显示完整密钥。"
           : text
       ).trim() || "发送失败";
       this.emit(taskId, "server.error", {

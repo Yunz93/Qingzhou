@@ -60,7 +60,7 @@ fn can_install_update(app: &AppHandle) -> bool {
 fn require_install_target(_app: &AppHandle) -> Result<(), String> {
     #[cfg(windows)]
     if !can_install_update(_app) {
-        return Err("请退出当前轻舟，下载新版 Windows 便携包并解压到您使用的目录。".into());
+        return Err("请退出当前墨问，下载新版 Windows 便携包并解压到您使用的目录。".into());
     }
     Ok(())
 }
@@ -71,7 +71,7 @@ async fn latest(app: &AppHandle) -> Result<Option<Update>, String> {
     }
     crate::proxy::for_updater(app.updater_builder())
         .build()
-        .map_err(|_| "无法初始化签名更新。请重启轻舟后重试。".to_owned())?
+        .map_err(|_| "无法初始化签名更新。请重启墨问后重试。".to_owned())?
         .check()
         .await
         .map_err(|error| match error {
@@ -96,7 +96,7 @@ fn download_error(error: UpdateError) -> String {
 fn install_error(error: UpdateError) -> String {
     match error {
         UpdateError::PreviousAppNotRestored(path) => {
-            format!("更新失败，上一版轻舟保留在 {}。", path.display())
+            format!("更新失败，上一版墨问保留在 {}。", path.display())
         }
         UpdateError::BinaryNotFoundInArchive | UpdateError::InvalidUpdaterFormat => {
             "该安装包不适用于此设备，请重新检查更新。".into()
@@ -175,7 +175,7 @@ pub async fn install_signed_update(
     app.state::<ExitState>()
         .0
         .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-        .map_err(|_| "轻舟正在退出，请稍后重试。")?;
+        .map_err(|_| "墨问正在退出，请稍后重试。")?;
     let worker = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         flush_workbench(&worker)?;
@@ -231,8 +231,8 @@ mod tests {
             "安装包下载失败。请检查网络后重试。"
         );
         assert!(
-            install_error(UpdateError::PreviousAppNotRestored("旧版轻舟.app".into()))
-                .contains("旧版轻舟.app")
+            install_error(UpdateError::PreviousAppNotRestored("旧版墨问.app".into()))
+                .contains("旧版墨问.app")
         );
     }
 }

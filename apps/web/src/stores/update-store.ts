@@ -224,7 +224,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
       set({
         installing: false,
-        notice: "请重新打开轻舟。",
+        notice: "请重新打开墨问。",
         progress: INITIAL_UPDATE_DOWNLOAD_PROGRESS,
       });
     } catch (error) {

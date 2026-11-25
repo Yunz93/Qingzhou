@@ -53,7 +53,7 @@ describe("install-macos.sh", () => {
     expect(src).toContain("${name}，跳过");
   });
 
-  it.skipIf(process.platform !== "darwin").each(["zip", "dmg", "local", "release", "bad-release"])(
+  it.skipIf(process.platform !== "darwin").each(["zip", "dmg", "local", "release", "bad-release", "legacy-zip"])(
     "cleans temporary resources after a %s installation attempt",
     (source) => {
       const root = mkdtempSync(path.join(os.tmpdir(), "qingzhou-install-test-"));
@@ -76,7 +76,7 @@ describe("install-macos.sh", () => {
           spctl: "exit 0",
           hdiutil: String.raw`
             case "$1" in
-              attach) cp -R "$FIXTURE_APP" "$7/Qingzhou.app" ;;
+              attach) cp -R "$FIXTURE_APP" "$7/Mowen.app" ;;
               detach) printf '%s\n' "$2" >> "$FIXTURE_DETACH_LOG" ;;
               *) exit 1 ;;
             esac
@@ -98,7 +98,12 @@ describe("install-macos.sh", () => {
           `,
         })) writeFileSync(path.join(bin, name), `#!/bin/sh\n${commands}\n`, { mode: 0o755 });
         const args = [script, "--user", "--no-open"];
-        if (source === "zip") args.push(archive);
+        if (source === "zip" || source === "legacy-zip") args.push(archive);
+        if (source === "legacy-zip") {
+          const previous = path.join(home, "Applications", "Qingzhou.app");
+          mkdirSync(previous, { recursive: true });
+          writeFileSync(path.join(previous, "fixture.txt"), "previous version\n");
+        }
         if (source === "dmg") args.push(dmg);
         if (source === "local") {
           const scripts = path.join(root, "scripts");
@@ -129,7 +134,8 @@ describe("install-macos.sh", () => {
             FIXTURE_DETACH_LOG: detachLog,
           },
         });
-        const installed = path.join(home, "Applications", "Qingzhou.app", "fixture.txt");
+        const installedBundle = source === "legacy-zip" ? "Qingzhou.app" : "Mowen.app";
+        const installed = path.join(home, "Applications", installedBundle, "fixture.txt");
         if (source === "bad-release") {
           expect(result.status, result.stderr).not.toBe(0);
           expect(result.stderr).toContain("校验和不匹配");
@@ -137,6 +143,7 @@ describe("install-macos.sh", () => {
         } else {
           expect(result.status, result.stderr).toBe(0);
           expect(readFileSync(installed, "utf8")).toBe("isolated install\n");
+          expect(readdirSync(path.join(home, "Applications"))).toEqual([installedBundle]);
         }
         if (source === "dmg") expect(readFileSync(detachLog, "utf8").trim()).toMatch(/\/volume$/);
         if (source === "local") expect(readdirSync(root)).not.toContain("detach.log");

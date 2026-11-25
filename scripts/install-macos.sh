@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 轻舟 / Qingzhou one-click installer for macOS.
+# 墨问 / Mowen one-click installer for macOS.
 # Official install path: download the GitHub Release, copy into Applications,
 # then apply local trust (quarantine + ad-hoc codesign + optional spctl).
 # There is no Apple Developer ID / notarization; do not double-click the DMG.
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-APP_NAME="Qingzhou"
+APP_NAME="Mowen"
 REPO="${QINGZHOU_REPO:-${MOWEN_REPO:-${OHMYPI_REPO:-Yunz93/Qingzhou}}}"
 DEST_DIR="/Applications"
 BUILD=0
@@ -63,13 +63,13 @@ mac_arch() {
 
 usage() {
   cat <<EOF
-轻舟 macOS 一键安装（官方方式：从 GitHub Release 下载并在本机完成信任）
+墨问 macOS 一键安装（官方方式：从 GitHub Release 下载并在本机完成信任）
 
 没有 Apple 公证。请用这个脚本，不要双击 .dmg。
 
 用法:
   curl -fsSL https://github.com/${REPO}/releases/latest/download/install-macos.sh | bash
-  $0 [选项] [Qingzhou.app|Qingzhou.dmg|Qingzhou.zip]
+  $0 [选项] [Mowen.app|安装镜像.dmg|安装包.zip]
 
 选项:
   --version VER   安装指定版本（例如 v0.1.0）
@@ -135,7 +135,7 @@ ensure_tmp_dir() {
 find_app_in_dir() {
   local dir="$1"
   local found
-  found="$(find "$dir" -maxdepth 5 \( -name "${APP_NAME}.app" -o -name "Mowen.app" -o -name "ohMyPi.app" -o -name "MyPi.app" \) -type d 2>/dev/null | head -n 1 || true)"
+  found="$(find "$dir" -maxdepth 5 \( -name "${APP_NAME}.app" -o -name "Qingzhou.app" -o -name "ohMyPi.app" -o -name "MyPi.app" \) -type d 2>/dev/null | head -n 1 || true)"
   if [[ -z "$found" ]]; then
     found="$(find "$dir" -maxdepth 5 -name "*.app" -type d 2>/dev/null | head -n 1 || true)"
   fi
@@ -349,18 +349,17 @@ trust_app() {
 copy_app() {
   local src="${1:-}"
   local dest="${DEST_DIR}/${APP_NAME}.app"
-  local legacy_mowen="${DEST_DIR}/Mowen.app"
+  local legacy_qingzhou="${DEST_DIR}/Qingzhou.app"
   local legacy_ohmypi="${DEST_DIR}/ohMyPi.app"
   local legacy="${DEST_DIR}/MyPi.app"
   [[ -d "$src" ]] || die "找不到要安装的应用: ${src:-<empty>}"
   mkdir -p "$DEST_DIR" || die "无法创建目录: $DEST_DIR"
+  if [[ ! -d "$dest" && -d "$legacy_qingzhou" ]]; then
+    dest="$legacy_qingzhou"
+  fi
   if [[ -d "$dest" ]]; then
     info "正在替换已有安装: $dest"
     rm -rf "$dest" 2>/dev/null || sudo rm -rf "$dest" || die "无法删除旧版本。"
-  fi
-  if [[ "$dest" != "$legacy_mowen" && -d "$legacy_mowen" ]]; then
-    info "正在移除旧版 Mowen.app"
-    rm -rf "$legacy_mowen" 2>/dev/null || sudo rm -rf "$legacy_mowen" || true
   fi
   if [[ "$dest" != "$legacy_ohmypi" && -d "$legacy_ohmypi" ]]; then
     info "正在移除旧版 ohMyPi.app"

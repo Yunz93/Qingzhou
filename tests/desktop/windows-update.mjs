@@ -134,8 +134,10 @@ await once(feed, "listening");
 try {
   powershell(`$command = Start-Process -FilePath $env:QINGZHOU_TEST_INSTALLER -ArgumentList @('/S', "/D=$env:QINGZHOU_TEST_ROOT") -Wait -PassThru
     exit $command.ExitCode`);
-  const registry = String.raw`Get-ItemPropertyValue -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Qingzhou' -Name DisplayVersion`;
-  assert.equal(powershell(registry), "0.1.27");
+  const legacyRegistration = String.raw`HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Qingzhou`;
+  const brandedRegistration = String.raw`HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mowen`;
+  const displayVersion = (registry) => powershell(`Get-ItemPropertyValue -LiteralPath '${registry}' -Name DisplayVersion`);
+  assert.equal(displayVersion(legacyRegistration), "0.1.27");
   await cp(install, portable, { recursive: true, errorOnExist: true, force: false });
   await exercise(path.join(portable, "Qingzhou.exe"), async (invoke) => {
     assert.deepEqual(await invoke("check_signed_update"), { ok: true, value: { version, body: "Windows 签名更新回归", canInstall: false } });
@@ -152,7 +154,7 @@ try {
     assert.equal(invalid.ok, false);
     assert.match(invalid.error, /signature|签名/i);
     assert.equal(downloads, 1);
-    assert.equal(powershell(registry), "0.1.27");
+    assert.equal(displayVersion(legacyRegistration), "0.1.27");
 
     corrupt = false;
     const downloaded = await invoke("download_signed_update");
@@ -165,7 +167,8 @@ try {
     else if (first.ok === false) throw new Error(first.error);
     await waitFor(async () => await serviceStarts() > starts, "签名安装未在原资料目录自动重启", 90_000);
     assert.deepEqual(await exited, [0, null]);
-    assert.equal(powershell(registry), version);
+    assert.equal(displayVersion(brandedRegistration), version);
+    assert.equal(powershell(`Test-Path -LiteralPath '${legacyRegistration}'`), "False");
     const updated = JSON.parse(await readFile(snapshot, "utf8"));
     for (const [key, value] of Object.entries(saved)) assert.equal(updated[key], value);
   });

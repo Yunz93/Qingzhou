@@ -30,7 +30,7 @@ function Assert-UpdateTarget([string]$Expected) {
         [Microsoft.Win32.RegistryView]::Registry32
     )
     try {
-        $key = $registry.OpenSubKey('Software\qingzhou\Qingzhou')
+        $key = $registry.OpenSubKey('Software\qingzhou\Mowen')
         try {
             if (!$key -or $key.GetValue('') -ine $Expected) { throw "应用内更新登记未指向 $Expected。" }
         } finally {
@@ -159,7 +159,7 @@ Assert-Path $retained
 Assert-Path (Join-Path $legacyRoot 'uninstall.exe')
 Assert-UpdateTarget $legacyRoot
 $registered = Get-ChildItem -LiteralPath $uninstallRoot | Get-ItemProperty | Where-Object {
-    $_.DisplayName -eq 'Qingzhou' -and $_.InstallLocation -and $_.InstallLocation.Trim('"') -ieq $legacyRoot
+    $_.DisplayName -eq 'Mowen' -and $_.InstallLocation -and $_.InstallLocation.Trim('"') -ieq $legacyRoot
 }
 if (!$registered) { throw '新版卸载登记未指向原安装目录。' }
 foreach ($link in @($desktopLink, $startLink)) {

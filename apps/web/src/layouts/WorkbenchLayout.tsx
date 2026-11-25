@@ -226,7 +226,7 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     if (!toast?.message) return;
-    void showOsNotification("轻舟", toast.message, toast.notifyType);
+    void showOsNotification("墨问", toast.message, toast.notifyType);
     const timer = window.setTimeout(() => {
       if (useAgentStore.getState().toast === toast) {
         useAgentStore.setState({ toast: null });
@@ -255,7 +255,7 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     if (!approval) return;
-    void showOsNotification("轻舟需要确认", approval.rawCommand ?? approval.target ?? "等待批准", "warning");
+    void showOsNotification("墨问需要确认", approval.rawCommand ?? approval.target ?? "等待批准", "warning");
     // Notify once per request; the full approval object is read from the latest render.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- requestId is the identity
   }, [approval?.requestId]);
@@ -864,7 +864,7 @@ export function WorkbenchLayout() {
         ) : null}
         {devSelfWorkspace ? (
           <div className="banner-note text-mute" role="status">
-            当前工作区是轻舟源码目录，热重载会中断正在跑的任务。请换文件夹，或用{" "}
+            当前工作区是墨问源码目录，热重载会中断正在跑的任务。请换文件夹，或用{" "}
             <code className="text-ink">pnpm dev:stable</code>。
           </div>
         ) : null}

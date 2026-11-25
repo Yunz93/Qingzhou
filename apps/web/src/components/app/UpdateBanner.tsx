@@ -36,7 +36,7 @@ export function UpdateBanner() {
       <button
         type="button"
         className="pressable icon-btn text-accent"
-        aria-label={`轻舟 ${latest} 可用`}
+        aria-label={`墨问 ${latest} 可用`}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -52,7 +52,7 @@ export function UpdateBanner() {
             </>
           ) : (
             <>
-              <p>轻舟 {latest} 可用</p>
+              <p>墨问 {latest} 可用</p>
               <div className="mt-2 flex justify-end gap-1.5">
                 <button type="button" className="pressable btn btn-ghost h-7" onClick={() => void skipCurrent()}>
                   忽略

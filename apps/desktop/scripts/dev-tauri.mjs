@@ -9,7 +9,7 @@ const child = spawn("cargo", ["run", "--locked", "--manifest-path", "src-tauri/C
   stdio: "inherit",
   env: {
     ...process.env,
-    TAURI_CONFIG: JSON.stringify({ identifier: "com.qingzhou.desktop.dev", productName: "Qingzhou Dev" }),
+    TAURI_CONFIG: JSON.stringify({ identifier: "com.qingzhou.desktop.dev", productName: "Mowen Dev" }),
     QINGZHOU_DATA_DIR: process.env.QINGZHOU_DATA_DIR ?? pathFromScript("../../../.qingzhou"),
     QINGZHOU_DEV_NODE: process.execPath,
     QINGZHOU_DEV_ENTRY: pathFromScript("../../server/dist/desktop-main.js"),

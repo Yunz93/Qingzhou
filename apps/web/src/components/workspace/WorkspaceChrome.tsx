@@ -28,8 +28,11 @@ export function WorkspaceRail({ section, children }: { section: Section; childre
   const lastProject = readNavigation("last-work-location", "/board");
   const boardLocation = /^\/board(?:\?|$)/.test(lastProject) ? lastProject : "/board";
   return (
-    <aside className="flex h-full w-[min(240px,85vw)] shrink-0 flex-col border-r border-divider bg-canvas" aria-label="轻舟导航">
-      <Link to="/" className="flex min-h-12 items-center px-4 text-base font-semibold text-ink">轻舟</Link>
+    <aside className="flex h-full w-[min(240px,85vw)] shrink-0 flex-col border-r border-divider bg-canvas" aria-label="墨问导航">
+      <Link to="/" className="flex min-h-12 items-center gap-2 px-4 text-base font-semibold text-ink">
+        <img src="/mowen.svg" alt="" width={24} height={24} />
+        墨问
+      </Link>
       <nav className="grid gap-1 px-2.5" aria-label="工作区">
         <RailLink to="/" onClick={restoreConversation} icon={<MessageSquare size={14} />} selected={section === "conversation"}>对话</RailLink>
         <RailLink to={section === "projects" ? currentLocation : boardLocation} icon={<FolderGit2 size={14} />} selected={section === "projects"}>项目</RailLink>

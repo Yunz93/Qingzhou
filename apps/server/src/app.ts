@@ -140,7 +140,7 @@ export async function createApp(env: NodeJS.ProcessEnv = process.env, options: {
 
   async function installPi(): Promise<Awaited<ReturnType<typeof buildSetupStatus>> & { log: string }> {
     if (config.piBundled) {
-      throw new InstallPiError("桌面版已内置 Pi。请退出后重新打开轻舟；如果还是不行，重新安装一次。", 400);
+      throw new InstallPiError("桌面版已内置 Pi。请退出后重新打开墨问；如果还是不行，重新安装一次。", 400);
     }
     const result = await runOfficialPiInstall({ homeDir: config.homeDir, env });
     const bin = result.bin ?? (await discoverPiExecutable({ homeDir: config.homeDir, env }));

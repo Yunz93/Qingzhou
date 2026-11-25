@@ -33,7 +33,7 @@ export function humanizeAuthAccessError(error: unknown): string | null {
     "多半是这个目录属于管理员或别人（例如以前用 sudo 装过 Pi）。",
     "在终端运行：",
     '  sudo chown -R "$(whoami)" ~/.pi',
-    "然后重新打开轻舟。",
+    "然后重新打开墨问。",
   ].join("\n");
 }
 
@@ -73,9 +73,9 @@ export function humanizeNpmCacheAccessError(error: unknown): string | null {
   if (!isNpmCacheAccessError(text)) return null;
   return [
     "没法写本机 npm 缓存（~/.npm）。多半以前用 sudo 装过包，缓存变成了 root 的。",
-    "轻舟已改用自己的缓存目录。若仍失败，在终端运行：",
+    "墨问已改用自己的缓存目录。若仍失败，在终端运行：",
     '  sudo chown -R "$(whoami)" ~/.npm',
-    "然后重新打开轻舟，再装一次插件。",
+    "然后重新打开墨问，再装一次插件。",
   ].join("\n");
 }
 

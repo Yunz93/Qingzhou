@@ -36,7 +36,7 @@ export function createDesktopSession(initialTicket: string) {
         return reply.header("Cache-Control", "no-store")
           .header("Referrer-Policy", "no-referrer")
           .type("text/html; charset=utf-8")
-          .send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=/"><title>轻舟</title><a href="/">进入工作台</a></html>');
+          .send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=/"><title>墨问</title><a href="/">进入工作台</a></html>');
       }
 
       if (!hasSession(request.cookies[SESSION_COOKIE])) {

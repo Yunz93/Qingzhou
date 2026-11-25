@@ -303,6 +303,7 @@ test("settings distinguishes load failure, retries, and failed trust save", asyn
 test("rapid policy changes keep the latest selection while older requests are acknowledged", async ({ page }) => {
   const held: Array<() => void> = [];
   let planningReceived = false;
+  let automaticReceived = false;
   await page.routeWebSocket("**/ws", (route) => {
     const server = route.connectToServer();
     route.onMessage((message) => {
@@ -313,7 +314,9 @@ test("rapid policy changes keep the latest selection while older requests are ac
     server.onMessage((message) => {
       const frame = JSON.parse(String(message));
       for (const event of frame.__batch ? frame.events : [frame]) {
-        if (event.type === "task.updated" && event.payload.task.mode === "plan") planningReceived = true;
+        if (event.type !== "task.updated") continue;
+        if (event.payload.task.mode === "plan") planningReceived = true;
+        if (event.payload.task.approvalPolicy === "always") automaticReceived = true;
       }
       route.send(message);
     });
@@ -340,6 +343,7 @@ test("rapid policy changes keep the latest selection while older requests are ac
   await expect.poll(() => held.length).toBe(3);
   held[1]!();
   held[2]!();
+  await expect.poll(() => automaticReceived).toBe(true);
   await page.keyboard.press("Escape");
   await page.reload();
   await page.getByRole("button", { name: "模式", exact: true }).click();

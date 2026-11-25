@@ -401,7 +401,7 @@ function spawnLogged(
           stdio: "ignore", windowsHide: true,
         });
         const failed = (detail: string) => reject(new InstallerTerminationError(
-          `安装 Pi 超时，无法终止安装进程 ${child.pid}：${detail}。请先在任务管理器结束安装进程，再重启轻舟。`,
+          `安装 Pi 超时，无法终止安装进程 ${child.pid}：${detail}。请先在任务管理器结束安装进程，再重启墨问。`,
         ));
         killer.once("close", (code) => {
           if (code === 0) finish();

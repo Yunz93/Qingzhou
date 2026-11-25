@@ -50,7 +50,7 @@ export type UpdateInstallResult = {
 
 export function qingzhouRepo(env: NodeJS.ProcessEnv = process.env): string {
   const value = env.QINGZHOU_REPO?.trim() || env.MOWEN_REPO?.trim() || DEFAULT_QINGZHOU_REPO;
-  if (!/^[\w.-]+\/[\w.-]+$/.test(value)) throw new Error("轻舟更新仓库配置无效。");
+  if (!/^[\w.-]+\/[\w.-]+$/.test(value)) throw new Error("墨问更新仓库配置无效。");
   return value;
 }
 
@@ -252,11 +252,11 @@ export function canUpdateOnPlatform(platform: NodeJS.Platform = process.platform
 }
 
 export function parseQingzhouRelease(raw: unknown): QingzhouRelease {
-  if (!raw || typeof raw !== "object") throw new Error("无法解析轻舟 Release。");
+  if (!raw || typeof raw !== "object") throw new Error("无法解析墨问 Release。");
   const item = raw as Record<string, unknown>;
   const tagName = typeof item.tag_name === "string" ? item.tag_name.trim() : "";
   const version = normalizeVersion(tagName);
-  if (!tagName || !version) throw new Error("轻舟 Release 没有有效版本号。");
+  if (!tagName || !version) throw new Error("墨问 Release 没有有效版本号。");
   const assets = Array.isArray(item.assets)
     ? item.assets.flatMap((asset) => {
         if (!asset || typeof asset !== "object") return [];
@@ -584,13 +584,13 @@ export async function fetchLatestQingzhouRelease(options: {
     return { release: parsed.release, sums: parsed.sums, error: null };
   } catch (error) {
     if (!shouldFallbackGithubRelease(error)) {
-      return { release: null, sums: null, error: error instanceof Error ? error.message : "无法检查轻舟更新。" };
+      return { release: null, sums: null, error: error instanceof Error ? error.message : "无法检查墨问更新。" };
     }
     try {
       const tag = await resolveLatestReleaseTag(repo, options.fetchLatestLocation);
       return { release: parseQingzhouRelease(syntheticGithubRelease(repo, tag)), sums: null, error: null };
     } catch {
-      return { release: null, sums: null, error: error instanceof Error ? error.message : "无法检查轻舟更新。" };
+      return { release: null, sums: null, error: error instanceof Error ? error.message : "无法检查墨问更新。" };
     }
   }
 }
@@ -630,7 +630,7 @@ export async function inspectQingzhouUpdate(options: {
     return {
       release: result.release,
       asset: null,
-      error: error instanceof Error ? error.message : "无法校验轻舟更新包。",
+      error: error instanceof Error ? error.message : "无法校验墨问更新包。",
     };
   }
 }
@@ -664,7 +664,7 @@ export async function installQingzhouUpdate(options: {
     fetchJson: options.fetchJson,
     fetchText: options.fetchText,
   });
-  if (!inspected.release) throw new Error(inspected.error ?? "无法检查轻舟更新。");
+  if (!inspected.release) throw new Error(inspected.error ?? "无法检查墨问更新。");
   if (inspected.release.version !== version) throw new Error("可更新版本已变化，请重新检查。");
   if (!inspected.asset) throw new Error(inspected.error ?? "更新包缺少校验信息，已终止安装。");
 
