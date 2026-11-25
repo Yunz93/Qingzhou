@@ -2,7 +2,7 @@ import { ArchivedTasksDialog } from "../components/tasks/ArchivedTasksDialog";
 import { hasDialogLayer } from "../hooks/useDialogLayer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, ClipboardList, PanelBottom, PanelLeft, Pencil, Plus } from "lucide-react";
+import { ArrowUpRight, ClipboardList, CopyPlus, PanelBottom, PanelLeft, Pencil, Plus } from "lucide-react";
 import { TaskSidebar } from "../components/tasks/TaskSidebar";
 import { ConversationTimeline } from "../components/timeline/ConversationTimeline";
 import { PromptComposer, type ComposerImage } from "../components/composer/PromptComposer";
@@ -48,7 +48,6 @@ function WorkbenchConversation({
   canRewrite,
   error,
   onRetry,
-  onClone,
   onOpenFile,
   onUndoFile,
   onStarter,
@@ -56,7 +55,6 @@ function WorkbenchConversation({
   canRewrite: boolean;
   error: string | null;
   onRetry: (messageId: string, text: string) => void;
-  onClone: () => void;
   onOpenFile: (filePath: string) => void;
   onUndoFile: (filePath: string) => void;
   onStarter: (prompt: string) => void;
@@ -70,7 +68,6 @@ function WorkbenchConversation({
       canRewrite={canRewrite}
       error={error}
       onRetry={onRetry}
-      onClone={onClone}
       onOpenFile={onOpenFile}
       onUndoFile={onUndoFile}
       onStarter={onStarter}
@@ -811,6 +808,15 @@ export function WorkbenchLayout() {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
+            {task && !linkedWorkItem && messageCount > 0 ? (
+              <button type="button" className="pressable icon-btn" aria-label="克隆会话" title="克隆会话" onClick={() => {
+                void socketClient.send<{ task?: { id: string } }>("session.clone", {}, task.id).then((result) => {
+                  if (result.task?.id) useAgentStore.getState().setActiveTask(result.task.id);
+                }).catch((error: unknown) => {
+                  setNotice(error instanceof Error ? error.message : "无法复制对话");
+                });
+              }}><CopyPlus size={14} aria-hidden="true" /></button>
+            ) : null}
             {task && !linkedWorkItem ? <button className="conversation-convert icon-btn" aria-label="整理为需求" title="整理为需求" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /></button> : null}
             {task ? (
               <div className="hidden sm:block">
@@ -948,16 +954,6 @@ export function WorkbenchLayout() {
                   .send("session.fork", { messageId, message: text }, task.id)
                   .catch((error: unknown) => {
                     setNotice(error instanceof Error ? error.message : "无法从这里重来");
-                  })
-              }
-              onClone={() =>
-                void socketClient
-                  .send<{ task?: { id: string } }>("session.clone", {}, task.id)
-                  .then((result) => {
-                    if (result.task?.id) useAgentStore.getState().setActiveTask(result.task.id);
-                  })
-                  .catch((error: unknown) => {
-                    setNotice(error instanceof Error ? error.message : "无法复制对话");
                   })
               }
               onOpenFile={(filePath) => void openProjectFile(filePath)}

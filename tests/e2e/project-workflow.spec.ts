@@ -27,8 +27,20 @@ test("project workflow seals, verifies, accepts and merges independent requireme
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("project-overview-mobile.png"), fullPage: true });
   await page.setViewportSize(desktop);
   await page.getByRole("button", { name: "看板视图" }).click();
-  await expect(page.getByRole("region", { name: "待推进", exact: true })).toContainText("需求 A");
+  const lane = page.getByRole("region", { name: "待推进", exact: true });
+  const emptyLane = page.getByRole("region", { name: "已合入", exact: true });
+  await expect(lane).toContainText("需求 A");
+  await expect(emptyLane).toHaveAttribute("data-empty", "true");
+  expect((await emptyLane.boundingBox())!.height).toBeLessThan((await lane.boundingBox())!.height);
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("project-board.png"), fullPage: true });
+  await page.setViewportSize({ width: 533, height: 600 });
+  await expect(lane.getByRole("button", { name: "进入工作区" }).first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ animations: "disabled", path: testInfo.outputPath("project-board-533.png"), fullPage: true });
+  await page.getByRole("button", { name: "切换到深色", exact: true }).click();
+  await page.screenshot({ animations: "disabled", path: testInfo.outputPath("project-board-533-dark.png"), fullPage: true });
+  await page.getByRole("button", { name: "切换到浅色", exact: true }).click();
+  await page.setViewportSize(desktop);
   await page.getByRole("button", { name: "列表视图" }).click();
   await page.getByRole("checkbox", { name: "选择 需求 A" }).check();
   await page.getByRole("checkbox", { name: "选择 需求 B" }).check();
@@ -836,6 +848,10 @@ test("four requirement tabs preserve PRD drafts and show real test changes and c
     }
     await room.getByRole("tab", { name: "验收", exact: true }).click();
     await expect(evidence.getByRole("table")).toBeVisible();
+    const firstTabBox = await room.getByRole("tab", { name: "设计", exact: true }).boundingBox();
+    const acceptanceTitle = room.getByRole("heading", { name: "当前交付的验收", exact: true });
+    const toolbarTitleBox = await acceptanceTitle.boundingBox();
+    expect(Math.abs(firstTabBox!.x - toolbarTitleBox!.x)).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`acceptance-split-${width}.png`), fullPage: true, animations: "disabled" });
   }

@@ -97,6 +97,7 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
   const busyIntegration = latestAttempt && ["queued", "preparing", "verifying", "merging"].includes(latestAttempt.status);
   const headline = integrated ? "这个交付已落到主线" : prd?.frozenAt ? "需求已确认完成，PRD 已固化；可继续选择合入时机" : plan && !designReady && !running ? plan.confirmedScopeId === status.scope?.id ? "审阅并确认 PRD" : "沟通并确认需求范围" : integrated ? status.valid ? "这个交付已落到主线" : "这个交付已合入，当前检查证据需更新" : running ? status.implementation : latestAttempt && ["conflicts", "failed"].includes(latestAttempt.status) ? "集成需要处理，原对话可继续修复" : latestAttempt?.status === "ready" ? status.candidateCurrent ? "组合验证已通过，等待你确认合入" : "候选依据已变化，需要更新集成候选" : busyIntegration ? status.integration : accepted ? "交付已验收，可以选择合入时机" : status.acceptance === "需返工" ? "交付需要调整，在原对话继续推进" : status.valid ? "检查已通过，请逐条确认验收标准" : status.verification?.status === "running" ? "正在验证交付，请稍候" : stage === 1 ? "本轮已结束，核对改动并封存验证" : "确认需求目标，开始一轮完整实施";
   const compactStatus = integrated ? "已合入" : prd?.frozenAt ? "已验收" : running ? status.implementation : status.verification?.status === "running" ? "检查中" : accepted ? "待合入" : status.valid ? "待验收" : stage === 1 ? "待封存" : !designReady ? "待确认设计" : "待实施";
+  const statusTone = integrated || prd?.frozenAt ? "complete" : running || status.valid || status.verification?.status === "running" ? "active" : undefined;
   const executionActions = item.state === "open" && !workspace?.removedAt ? running
     ? <button className="btn btn-secondary" disabled={actionBusy} onClick={() => act(() => onStop(item.id))}><Square size={12} />停止本轮</button>
     : canStart ? <button className="btn btn-primary" disabled={actionBusy} onClick={() => act(async () => { await onStart(item.id); openConversation(); })}><Play size={13} />{status.implementationTicket?.status === "finished" ? "开始新一轮" : status.implementationTicket ? "重新执行" : "开始执行"}</button> : null
@@ -107,7 +108,7 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
         <button className="icon-btn" aria-label="返回项目" title={`返回 ${projectName}`} onClick={onClose}><ArrowLeft size={15} /></button>
         <h1 id="requirement-workroom-title" className="min-w-0 flex-1 truncate text-xl font-semibold" title={item.title}>{item.title}</h1>
         {sorted.length > 1 ? <div className="workflow-item-pagination"><button className="icon-btn" aria-label="上一个需求" disabled={index <= 0} onClick={() => onSelect(sorted[index - 1]!)}><ChevronLeft size={17} /></button><span>{index + 1} / {sorted.length}</span><button className="icon-btn" aria-label="下一个需求" disabled={index < 0 || index >= sorted.length - 1} onClick={() => onSelect(sorted[index + 1]!)}><ChevronRight size={17} /></button></div> : null}
-        <span className="review-status" role="status" aria-label={headline} title={headline}>{compactStatus}</span>
+        <span className="review-status" data-tone={statusTone} role="status" aria-label={headline} title={headline}>{compactStatus}</span>
         <button type="button" className="btn btn-ghost" aria-pressed={showConversation} onClick={showConversation ? openReview : openConversation}>
           <MessageSquare size={14} />{showConversation && !showReview ? "审阅" : "对话"}
         </button>
@@ -119,7 +120,7 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
       </header>
       {error || actionError ? <p className="workflow-workroom-error" role="alert">{error || actionError}</p> : null}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-col" style={{ flex: split ? `0 0 ${width}%` : "1 1 0" }} hidden={!showReview} id="workroom-panel-inspector">
+        <div className="workflow-review-pane flex min-h-0 min-w-0 flex-col" style={{ flex: split ? `0 0 ${width}%` : "1 1 0" }} hidden={!showReview} id="workroom-panel-inspector">
           <WorkflowTabs id="requirement" label="需求工作区视图" value={view} onChange={selectView} tabs={[
             { id: "design", label: "设计" }, { id: "modules", label: "模块设计" }, { id: "delivery", label: "交付" }, { id: "acceptance", label: "验收" }, { id: "history", label: "历史" },
           ]} />

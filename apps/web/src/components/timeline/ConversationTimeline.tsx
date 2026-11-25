@@ -28,7 +28,6 @@ type Props = {
   canRewrite?: boolean;
   error?: string | null;
   onRetry?: (messageId: string, text: string) => void;
-  onClone?: () => void;
   onOpenFile?: (path: string) => void;
   onUndoFile?: (path: string) => void;
   onStarter?: (prompt: string) => void;
@@ -260,7 +259,6 @@ export function ConversationTimeline({
   canRewrite,
   error,
   onRetry,
-  onClone,
   onOpenFile,
   onUndoFile,
   onStarter,
@@ -525,13 +523,6 @@ export function ConversationTimeline({
           ) : (
             <p className="text-[13px] leading-6 text-mute">在下面输入。</p>
           )}
-        </div>
-      ) : null}
-      {messages.length > 0 && onClone ? (
-        <div className="flex justify-end">
-          <button type="button" className="pressable h-6 min-h-6 text-[11px] text-mute" onClick={onClone}>
-            克隆会话
-          </button>
         </div>
       ) : null}
       {renderTimelineRows()}

@@ -61,7 +61,7 @@ test("workbench core loop", async ({ page }) => {
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("Echo: change course").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "复制消息" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "克隆会话" })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "克隆会话" })).toBeVisible();
 
   await page.getByRole("button", { name: "模式" }).click();
   await page.getByRole("button", { name: "每次确认", exact: true }).click();
@@ -415,7 +415,7 @@ async function createTask(page: import("@playwright/test").Page, title: string):
   await expect(page.getByRole("banner").getByText(title)).toBeVisible();
 }
 
-test("stacked user bubbles stay separated and keep their actions outside the bubble", async ({ page, browser }) => {
+test("stacked user bubbles stay separated and keep their actions outside the bubble", async ({ page, browser }, testInfo) => {
   await createTask(page, "Bubble task");
   await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
   for (const text of ["alpha bubble", "beta bubble"]) {
@@ -454,8 +454,11 @@ test("stacked user bubbles stay separated and keep their actions outside the bub
     const button = await copy.boundingBox();
     expect(bubble?.height).toBeLessThanOrEqual(44);
     expect(button?.height).toBeGreaterThanOrEqual(40);
+    expect(button?.width).toBeGreaterThanOrEqual(40);
     expect(button?.y).toBeGreaterThanOrEqual((bubble?.y ?? 0) + (bubble?.height ?? 0) - 0.5);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    expect(await headerOverlapLabels(page)).toEqual([]);
+    await page.screenshot({ animations: "disabled", path: testInfo.outputPath(`conversation-${width}.png`) });
   }
   const touch = await browser.newContext({ viewport: { width: 375, height: 820 }, hasTouch: true, isMobile: true, storageState: await page.context().storageState() });
   try {
@@ -531,7 +534,7 @@ test("reload during a run keeps the agent going", async ({ page }) => {
   await expect(page.getByText("please stream this slowly").first()).toBeVisible();
 });
 
-test("copy reply, rename session, and find in conversation", async ({ page, context }) => {
+test("copy reply, rename, find, and clone a conversation", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await createTask(page, "Copy rename search");
   await expect(page.getByLabel("输入消息")).toBeEnabled({ timeout: 15_000 });
@@ -541,8 +544,11 @@ test("copy reply, rename session, and find in conversation", async ({ page, cont
   await expect(page.getByText("Echo: unique copy phrase 92af").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "停止" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "复制回复" }).click();
-  await expect(page.getByRole("button", { name: "复制回复" })).toHaveText("已复制");
+  const reply = page.locator(".conversation-assistant").filter({ hasText: "Echo: unique copy phrase 92af" });
+  await reply.getByText("Echo: unique copy phrase 92af", { exact: true }).hover();
+  const copyReply = reply.getByRole("button", { name: "复制回复" });
+  await copyReply.click();
+  await expect(copyReply).toHaveText("已复制");
   await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
     "Echo: unique copy phrase 92af",
   );
@@ -568,6 +574,8 @@ test("copy reply, rename session, and find in conversation", async ({ page, cont
   await page.getByRole("button", { name: "资源" }).click();
   await page.getByRole("button", { name: "技能" }).click();
   await expect(page.getByRole("complementary", { name: "详情" }).getByRole("button", { name: "检查更新" })).toBeVisible();
+  await page.getByRole("banner").getByRole("button", { name: "克隆会话" }).click();
+  await expect(page.getByRole("banner").getByText("Renamed search task（副本）", { exact: true })).toBeVisible();
 });
 
 test("scrolling up during stream is not yanked back down", async ({ page }) => {

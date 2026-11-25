@@ -28,7 +28,8 @@ it("runs in the requested workspace with isolated verification environment and r
   const command = await f.command('console.log(JSON.stringify({cwd:process.cwd(),id:process.env.QINGZHOU_VERIFICATION_ID,workspace:process.env.QINGZHOU_WORKSPACE,temp:process.env.TMPDIR}));');
   const result = await f.runner.run(command, f.root, 5000, "verification-a");
   expect(result.exitCode).toBe(0);
-  expect(JSON.parse(result.output)).toEqual({ cwd: await realpath(f.root), id: "verification-a", workspace: f.root, temp: path.join(f.root, "check-env", "verification-a") });
+  const child = JSON.parse(result.output) as { cwd: string; id: string; workspace: string; temp: string };
+  expect({ ...child, cwd: await realpath(child.cwd) }).toEqual({ cwd: await realpath(f.root), id: "verification-a", workspace: f.root, temp: path.join(f.root, "check-env", "verification-a") });
   const failed = await f.runner.run(await f.command('console.error("check failed");process.exit(7);'), f.root, 5000, "verification-b");
   expect(failed).toMatchObject({exitCode:7,truncated:false});
   expect(failed.output).toContain("check failed");

@@ -394,7 +394,7 @@ describe("conversation UI contracts", () => {
     expect(layout).toContain('role="alert"');
     expect(layout).toContain("clearRequestError");
     expect(timeline).toContain("回到最新");
-    expect(timeline).toContain("克隆会话");
+    expect(layout).toContain('aria-label="克隆会话"');
     expect(timeline).toContain("复制消息");
     expect(timeline).toContain('role="log"');
     expect(timeline).toContain("MessageImages");

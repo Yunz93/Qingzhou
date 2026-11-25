@@ -68,8 +68,9 @@ describe("ui prefs and tones", () => {
 describe("conversation interaction chrome", () => {
   it("exposes jump-to-latest, clone, and image-aware user bubbles", () => {
     const timeline = readFileSync(path.resolve("apps/web/src/components/timeline/ConversationTimeline.tsx"), "utf8");
+    const layout = readFileSync(path.resolve("apps/web/src/layouts/WorkbenchLayout.tsx"), "utf8");
     expect(timeline).toContain("回到最新");
-    expect(timeline).toContain("克隆会话");
+    expect(layout).toContain('aria-label="克隆会话"');
     expect(timeline).toContain("附 ");
     expect(timeline).toContain('aria-live="off"');
     expect(timeline).toContain("model-change-banner");

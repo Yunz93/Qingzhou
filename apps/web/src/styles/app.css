@@ -2075,8 +2075,8 @@ html.dark {
 .markdown-code-block > .markdown-pre { margin: 0; padding: 14px 16px; border-radius: 0; }
 
 /* Conversation prose has a reading rhythm; process records stay secondary. */
-.conversation-log { padding-block: 28px; row-gap: 24px; }
-.conversation-user { margin-top: 12px; min-width: 0; font-size: 14px; line-height: 1.75; letter-spacing: 0; overflow-wrap: anywhere; }
+.conversation-log { padding-block: 24px; row-gap: 16px; }
+.conversation-user { margin-top: 8px; min-width: 0; font-size: 14px; line-height: 1.75; letter-spacing: 0; overflow-wrap: anywhere; }
 .conversation-assistant { padding-block: 4px; }
 .conversation-assistant .markdown { min-width: 0; font-size: 14px; line-height: 1.85; letter-spacing: 0; overflow-wrap: anywhere; }
 .conversation-assistant .markdown p { margin: .95em 0; font-size: inherit; line-height: inherit; }
@@ -2100,7 +2100,7 @@ html.dark {
 .conversation-tool > button, .conversation-tool > div:first-child > button { min-height: 36px; }
 .conversation-log .thinking-body { max-height: 320px; overflow: auto; overflow-wrap: anywhere; padding: 12px 16px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-canvas); color: var(--color-mute); font-family: var(--font-sans); font-size: 13px; line-height: 1.8; }
 @media (max-width: 640px) {
-  .conversation-log { padding-block: 20px; row-gap: 20px; }
+  .conversation-log { padding-block: 16px; row-gap: 14px; }
   .conversation-assistant .markdown h1 { font-size: 21px; }
   .conversation-assistant .markdown h2 { font-size: 19px; }
   .conversation-assistant .markdown h3 { font-size: 16px; }
@@ -2790,9 +2790,9 @@ html.dark {
 .settings-nav a[aria-current="page"] { background:var(--color-accent-soft); color:var(--color-accent); }
 
 @media (hover:hover) and (pointer:fine) {
-  .conversation-message-actions { opacity:0; }
+  .conversation-message-actions { opacity:0; pointer-events:none; }
   .conversation-message:is(:hover,:focus-within) .conversation-message-actions,
-  .conversation-message-feedback { opacity:1; }
+  .conversation-message-feedback { opacity:1; pointer-events:auto; }
 }
 
-.conversation-message-actions button, button.conversation-message-actions { min-height:40px; }
+.conversation-message-actions button, button.conversation-message-actions { min-width:40px; min-height:40px; }

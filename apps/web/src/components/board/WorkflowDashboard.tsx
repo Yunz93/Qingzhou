@@ -1,13 +1,20 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { WorkflowProjectState, WorkItemSummary } from "@qingzhou/protocol";
-import { Layers, LayoutGrid, List, Plus, Search } from "lucide-react";
+import { ChevronRight, Layers, LayoutGrid, List, Plus, Search } from "lucide-react";
 import { requirementStatus } from "../../lib/requirement-state";
 import { planningReady } from "../../lib/requirement-planning";
 import { useViewPreference } from "../../hooks/useViewPreference";
 import { useWorkflowAction } from "../../hooks/useWorkflowAction";
 import { socketClient } from "../../transport/socket-client";
 import { WorkflowMenu } from "./WorkflowTabs";
+
+const REQUIREMENT_LANES = [
+  { id: "planned", label: "待推进" },
+  { id: "running", label: "实施中" },
+  { id: "delivery", label: "交付与集成" },
+  { id: "merged", label: "已合入" },
+] as const;
 
 export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, onStop, onConversation, onArchive, onRefresh }: {
   state: WorkflowProjectState; items: WorkItemSummary[]; onSelect: (item: WorkItemSummary, panel?: string) => void;
@@ -42,7 +49,6 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
   const selectedIds = selectable.filter((item) => selected.includes(item.id)).map((item) => item.id);
   const send = (type: "workflow.enqueue" | "workItem.reorder" | "workItem.reopen", payload: object) => run(
     () => socketClient.send(type, payload), async () => { setSelected([]); await onRefresh(); });
-  const lane = (item: WorkItemSummary) => statusFor(item).lane;
   const renderItem = (item: WorkItemSummary) => {
     const status = statusFor(item);
     const waiting = (state.dependencies[item.id] ?? []).filter((id) => !state.integrations.some((attempt) => attempt.itemId === id && attempt.status === "merged"));
@@ -63,7 +69,7 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
       </button>
       <div className="workflow-item-actions">
         {item.state === "archived" ? <button className="btn btn-secondary" disabled={busy} onClick={() => void send("workItem.reopen", { id: item.id })}>恢复需求</button>
-          : <><button className="btn btn-secondary" onClick={() => running ? onConversation(item) : onSelect(item, ["delivery", "merged"].includes(status.lane) ? "delivery" : undefined)}>{["delivery", "merged"].includes(status.lane) ? "查看交付" : running ? "进入对话" : "进入工作区"}</button>
+          : <><button className="btn btn-ghost workflow-item-open" onClick={() => running ? onConversation(item) : onSelect(item, ["delivery", "merged"].includes(status.lane) ? "delivery" : undefined)}>{["delivery", "merged"].includes(status.lane) ? "查看交付" : running ? "进入对话" : "进入工作区"}<ChevronRight size={13} aria-hidden="true" /></button>
             <WorkflowMenu label={`${item.title} 的更多操作`} actions={[
               { label: running ? "停止本轮" : item.state === "completed" ? "重新打开" : "开始执行", disabled: busy || (!running && item.state === "open" && !planningReady(state, item.id)), run: () => running ? onStop(item.id) : item.state === "completed" ? void send("workItem.reopen", { id: item.id }) : onStart(item.id) },
               ...(item.taskId && !state.workspaces.some((entry) => entry.itemId === item.id && entry.removedAt) ? [{ label: "专注对话", run: () => onConversation(item) }] : []),
@@ -84,7 +90,19 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
     {error ? <p role="alert" className="my-2 text-sm text-danger">{error}</p> : null}
     {filtered.length > 0 && items.length > 1 ? <div className="workflow-selection-bar"><label><input type="checkbox" aria-label="选择当前可执行需求" disabled={!selectable.length || busy} checked={!!selectable.length && selectedIds.length === selectable.length} onChange={(event) => setSelected(event.target.checked ? selectable.map((item) => item.id) : [])} />{selectedIds.length ? `已选择 ${selectedIds.length} 个需求` : `${filtered.length} 个需求 · 按优先级排序`}</label>
       {selectedIds.length ? <div className="flex gap-2"><button className="btn btn-ghost" onClick={() => setSelected([])}>取消选择</button><button className="btn btn-primary" disabled={busy} onClick={() => void send("workflow.enqueue", { ids: selectedIds })}>{busy ? "正在加入队列…" : `开始所选（${selectedIds.length}）`}</button></div> : null}</div> : null}
-    {layout === "list" ? <ul className="workflow-requirements-list">{filtered.map(renderItem)}</ul> : <div className="workflow-kanban">{[{ id: "planned", label: "待推进" }, { id: "running", label: "实施中" }, { id: "delivery", label: "交付与集成" }, { id: "merged", label: "已合入" }].map((entry) => <section key={entry.id} aria-label={entry.label}><h3>{entry.label}<span>{filtered.filter((item) => lane(item) === entry.id).length}</span></h3><ul>{filtered.filter((item) => lane(item) === entry.id).map(renderItem)}</ul>{!filtered.some((item) => lane(item) === entry.id) ? <p className="workflow-lane-empty">暂无需求</p> : null}</section>)}</div>}
+    {filtered.length > 0 && (layout === "list" ? (
+      <ul className="workflow-requirements-list">{filtered.map(renderItem)}</ul>
+    ) : (
+      <div className="workflow-kanban">
+        {REQUIREMENT_LANES.map((lane) => {
+          const entries = filtered.filter((item) => statusFor(item).lane === lane.id);
+          return <section key={lane.id} aria-label={lane.label} data-empty={entries.length === 0}>
+            <h3>{lane.label}<span>{entries.length}</span></h3>
+            {entries.length ? <ul>{entries.map(renderItem)}</ul> : <p className="workflow-lane-empty">暂无需求</p>}
+          </section>;
+        })}
+      </div>
+    ))}
     {!filtered.length ? <div className="workflow-empty"><Layers size={28} /><h3>{query || filter !== "active" ? "没有匹配的需求" : "从一个具体需求开始"}</h3><p>{query || filter !== "active" ? "试试其他关键词，或清除筛选查看全部需求。" : "写下目标与验收标准，再逐步实施、验证和交付。"}</p>{query || filter !== "active" ? <button className="btn btn-secondary" onClick={() => { setQuery(""); setFilter("active"); }}>清除筛选</button> : null}</div> : null}
   </section>;
 }
