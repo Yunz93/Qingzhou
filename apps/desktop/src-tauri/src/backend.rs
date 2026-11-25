@@ -1,6 +1,6 @@
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Mutex;
@@ -205,7 +205,8 @@ fn service_command(app: &AppHandle) -> Result<Command, String> {
     let runtime = if development {
         None
     } else {
-        Some(app.path().resource_dir().map_err(display)?.join("runtime"))
+        let resources = app.path().resource_dir().map_err(display)?;
+        Some(packaged_runtime(&resources))
     };
     let node = match runtime.as_ref() {
         Some(directory) => directory.join("bin").join(node_name),
@@ -275,6 +276,12 @@ fn dev_path(key: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("桌面开发入口缺少 {key}。"))
 }
 
+fn packaged_runtime(resources: &Path) -> PathBuf {
+    // Tauri returns a canonicalized path. The bundled Node 22 loader cannot resolve
+    // a script passed with a Windows verbatim drive prefix (nodejs/node#62446).
+    dunce::simplified(resources).join("runtime")
+}
+
 fn app_path(exe: &std::path::Path) -> &std::path::Path {
     if cfg!(target_os = "macos") {
         if let Some(bundle) = exe
@@ -305,4 +312,18 @@ fn bootstrap_url(origin: &Url, ticket: &str) -> Url {
 
 fn display(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn bundled_node_uses_a_regular_windows_drive_path() {
+    let resources = Path::new(r"\\?\D:\Program Files\墨问");
+    assert_eq!(
+        packaged_runtime(resources).join("service.mjs"),
+        Path::new(r"D:\Program Files\墨问\runtime\service.mjs"),
+    );
+    assert_eq!(
+        packaged_runtime(Path::new(r"\\?\UNC\server\apps\墨问")),
+        Path::new(r"\\?\UNC\server\apps\墨问\runtime"),
+    );
 }

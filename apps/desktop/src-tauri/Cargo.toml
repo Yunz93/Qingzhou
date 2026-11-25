@@ -10,6 +10,7 @@ desktop-e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:objc2", "dep:objc2-app-ki
 tauri-build = { version = "=2.7.5", features = [] }
 
 [dependencies]
+dunce = "1.0.5"
 http = "1"
 hyper-util = { version = "0.1", features = ["client-proxy-system"] }
 open = "5"

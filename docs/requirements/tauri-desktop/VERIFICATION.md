@@ -106,5 +106,6 @@ Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建�
 - 墨问作业通过 Windows 单测、集成、Rust 和 WinHTTP PAC，Node ZIP 解压通过，fd ZIP 仍由 Git Bash 的 tar 处理。所有工具及安装包入口已共享系统 tar 解析；验证作业先运行真实 ZIP 夹具，再构建、安装和升级。正式发行作业仍执行全量前置验证。
 - [Windows 归档复验](https://github.com/Yunz93/Qingzhou/actions/runs/45655354067) 使用提交 `c944e4b77ffbb9879973bcd70538cab223174948`，通过 ZIP 实际解包、PAC、签名成品及旧版夹具构建。测试驱动就绪时首次请求会话得到 `no such window`，原生烟测和签名升级测试均改为等待主窗口接受会话。
 - [Windows WebView2 复验](https://github.com/Yunz93/Qingzhou/actions/runs/45659853963) 已成功建立 WebDriver 会话，并打开缺失资源提示。补齐资源后停在本机服务启动错误。验证作业改为先检查正常成品启动，并将失败时的服务日志保留在作业输出中。
+- [Windows 成品启动日志](https://github.com/Yunz93/Qingzhou/actions/runs/45663114103) 记录随包 Node 22.22.0 在解析主入口时对 `D:` 返回 `EISDIR`。Tauri 对资源目录做了规范化并带上 Windows 扩展盘符前缀，触发了 [Node.js 已记录的路径问题](https://github.com/nodejs/node/issues/62446)。桌面宿主保留已解析的资源目录，在传给 Node 前移除可等价转换的盘符前缀。新增 D 盘、空格和中文目录名的 Rust 回归。
 - Windows x64 的 NSIS 安装、便携启动、WebView2、旧版静默原位升级和新版签名更新。本轮仅有 macOS 宿主。发布工作流加入 Windows WebView2、安装、卸载、便携与安装共存和从 0.1.26 正式版自定义目录原位升级的测试入口。验证模式另使用带桌面测试驱动的 0.1.27 NSIS 软件包，通过本机源测试 0.1.28 候选，检查便携副本拒绝执行安装、损坏资产拒绝、正确签名原位更新和重启后资料保留。
 - macOS 已启用简体拼音，测试进程缺少系统键盘投递权限，自身窗口事件没有进入系统拼音引擎，系统候选词操作仍需手动验收。AppKit 文本客户端、草稿恢复与 Chromium 键码用例已通过。随包 Pi 已通过真实进程 RPC、写文件审批和本机模型推理，外部服务商账号连通仍待验收。

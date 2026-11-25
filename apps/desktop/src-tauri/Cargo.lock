@@ -3161,6 +3161,7 @@ name = "qingzhou"
 version = "0.1.28"
 dependencies = [
  "core-foundation 0.10.1",
+ "dunce",
  "http",
  "hyper-util",
  "objc2",
