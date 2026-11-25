@@ -116,15 +116,14 @@ jobs:
           signing_key="$signing_dir/qingzhou-test.key"
           node apps/desktop/node_modules/@tauri-apps/cli/tauri.js signer generate --ci --password "" --write-keys "$signing_key"
           export QINGZHOU_TAURI_UPDATE_PUBKEY="$(cat "$signing_key.pub")"
-          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key")"
-          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-          pnpm desktop:pack:win
+          TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" pnpm desktop:pack:win
           test -s apps/desktop/release/Qingzhou-win-x64-setup.exe.sig
+          pwsh -NoProfile -File ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release
           QINGZHOU_DESKTOP_E2E_BUILD=1 pnpm --filter @qingzhou/desktop tauri:pack x64 win32
           node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
 
       - name: Verify Windows installed and portable candidates
-        if: ${{ runner.os == 'Windows' }}
+        if: ${{ runner.os == 'Windows' && !inputs.verify_only }}
         shell: pwsh
         run: ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release
 

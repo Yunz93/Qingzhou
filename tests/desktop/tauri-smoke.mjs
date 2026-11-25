@@ -124,6 +124,10 @@ async function start({ simulateMissingPage = false } = {}) {
     return { processHandle, session, execute, screenshot, close, address, waitForConnection };
   } catch (error) {
     processHandle.kill();
+    const diagnostic = await readFile(path.join(logs, "service.log"), "utf8").catch(() => "");
+    if (diagnostic) {
+      console.error(diagnostic.slice(-8_000).replace(/(ticket=|QINGZHOU_DESKTOP_TICKET[^a-f0-9\n]*)[a-f0-9]{32}/gi, "$1[redacted]"));
+    }
     throw error;
   } finally {
     if (pageMoved) await rename(movedPage, workbenchPage);
