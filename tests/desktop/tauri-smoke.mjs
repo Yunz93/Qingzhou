@@ -157,14 +157,16 @@ try {
     title.dispatchEvent(new Event('input', { bubbles: true }));
   `, title);
   await waitFor(() => first.execute("return document.querySelector('#task-title')?.getAttribute('value') === arguments[0]", title), "未同步新对话标题");
-  await first.execute("document.querySelector('#task-title').form.requestSubmit()");
+  await first.execute("document.querySelector('#task-title').form.querySelector('button[type=submit]').click()");
   await waitFor(async () => {
     const result = await first.execute(`
-      return { title: [...document.querySelectorAll('h1')].some(node => node.textContent === arguments[0]),
-        error: document.querySelector('[role=dialog] [role=alert]')?.textContent };
-    `, title);
-    if (result.error) throw new Error(result.error);
-    return result.title;
+      const form = document.querySelector('#task-title')?.form;
+      return { heading: document.querySelector('h1')?.textContent?.trim(),
+        dialog: Boolean(form), saving: form?.querySelector('button[type=submit]')?.disabled,
+        error: form?.querySelector('.text-danger')?.textContent };
+    `);
+    if (!result.dialog && result.heading === title) return true;
+    throw new Error(result.error || `创建后的界面状态：${JSON.stringify(result)}`);
   }, "对话未创建");
   await waitFor(async () => (await readFile(path.join(data, "state.json"), "utf8")).includes(title), "对话尚未落盘");
   process.kill(initial[0].pid, "SIGKILL");

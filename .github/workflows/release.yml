@@ -105,7 +105,8 @@ jobs:
           test -n "$QINGZHOU_TAURI_UPDATE_PUBKEY" && test -n "$TAURI_SIGNING_PRIVATE_KEY"
           pnpm desktop:pack:tauri "${{ matrix.arch }}"
 
-      - name: Build Windows signed update fixtures and exercise WebView2
+      - name: Build Windows signed update fixtures
+        id: windows_fixtures
         if: ${{ inputs.verify_only && runner.os == 'Windows' }}
         shell: bash
         env:
@@ -120,7 +121,6 @@ jobs:
           test -s apps/desktop/release/Qingzhou-win-x64-setup.exe.sig
           pwsh -NoProfile -File ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release
           QINGZHOU_DESKTOP_E2E_BUILD=1 pnpm --filter @qingzhou/desktop tauri:pack x64 win32
-          node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
 
       - name: Verify Windows installed and portable candidates
         if: ${{ runner.os == 'Windows' && !inputs.verify_only }}
@@ -134,6 +134,11 @@ jobs:
           node tests/desktop/windows-update.mjs `
             apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/bundle/nsis/Qingzhou_0.1.27_x64-setup.exe `
             apps/desktop/release/Qingzhou-win-x64-setup.exe
+
+      - name: Exercise Windows WebView2 recovery and drafts
+        if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}
+        shell: bash
+        run: node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
 
       - name: Verify macOS search tool architecture
         if: ${{ !inputs.verify_only && runner.os == 'macOS' }}
