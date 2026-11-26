@@ -42,7 +42,7 @@ function powershell(script) {
     env: { ...process.env, QINGZHOU_TEST_INSTALLER: sourceInstaller, QINGZHOU_TEST_ROOT: install, QINGZHOU_TEST_EXE: binary },
   });
   if (result.error) throw result.error;
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, [result.stderr, result.stdout].filter(Boolean).join("\n"));
   return result.stdout.trim();
 }
 
@@ -134,6 +134,7 @@ async function serviceStarts() {
 
 feed.listen(port, "127.0.0.1");
 await once(feed, "listening");
+let updateError;
 try {
   powershell(`$command = Start-Process -FilePath $env:QINGZHOU_TEST_INSTALLER -ArgumentList @('/S', "/D=$env:QINGZHOU_TEST_ROOT") -Wait -PassThru
     exit $command.ExitCode`);
@@ -141,6 +142,7 @@ try {
   const brandedRegistration = String.raw`HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mowen`;
   const displayVersion = (registry) => powershell(`Get-ItemPropertyValue -LiteralPath '${registry}' -Name DisplayVersion`);
   assert.equal(displayVersion(legacyRegistration), "0.1.27");
+  console.log("已安装 0.1.27 验证包。");
   await cp(install, portable, { recursive: true, errorOnExist: true, force: false });
   await exercise(path.join(portable, "Qingzhou.exe"), async (invoke) => {
     assert.deepEqual(await invoke("check_signed_update"), { ok: true, value: { version, body: "Windows 签名更新回归", canInstall: false } });
@@ -150,6 +152,7 @@ try {
     assert.match((await invoke("install_signed_update")).error, /便携包/);
     assert.equal(downloads, 0);
   });
+  console.log("同机便携副本拒绝执行安装和下载。");
   await exercise(binary, async (invoke, exited) => {
     const offered = await invoke("check_signed_update");
     assert.deepEqual(offered, { ok: true, value: { version, body: "Windows 签名更新回归", canInstall: true } });
@@ -158,11 +161,13 @@ try {
     assert.match(invalid.error, /signature|签名/i);
     assert.equal(downloads, 1);
     assert.equal(displayVersion(legacyRegistration), "0.1.27");
+    console.log("原安装拒绝被篡改的安装包，并保留 0.1.27。");
 
     corrupt = false;
     const downloaded = await invoke("download_signed_update");
     assert.equal(downloaded.ok, true, downloaded.error);
     assert.equal(downloads, 2);
+    console.log("原安装已验证正确的更新签名。");
     const starts = await serviceStarts();
     const installing = invoke("install_signed_update").catch((error) => ({ transportEnded: String(error) }));
     const first = await Promise.race([exited, installing]);
@@ -176,8 +181,16 @@ try {
     for (const [key, value] of Object.entries(saved)) assert.equal(updated[key], value);
   });
   console.log(`Windows 原生签名升级到 ${version}：便携版拒绝安装，坏签名被拒绝，原位安装及重启后保留主题和草稿。`);
+} catch (error) {
+  updateError = error;
+  throw error;
 } finally {
   feed.closeAllConnections();
   feed.close();
-  powershell(`Get-Process qingzhou -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $env:QINGZHOU_TEST_EXE } | ForEach-Object { $_.CloseMainWindow() | Out-Null }`);
+  try {
+    powershell(`Get-Process | Where-Object { $_.ProcessName -ieq 'qingzhou' -and $_.Path -ieq $env:QINGZHOU_TEST_EXE } | ForEach-Object { $_.CloseMainWindow() | Out-Null }`);
+  } catch (error) {
+    if (!updateError) throw error;
+    console.error("关闭签名升级测试进程时出错。", error);
+  }
 }

@@ -109,4 +109,5 @@ Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建�
 - [Windows 成品启动日志](https://github.com/Yunz93/Qingzhou/actions/runs/45663114103) 记录随包 Node 22.22.0 在解析主入口时对 `D:` 返回 `EISDIR`。Tauri 对资源目录做了规范化并带上 Windows 扩展盘符前缀，触发了 [Node.js 已记录的路径问题](https://github.com/nodejs/node/issues/62446)。桌面宿主保留已解析的资源目录，在传给 Node 前移除可等价转换的盘符前缀。新增 D 盘、空格和中文目录名的 Rust 回归。
 - [Windows 路径复验](https://github.com/Yunz93/Qingzhou/actions/runs/45666220194) 针对提交 `4f8080b201b4be1d3b045559d0a0f70a2c8720bc`，通过 5 项 Rust 原生测试。正式便携包、全新安装包、与正式安装共存的便携包，以及从正式 0.1.26 在自定义目录原位升级的包，均在 Windows 启动并读取保留资料。旧版升级同时核对安装登记和快捷方式。WebView2 测试通过缺失文件提示、补齐后启动及会话认证，在新建对话后等待标题时超时。
 - Windows 续验包含断线草稿恢复、网页预览及签名更新。发布工作流先独立验证签名更新，再跑 WebView2 交互烟测。签名更新从带驱动的 0.1.27 NSIS 软件包启动，通过本机源测试 0.1.28 候选，覆盖便携副本拒绝执行安装、损坏资产拒绝、正确签名原位更新，以及重启后资料保留。
+- [Windows WebView2 交互复验](https://github.com/Yunz93/Qingzhou/actions/runs/45670898073) 在 `5be14ed2e5758fd6e78a309c3c096760fa8fc149` 通过了新建对话、断线草稿恢复、独立预览、最小窗口、退出重启和主题保留，四种成品安装与启动回归再次通过。签名升级测试退出时清理进程命令返回 1 并覆盖了原始错误，续验单独记录各升级断言及清理结果。
 - macOS 已启用简体拼音，测试进程缺少系统键盘投递权限，自身窗口事件没有进入系统拼音引擎，系统候选词操作仍需手动验收。AppKit 文本客户端、草稿恢复与 Chromium 键码用例已通过。随包 Pi 已通过真实进程 RPC、写文件审批和本机模型推理，外部服务商账号连通仍待验收。
