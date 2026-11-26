@@ -20,3 +20,7 @@
 最终产品源码为 `aa3559f`。实际 WKWebView 的 Gemini 截图和请求计数在 `.qingzhou-test/mowen-029-layout-final/mowen-gemini-wk-vqUfS2/`。Apple 芯片原位升级记录在 `.qingzhou-test/official-028-to-029.gwXDhH/verified.json`，Intel 包的 Rosetta 启动结果在 `.qingzhou-test/layout-intel-rosetta.auMdlH/verified.json`。六份成品校验清单位于本机 `apps/desktop/release/SHA256SUMS.txt`。
 
 Linux 首轮在保存未确认需求后，测试同时匹配了看板卡片和待处理清单里的同名标题。断言已指定可点击的需求卡片。产品源码和桌面成品与 `aa3559f` 相同。
+
+2026-11-27 核对最终结果。[完整 CI](https://github.com/Yunz93/Qingzhou/actions/runs/45858762510) 在 `ad51ac1` 通过 lint、类型检查、Linux 单元 504 项、集成 103 项和 Chromium 74 项；Linux 单元按平台跳过 13 项，集成跳过 1 项。[桌面验证](https://github.com/Yunz93/Qingzhou/actions/runs/45857166917) 在 `aa3559f` 的 macOS arm64、macOS x64 和 Windows x64 三个作业均通过。Windows 实测包括安装与卸载、便携启动、原位迁移 v0.1.28、旧项目历史回放、断线草稿恢复、真实 Pi 对接本机 Gemini 模拟服务和应用内签名更新。
+
+本轮交付候选包，正式发布仍待人工决定。验证使用临时更新密钥，核对时正式仓库变量 `QINGZHOU_TAURI_UPDATE_PUBKEY` 尚未设置。
