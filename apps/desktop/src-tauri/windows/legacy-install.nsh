@@ -14,7 +14,9 @@ Var QingzhouTauriRoot
     ${AndIf} ${FileExists} "$QingzhouTauriRoot\runtime\service.mjs"
     ${AndIf} ${FileExists} "$QingzhouTauriRoot\uninstall.exe"
       ReadRegStr $R8 HKCU "${MANUPRODUCTKEY}" ""
+      ; NSIS preserves this location on uninstall unless app data is deleted.
       ${If} $R8 == ""
+      ${OrIfNot} ${FileExists} "$R8\${MAINBINARYNAME}.exe"
         ${If} $UpdateMode = 1
         ${OrIf} $INSTDIR == "$LOCALAPPDATA\${PRODUCTNAME}"
           StrCpy $INSTDIR "$QingzhouTauriRoot"

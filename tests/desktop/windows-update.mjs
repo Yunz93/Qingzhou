@@ -176,6 +176,8 @@ try {
     await waitFor(async () => await serviceStarts() > starts, "签名安装未在原资料目录自动重启", 90_000);
     assert.deepEqual(await exited, [0, null]);
     assert.equal(displayVersion(brandedRegistration), version);
+    const installedPath = powershell(`Get-ItemPropertyValue -LiteralPath '${brandedRegistration}' -Name InstallLocation`);
+    assert.equal(path.normalize(installedPath.replace(/^"|"$/g, "")).toLowerCase(), install.toLowerCase(), "升级后的登记未指向原有安装目录");
     assert.equal(powershell(`Test-Path -LiteralPath '${legacyRegistration}'`), "False");
     const updated = JSON.parse(await readFile(snapshot, "utf8"));
     for (const [key, value] of Object.entries(saved)) assert.equal(updated[key], value);
@@ -185,7 +187,9 @@ try {
   feed.closeAllConnections();
   feed.close();
   try {
-    powershell(`Get-Process | Where-Object { $_.ProcessName -ieq 'qingzhou' -and $_.Path -ieq $env:QINGZHOU_TEST_EXE } | ForEach-Object { $_.CloseMainWindow() | Out-Null }`);
+    powershell(`Get-Process | Where-Object { $_.ProcessName -ieq 'qingzhou' -and $_.Path -ieq $env:QINGZHOU_TEST_EXE } | ForEach-Object {
+      if ($_.CloseMainWindow() -and !$_.WaitForExit(15000)) { throw '签名升级测试窗口未正常退出。' }
+    }`);
   } catch (error) {
     cleanupError = error;
     console.error("关闭签名升级测试进程时出错。", error);
