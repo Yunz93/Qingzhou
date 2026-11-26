@@ -112,6 +112,10 @@ async function start({ simulateMissingPage = false } = {}) {
       ` }, 7000);
       assert.equal(frame, "snapshot", "系统 WebView 未收到经认证的会话快照");
       assert.equal((await globalThis.fetch(`${address}/api/session`)).status, 401);
+      await waitFor(() => execute(`
+        return ![...document.querySelectorAll('.banner-note[role=status]')].some(banner =>
+          /连接已断开|正在连接并启动/.test(banner.textContent));
+      `), "工作区的业务连接未就绪");
       return address;
     }
     const address = await waitForConnection(null);
@@ -164,6 +168,7 @@ if (history) {
     await waitFor(() => click("#requirement-tab-history"), "需求历史未就绪");
     await waitFor(() => click("#requirement-panel-history .workflow-timeline button", history.confirmed.message), "未找到旧版 PRD 确认事件");
     await waitFor(() => read('#requirement-panel-history [aria-label="只读历史回放"]', history.marker), "未回放旧版 PRD 正文");
+    assert.equal(await app.execute('return document.querySelector("#requirement-tab-history").getAttribute("aria-selected")'), "true");
     const stored = JSON.parse(await readFile(path.join(data, "workflow.json"), "utf8"));
     assert(stored.prds.some(prd => prd.id === history.prdId && prd.confirmedAt));
     for (const event of [history.configured, history.confirmed]) {

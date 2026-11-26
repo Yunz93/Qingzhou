@@ -127,13 +127,15 @@ jobs:
         shell: pwsh
         run: ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release
 
+      - name: Replay legacy project history in Windows WebView2
+        if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}
+        shell: bash
+        run: node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe .qingzhou-test/windows-legacy-history.json
+
       - name: Exercise Windows WebView2 recovery and drafts
         if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}
         shell: bash
-        run: |
-          test_program=apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
-          node tests/desktop/tauri-smoke.mjs "$test_program"
-          node tests/desktop/tauri-smoke.mjs "$test_program" .qingzhou-test/windows-legacy-history.json
+        run: node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
 
       - name: Verify Windows in-app signed update
         if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}
