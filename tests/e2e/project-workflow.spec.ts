@@ -621,7 +621,7 @@ test("an incomplete requirement stays discussable and cannot bypass scope confir
   await page.getByRole("button", { name: "新建需求", exact: true }).click();
   await create.getByLabel("标题", { exact: true }).fill("另一个待讨论需求");
   await create.getByRole("button", { name: "保存到计划", exact: true }).click();
-  await expect(page.getByText("另一个待讨论需求", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button").filter({ has: page.getByText("另一个待讨论需求", { exact: true }) })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "选择 待完善的需求", exact: true })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "选择当前可执行需求", exact: true })).toHaveCount(0);
   await page.getByRole("button").filter({ has: page.getByText("待完善的需求", { exact: true }) }).click();

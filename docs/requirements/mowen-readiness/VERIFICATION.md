@@ -16,3 +16,7 @@
 在 `bcc16cb` 上，本机 510 项单元、103 项集成、3 项 macOS Rust 测试和 74 项 Chromium 端到端测试通过。单元有 7 项、集成有 1 项按运行环境跳过。WKWebView 实测使用包内 Node、Pi 和服务，模拟端点收到一次生成请求，窗口收到三段增量；全部桌面进程退出后重新打开，仍能看到原会话和模型。Windows 验证使用临时更新签名。
 
 最终布局复核使用同一份资料比较 375 和 533 像素宽度的需求页，截图和 DOM 测量在 `.qingzhou-test/mobile-layout-diff.dXS0CW/`。有分页时，旧版 375 像素窗口的标题可用宽度为 0。新版短标题为 142 像素，长标题在 120 像素内完整显示为两行。在 533 像素窗口长标题可用宽度为 278 像素，可完整单行显示。相邻需求、审阅、对话、更多菜单和返回均已实际操作。
+
+最终产品源码为 `aa3559f`。实际 WKWebView 的 Gemini 截图和请求计数在 `.qingzhou-test/mowen-029-layout-final/mowen-gemini-wk-vqUfS2/`。Apple 芯片原位升级记录在 `.qingzhou-test/official-028-to-029.gwXDhH/verified.json`，Intel 包的 Rosetta 启动结果在 `.qingzhou-test/layout-intel-rosetta.auMdlH/verified.json`。六份成品校验清单位于本机 `apps/desktop/release/SHA256SUMS.txt`。
+
+Linux 首轮在保存未确认需求后，测试同时匹配了看板卡片和待处理清单里的同名标题。断言已指定可点击的需求卡片。产品源码和桌面成品与 `aa3559f` 相同。
