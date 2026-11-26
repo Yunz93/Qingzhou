@@ -369,6 +369,10 @@ test("requirement workspace preserves drafts, supports keyboard navigation and k
   await openScope(room);
   await expect(room.getByLabel("目标说明")).toHaveValue("未保存的范围草稿");
   await closeScope(room);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const titleBox = await room.locator("#requirement-workroom-title").boundingBox();
+  const nextBox = await room.getByRole("button", { name: "下一个需求" }).boundingBox();
+  expect(nextBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
   await room.getByRole("button", { name: "下一个需求" }).click();
   await openScope(page.getByRole("region", { name: "交互需求 B", exact: true }));
   await expect(page.getByRole("region", { name: "交互需求 B", exact: true }).getByLabel("目标说明")).toHaveValue("第二个独立需求");
@@ -716,6 +720,8 @@ test("requirement PRDs iterate with implementation, freeze at acceptance, and re
   await room.getByRole("button", { name: "审阅", exact: true }).click();
   await expect(room.getByRole("heading", { name: "PRD v2 已固化", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  const requirementName = room.locator("#requirement-workroom-title");
+  expect(await requirementName.evaluate((heading) => heading.scrollWidth <= heading.clientWidth && heading.scrollHeight <= heading.clientHeight + 1)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("frozen-prd-mobile.png"), fullPage: true, animations: "disabled" });
   await page.setViewportSize({ width: 1440, height: 900 });
   await room.getByRole("button", { name: "返回项目", exact: true }).click();
