@@ -99,7 +99,7 @@ Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建�
 
 供签名更新用例使用的 0.1.27 Windows 安装包（桌面自动化功能、本机更新地址）已交叉编译并生成 NSIS。同轮的 0.1.28 Windows 安装包另外用匹配的临时密钥签名，验签通过，修改安装包的首字节后验签失败。测试脚本的静态检查与工作流解析均通过。
 
-## 待实机验收
+## Windows 实机验证
 
 - 第一次 [GitHub Actions 仅验证作业](https://github.com/Yunz93/Qingzhou/actions/runs/45647793859) 到达 Windows 单测。命令成功退出，但 Windows 将子进程工作目录显示为 8.3 短路径，导致原始字符串比较失败。测试已对实际和预期路径应用 `realpath` 后严格比较。第二次 [仅验证作业](https://github.com/Yunz93/Qingzhou/actions/runs/45649564675) 对提交 `1b700571a0ca8a92844d82a8c86a5b4fcd583c3f` 运行。
 - 第二次作业的 lint、类型检查、全量单元与集成、Rust 检查及两个 WinHTTP PAC 用例均通过。Node 归档解压阶段选中了 Git Bash 的 GNU tar，Windows 的 `D:` 被解读为远程归档地址。打包脚本改用 Windows 系统自带的 `tar.exe` 处理 Node ZIP 和便携 ZIP。[墨问仅验证作业](https://github.com/Yunz93/Qingzhou/actions/runs/45651700193) 对提交 `5b193fbb43a8c13f8452e4f62f2b26f7ea455da0` 运行。
@@ -115,4 +115,8 @@ Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建�
 - [Windows 原位复验](https://github.com/Yunz93/Qingzhou/actions/runs/45741016847) 对应 `b16a6d270035012ba9e9b644c4605003308f6260`。新版 NSIS 包通过本地交叉打包，便携包的主程序和归档内容校验与上次一致。实机通过 6 项 Rust 测试、四种成品安装与启动、WebView2 交互烟测及应用内签名更新。0.1.27 验证包拒绝损坏资产，使用正确签名包在原目录升级到 0.1.28，清除旧卸载登记，自动重启并保留主题和中文草稿。两种 macOS 架构同时通过该次作业的构建检查。
 - 补充 Windows 原项目历史验收。0.1.26 通过原服务保存 Git 项目、需求、已确认 PRD 和历史事件，NSIS 升级比较项目与历史文件摘要，WebView2 再打开原需求并回放历史。0.1.27 签名更新用例同时验证项目和 PRD 确认事件在重启后保留。新夹具已通过 0.1.26 Intel 成品和当前 macOS WKWebView 的本机复验，截图在 `.qingzhou-test/tauri-native-97aOX1/legacy-project-history.png`。
 - [Windows 历史复验](https://github.com/Yunz93/Qingzhou/actions/runs/45744710409) 通过 0.1.26 原版历史生成、两个原文件摘要核对，以及 0.1.27 签名升级后的项目、PRD、确认事件、主题与草稿保留。交互烟测在页面业务 WebSocket 连接就绪前提交了新对话，后续历史用例随该步骤跳过。工作流改为独立执行历史回放，烟测等待页面退出断线状态后再继续。
+- [Windows 历史回放实机验收](https://github.com/Yunz93/Qingzhou/actions/runs/45747685027) 对应 `0ae0f54d0e68189ef0a82bf68916179dd97ae18e`。0.1.26 实包写入旧项目、需求和已确认 PRD，升级后 WebView2 打开同一需求 ID，回放原项目编排及 PRD 正文，核对保留的事件 ID。断线重连与草稿恢复复验通过。0.1.27 签名升级复验再次拒绝坏签名并在原路径自动重启，保留旧项目、PRD、确认历史、主题和草稿。该次作业的两个 macOS 目标也通过构建检查。
+
+## 人工验收待确认
+
 - macOS 已启用简体拼音，测试进程缺少系统键盘投递权限，自身窗口事件没有进入系统拼音引擎，系统候选词操作仍需手动验收。AppKit 文本客户端、草稿恢复与 Chromium 键码用例已通过。随包 Pi 已通过真实进程 RPC、写文件审批和本机模型推理，外部服务商账号连通仍待验收。
