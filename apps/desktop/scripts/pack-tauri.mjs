@@ -115,6 +115,7 @@ async function stagePi() {
 
 async function stageService() {
   const server = path.join(root, "apps/server");
+  await cp(path.join(root, "LICENSE"), path.join(runtime, "MOWEN-LICENSE"));
   await build({
     entryPoints: [path.join(server, "dist/desktop-main.js")],
     outfile: path.join(runtime, "service.mjs"),
@@ -151,13 +152,15 @@ run(process.execPath, [requireRoot.resolve("tsx/cli"), "scripts/bundle-pi-tools.
 const cli = path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js");
 const icons = path.join(staging, "icons");
 run(process.execPath, [cli, "icon", path.join(root, "apps/web/public/mowen.svg"), "--output", icons]);
+const windowsIcon = path.join(icons, "icon.ico");
 const config = {
   ...(testBuild && !testWindowsInstaller ? { productName: "Mowen Desktop Test", identifier: "com.qingzhou.desktop.test" } : {}),
   ...(testWindowsInstaller ? { productName: "Qingzhou" } : {}),
   ...(testVersion ? { version: testVersion } : {}),
   bundle: {
     resources: { [`${runtime}/`]: "runtime/" },
-    icon: [path.join(icons, "icon.png"), path.join(icons, mac ? "icon.icns" : "icon.ico")],
+    icon: [path.join(icons, "icon.png"), mac ? path.join(icons, "icon.icns") : windowsIcon],
+    ...(win ? { windows: { nsis: { installerIcon: windowsIcon, uninstallerIcon: windowsIcon } } } : {}),
     createUpdaterArtifacts: signUpdates,
   },
   ...(updateKey ? { plugins: { updater: {

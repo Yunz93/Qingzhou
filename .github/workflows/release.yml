@@ -137,6 +137,11 @@ jobs:
         shell: bash
         run: node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
 
+      - name: Verify bundled Pi with a local Gemini stream
+        if: ${{ runner.os == 'Windows' && (!inputs.verify_only || steps.windows_fixtures.outcome == 'success') }}
+        shell: bash
+        run: pnpm exec tsx tests/integration/gemini-runtime-smoke.ts apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/runtime
+
       - name: Verify Windows in-app signed update
         if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}
         shell: pwsh

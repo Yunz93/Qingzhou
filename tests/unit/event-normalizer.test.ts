@@ -23,6 +23,15 @@ describe("event normalizer", () => {
     }
   });
 
+  it("preserves partial output and a readable provider failure in live and restored replies", () => {
+    const message = { role: "assistant", timestamp: 12, content: [{ type: "text", text: "未完成" }],
+      stopReason: "error", errorMessage: "400 API_KEY_INVALID: API key not valid." };
+    const restored = piMessagesToTimeline([message]);
+    expect(restored[0]).toMatchObject({ isError: true, text: expect.stringMatching(/未完成[\s\S]*Google AI Studio/) });
+    expect(normalizePiEvent({ type: "message_end", message })).toEqual({ kind: "message.completed", message: restored[0], error: expect.stringContaining("Google AI Studio") });
+    expect(piMessagesToTimeline([{ ...message, stopReason: "aborted" }])[0]).toMatchObject({ isError: false, text: "未完成" });
+  });
+
   it("marks denied tool results as blocked", () => {
     const event = normalizePiEvent({
       type: "tool_execution_end",

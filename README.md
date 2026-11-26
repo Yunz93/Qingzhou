@@ -1,6 +1,6 @@
 # 墨问 / Mowen
 
-本机运行的 [Pi](https://pi.dev) 编程助手。API 密钥只存在这台电脑上，改文件或跑命令前会先问你。
+墨问是本机运行的 Pi 编程助手。你可以与模型对话，也可以在项目里把需求推进到设计、实施和验收。改文件和运行命令遵循当前会话的审批策略。[Pi 项目](https://pi.dev)
 
 免费开源（MIT）。没有 Apple 开发者证书，也没有公证。**macOS 请用下面的安装脚本**，不要双击 GitHub 上的 `.dmg`——系统会提示无法验证开发者。
 
@@ -34,13 +34,23 @@ irm https://github.com/Yunz93/Qingzhou/releases/latest/download/install-windows.
 
 Windows 便携版会提示新版本。更新时退出墨问，将新版便携 ZIP 解压到正在使用的目录。
 
+### 连接 Google Gemini
+
+1. 打开墨问的首次配置，或从「设置 → 账号与认证」选择 API Key 和 Google Gemini。可从界面打开 [Google AI Studio](https://aistudio.google.com/apikey) 创建密钥。
+2. 粘贴密钥。点击「测试连接」会向 Google 读取模型目录。保存密钥并选好工作文件夹后即可进入对话。
+3. 在输入框下方的模型选择器选中 Google 的 Gemini 模型，然后发送消息。生成请求使用你自己的 Google 项目和配额。
+
+如果 Pi 已通过环境变量 `GEMINI_API_KEY` 配置凭据，墨问会标出来源，可直接使用现有连接。[Google 密钥说明](https://aistudio.google.com/docs/api-key)
+
+如果 Pi 的 `models.json` 配置了自定义 Google 服务，先核对界面列出的接收地址，再保存该服务的密钥。对话会按模型配置发往相应地址。官方模型目录的连接测试仅在使用 Google 官方地址时提供。
+
 ### 发布稳定版
 
 先同步所有 `package.json`、Tauri 配置和 Cargo 的版本号并更新 `CHANGELOG.md`，再创建对应的正式版本标签：
 
 ```bash
-git tag v0.1.28
-git push origin v0.1.28
+git tag v0.1.29
+git push origin v0.1.29
 ```
 
 这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt`、旧版升级清单 `latest.json` 和 Tauri 签名更新清单 `tauri-update.json`。正式版本会设为 GitHub `latest`。更新签名使用仓库变量 `QINGZHOU_TAURI_UPDATE_PUBKEY` 及发布环境中的 `TAURI_SIGNING_PRIVATE_KEY`。`main` 推送只运行 CI。安装脚本会校验清单（旧版本没有清单时只警告）。

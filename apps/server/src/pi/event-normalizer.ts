@@ -7,7 +7,8 @@ import {
 } from "@qingzhou/protocol";
 
 const MAX_IMAGE_DATA_URL = 1_500_000;
-import { extractErrorText } from "../setup/pi-agent-dir.js";
+import { redactSecrets } from "../security/redact.js";
+import { extractErrorText, humanizeUserFacingError } from "../setup/pi-agent-dir.js";
 import type { RpcEvent } from "./rpc-client.js";
 import {
   createModelChangeNotice,
@@ -21,7 +22,7 @@ export type NormalizedPiEvent =
   | { kind: "status"; streaming: boolean; settled?: boolean }
   | { kind: "message.started"; message: TimelineMessage }
   | { kind: "message.delta"; messageId: string; field: "text" | "thinking"; delta: string }
-  | { kind: "message.completed"; message: TimelineMessage }
+  | { kind: "message.completed"; message: TimelineMessage; error?: string }
   | { kind: "tool.started"; tool: ToolExecution }
   | { kind: "tool.updated"; tool: Partial<ToolExecution> & { toolCallId: string } }
   | { kind: "tool.completed"; tool: Partial<ToolExecution> & { toolCallId: string } }
@@ -111,9 +112,15 @@ function messageIdFor(role: string, timestamp: unknown, extra: string): string {
   return createHash("sha1").update(`${role}:${String(timestamp)}:${stableExtra}`).digest("hex").slice(0, 16);
 }
 
+function assistantFailure(message: Record<string, unknown>): string | undefined {
+  if (message.role !== "assistant" || message.stopReason !== "error") return undefined;
+  return redactSecrets(humanizeUserFacingError(extractErrorText(message.errorMessage) || "模型请求失败，请重试。"));
+}
+
 function timelineFromPiMessage(
   message: Record<string, unknown>,
   streaming: boolean,
+  failure = assistantFailure(message),
 ): TimelineMessage | null {
   const role = String(message.role ?? message.type ?? "assistant");
   if (role === "model_change") {
@@ -133,17 +140,18 @@ function timelineFromPiMessage(
     return createModelChangeNotice(messageIdFor("system", message.timestamp, `${from}->${to}`), from, to, createdAt);
   }
   if (role !== "user" && role !== "assistant" && role !== "toolResult") return null;
-  const id = messageIdFor(role, message.timestamp, textFromContent(message.content).slice(0, 24));
+  const content = textFromContent(message.content);
+  const id = messageIdFor(role, message.timestamp, content.slice(0, 24));
   return {
     id,
     role,
-    text: textFromContent(message.content),
+    text: failure ? [content, failure].filter(Boolean).join("\n\n") : content,
     thinking: thinkingFromContent(message.content),
     createdAt: nowIso(typeof message.timestamp === "number" ? message.timestamp : undefined),
     streaming: streaming && role === "assistant",
     toolCallId: typeof message.toolCallId === "string" ? message.toolCallId : undefined,
     toolName: typeof message.toolName === "string" ? message.toolName : undefined,
-    isError: Boolean(message.isError),
+    isError: Boolean(failure || message.isError),
     images: imagesFromContent(message.content),
   };
 }
@@ -201,9 +209,10 @@ export function normalizePiEvent(event: RpcEvent): NormalizedPiEvent {
     case "message_end": {
       const message = event.message as Record<string, unknown> | undefined;
       if (!message) return { kind: "ignored" };
-      const timeline = timelineFromPiMessage(message, false);
+      const error = assistantFailure(message);
+      const timeline = timelineFromPiMessage(message, false, error);
       if (!timeline) return { kind: "ignored" };
-      return { kind: "message.completed", message: timeline };
+      return { kind: "message.completed", message: timeline, ...(error ? { error } : {}) };
     }
     case "tool_execution_start": {
       const toolCallId = String(event.toolCallId ?? "");

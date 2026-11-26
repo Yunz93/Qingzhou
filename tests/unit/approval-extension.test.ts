@@ -28,7 +28,7 @@ describe("Pi approval extension write paths", () => {
     vi.stubEnv("QINGZHOU_ALLOWED_ROOTS", project);
     vi.stubEnv("QINGZHOU_MUTATIONS", "approval");
     let hook!: ApprovalHook;
-    approvalExtension({ on: (_event: string, callback: ApprovalHook) => { hook = callback; } } as never);
+    approvalExtension({ registerCommand: vi.fn(), on: (_event: string, callback: ApprovalHook) => { hook = callback; } } as never);
     const confirm = vi.fn(async () => true);
     const write = (filePath: string) => hook(
       { toolName: "write", toolCallId: "test-write", input: { path: filePath, content: "new file" } },

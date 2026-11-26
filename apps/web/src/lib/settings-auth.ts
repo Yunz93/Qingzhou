@@ -1,3 +1,5 @@
+import type { GeminiTarget } from "@qingzhou/protocol";
+
 export type AuthEntryLike = {
   id: string;
   label: string;
@@ -12,6 +14,7 @@ export type AuthCatalogItem = {
   hint?: string;
   oauth: boolean;
   apiKey: boolean;
+  apiKeyLabel?: string;
 };
 
 export type AuthMode = "oauth" | "api_key" | "env";
@@ -70,13 +73,11 @@ export function mergeAuthCatalog(
       items.set(partial.id, { ...partial });
       return;
     }
-    items.set(partial.id, {
-      id: partial.id,
-      label: current.label || partial.label,
-      hint: current.hint ?? partial.hint,
-      oauth: current.oauth || partial.oauth,
-      apiKey: current.apiKey || partial.apiKey,
-    });
+    current.label ||= partial.label;
+    if (partial.apiKey && partial.label !== current.label) current.apiKeyLabel = partial.label;
+    current.hint ??= partial.hint;
+    current.oauth ||= partial.oauth;
+    current.apiKey ||= partial.apiKey;
   };
 
   for (const provider of oauthProviders) {
@@ -113,7 +114,8 @@ export function mergeAuthCatalog(
 /** Providers available in the current auth mode (login vs API key). Env tab has none. */
 export function providersForMode(catalog: AuthCatalogItem[], mode: AuthMode): AuthCatalogItem[] {
   if (mode === "env") return [];
-  return catalog.filter((item) => (mode === "oauth" ? item.oauth : item.apiKey));
+  if (mode === "oauth") return catalog.filter((item) => item.oauth);
+  return catalog.filter((item) => item.apiKey).map((item) => item.apiKeyLabel ? { ...item, label: item.apiKeyLabel } : item);
 }
 
 export function pickDefaultProvider(
@@ -125,6 +127,19 @@ export function pickDefaultProvider(
   const list = providersForMode(catalog, mode);
   if (preferredId && list.some((item) => item.id === preferredId)) return preferredId;
   return list[0]?.id ?? "";
+}
+
+/** Start at an existing connection. A clean install opens the Gemini key form. */
+export function initialAuthChoice(catalog: AuthCatalogItem[], entries: AuthEntryLike[]) {
+  for (const mode of ["oauth", "api_key"] as const) {
+    const connected = providersForMode(catalog, mode).find((item) => findAuthEntry(entries, item.id, mode));
+    if (connected) return { mode, provider: connected.id };
+  }
+  if (catalog.some((item) => item.id === "google" && item.apiKey)) {
+    return { mode: "api_key" as const, provider: "google" };
+  }
+  const mode = catalog.some((item) => item.oauth) ? "oauth" as const : "api_key" as const;
+  return { mode, provider: pickDefaultProvider(catalog, mode) };
 }
 
 export function authStatusLabel(
@@ -169,4 +184,8 @@ export function oauthButtonLabel(kind: "api_key" | "oauth" | "other" | undefined
 
 export function logoutNotice(kind: "api_key" | "oauth" | "other" | undefined): string {
   return kind === "api_key" ? "已移除密钥。" : "已退出登录。";
+}
+
+export function canSaveProviderKey(provider: string, target: GeminiTarget | undefined, confirmed?: string): boolean {
+  return provider !== "google" || target?.kind === "official" || (target?.kind === "custom" && confirmed === target.revision);
 }

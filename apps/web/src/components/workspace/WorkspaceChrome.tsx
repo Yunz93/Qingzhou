@@ -1,12 +1,13 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { FolderGit2, MessageSquare, Settings } from "lucide-react";
+import { FolderGit2, MessageSquare, Settings, X } from "lucide-react";
+import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { WorkActivity } from "../app/WorkActivity";
 import { useAgentStore } from "../../stores/agent-store";
 
 type Section = "conversation" | "projects" | "settings";
 
-export function WorkspaceRail({ section, children }: { section: Section; children?: ReactNode }) {
+export function WorkspaceRail({ section, children, onClose }: { section: Section; children?: ReactNode; onClose?: () => void }) {
   const location = useLocation();
   const currentLocation = `${location.pathname}${location.search}`;
   const activeTask = useAgentStore((state) => state.activeTaskId);
@@ -29,10 +30,13 @@ export function WorkspaceRail({ section, children }: { section: Section; childre
   const boardLocation = /^\/board(?:\?|$)/.test(lastProject) ? lastProject : "/board";
   return (
     <aside className="flex h-full w-[min(240px,85vw)] shrink-0 flex-col border-r border-divider bg-canvas" aria-label="墨问导航">
-      <Link to="/" className="flex min-h-12 items-center gap-2 px-4 text-base font-semibold text-ink">
-        <img src="/mowen.svg" alt="" width={24} height={24} />
-        墨问
-      </Link>
+      <div className="flex min-h-14 shrink-0 items-center justify-between px-4">
+        <Link to="/" onClick={restoreConversation} className="flex min-h-10 items-center gap-2.5 text-[17px] font-semibold text-ink">
+          <img src="/mowen.svg" alt="" width={26} height={26} />
+          墨问
+        </Link>
+        {onClose ? <button type="button" className="icon-btn" aria-label="关闭导航" onClick={onClose}><X size={16} /></button> : null}
+      </div>
       <nav className="grid gap-1 px-2.5" aria-label="工作区">
         <RailLink to="/" onClick={restoreConversation} icon={<MessageSquare size={14} />} selected={section === "conversation"}>对话</RailLink>
         <RailLink to={section === "projects" ? currentLocation : boardLocation} icon={<FolderGit2 size={14} />} selected={section === "projects"}>项目</RailLink>
@@ -44,6 +48,18 @@ export function WorkspaceRail({ section, children }: { section: Section; childre
       </div>
     </aside>
   );
+}
+
+export function WorkspaceDrawer({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogLayer(ref, onClose);
+  return <div className="fixed inset-0 z-30">
+    <div aria-hidden="true" className="absolute inset-0 bg-ink/20" onClick={onClose} />
+    <div ref={ref} className="absolute inset-y-0 left-0 shadow-dialog" role="dialog" aria-modal="true" aria-label="工作区导航" tabIndex={-1}
+      onClick={(event) => { if (event.target instanceof Element && event.target.closest("a[href]")) onClose(); }}>
+      {children}
+    </div>
+  </div>;
 }
 
 function RailLink({ to, state, onClick, icon, children, selected }: { to: string; state?: object; onClick?: () => void; icon: ReactNode; children: ReactNode; selected: boolean }) {

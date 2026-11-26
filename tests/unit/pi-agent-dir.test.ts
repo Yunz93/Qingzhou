@@ -45,6 +45,9 @@ describe("Pi agent dir and auth errors", () => {
     expect(isAuthHttpError("HTTP 401 Unauthorized")).toBe(true);
     expect(isAuthHttpError('{"type":"authentication_error","message":"invalid x-api-key"}')).toBe(true);
     expect(isAuthHttpError("Invalid API key")).toBe(true);
+    const googleError = "400 INVALID_ARGUMENT: API key not valid. Please pass a valid API key.";
+    expect(isMissingCredentialError(googleError)).toBe(false);
+    expect(humanizeUserFacingError(googleError)).toContain("Google AI Studio");
     expect(isAuthHttpError("403 Forbidden")).toBe(true);
     expect(isMissingCredentialError("HTTP 401 Unauthorized")).toBe(false);
     expect(isMissingCredentialError("Invalid API key")).toBe(false);

@@ -1,4 +1,4 @@
-# 轻舟项目文档
+# 墨问项目文档
 
 新接手项目先读 [项目概览](project/overview.md)、[架构](project/architecture.md)、[验证方式](project/verification.md) 和 [Agent 工作流](agents/workflow.md)。规范入口是根目录 [AGENTS.md](../AGENTS.md)。
 
@@ -14,6 +14,6 @@
 
 历史 PRD 保留原路径：[项目工作编排](prd/project-work-orchestration.md)、[需求设计与模块文档](prd/requirement-design-lifecycle.md)。历史文档不是当前状态的唯一来源，相关模块文档指向当前实现。
 
-当前改造：[Agent 工作流闭环补全](requirements/workflow-completeness/PRD.md)，实现与验证后待用户验收。
+当前改造见[墨问首用与商用就绪](requirements/mowen-readiness/PRD.md)及[桌面迁移](requirements/tauri-desktop/PRD.md)。
 
 项目标准改造见 [项目标准与 Agent 规范](requirements/project-standards/PRD.md)。应用编排出的需求保存在 `docs/qingzhou/requirements/<需求 ID>.json` 及同名目录；项目标准清单为 `docs/qingzhou/project.json`。实际审批、验收、PRD 固化和 Git 集成事实由服务端持久化，文档不能自行替代。

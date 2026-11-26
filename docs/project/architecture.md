@@ -10,7 +10,7 @@
 | `apps/server/src/pi/` | Pi 子进程、RPC、状态、审批和提问 | `process-supervisor.ts`、`rpc-client.ts` |
 | `apps/server/src/security/` | 访问、路径和敏感信息保护 | `path-policy.ts`、`session-cookie.ts` |
 | `apps/web/src/` | React 页面、组件、状态与消息传输 | `pages/BoardPage.tsx`、`layouts/WorkbenchLayout.tsx` |
-| `apps/desktop/` | Electron、安装、更新和打包 | 目录内 `package.json` 与 `scripts/` |
+| `apps/desktop/` | Tauri 2 系统 WebView、本机服务、安装和签名更新 | `src-tauri/src/main.rs` 与 `scripts/pack-tauri.mjs` |
 | `tests/unit/`、`tests/integration/`、`tests/e2e/` | 纯逻辑、真实 Git / 服务以及浏览器回归 | 根配置与项目验证文档 |
 
 协议变更先在 `packages/protocol` 定义并构建，再更新服务端与前端。不要让页面自行生成审批、验收或合入事实。

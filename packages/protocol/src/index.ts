@@ -129,6 +129,9 @@ export {
 } from "./work-items.js";
 export {
   authEntrySchema,
+  geminiTargetRevisionSchema,
+  geminiTargetSchema,
+  type GeminiTarget,
   authEntrySourceSchema,
   interactionRequestSchema,
   piResourceFileSchema,

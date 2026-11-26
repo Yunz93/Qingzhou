@@ -6,6 +6,7 @@ import {
   connectedAuthEntries,
   envAuthEntries,
   findAuthEntry,
+  initialAuthChoice,
   isRemovableAuthEntry,
   logoutNotice,
   mergeAuthCatalog,
@@ -33,12 +34,26 @@ describe("settings auth catalog", () => {
     expect(catalog.find((item) => item.id === "openai")).toEqual({
       id: "openai",
       label: "OpenAI (ChatGPT)",
+      apiKeyLabel: "OpenAI",
       hint: "sk-",
       oauth: true,
       apiKey: true,
     });
     expect(catalog.find((item) => item.id === "github")?.oauth).toBe(true);
     expect(catalog.find((item) => item.id === "github")?.apiKey).toBe(false);
+  });
+
+  it("opens Gemini for a fresh install and keeps an existing login or environment key visible", () => {
+    const catalog = mergeAuthCatalog([{ id: "github", label: "GitHub Copilot" }], [
+      { id: "google", label: "Google Gemini", hint: "" },
+      { id: "deepseek", label: "DeepSeek", hint: "" },
+    ]);
+    const key = { id: "deepseek", label: "DeepSeek", kind: "api_key" as const, source: "env" as const };
+    expect(initialAuthChoice(catalog, [])).toEqual({ mode: "api_key", provider: "google" });
+    expect(initialAuthChoice(catalog, [key])).toEqual({ mode: "api_key", provider: "deepseek" });
+    expect(initialAuthChoice(catalog, [key, { id: "github-copilot", label: "Copilot", kind: "oauth" }]))
+      .toEqual({ mode: "oauth", provider: "github" });
+    expect(initialAuthChoice(catalog.filter((item) => item.id !== "google"), [])).toEqual({ mode: "oauth", provider: "github" });
   });
 
   it("filters providers by auth mode so login and API key stay separate", () => {
@@ -54,6 +69,7 @@ describe("settings auth catalog", () => {
     );
     expect(providersForMode(catalog, "oauth").map((item) => item.id)).toEqual(["github", "openai"]);
     expect(providersForMode(catalog, "api_key").map((item) => item.id)).toEqual(["openai", "anthropic"]);
+    expect(providersForMode(catalog, "api_key")[0].label).toBe("OpenAI");
     expect(providersForMode(catalog, "env")).toEqual([]);
     expect(pickDefaultProvider(catalog, "oauth")).toBe("github");
     expect(pickDefaultProvider(catalog, "api_key", "anthropic")).toBe("anthropic");

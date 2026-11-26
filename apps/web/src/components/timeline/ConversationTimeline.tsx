@@ -6,6 +6,7 @@ import { ArrowUpRight, Box, Info } from "lucide-react";
 import { extractDesignProposal, stripModePrefix, type TimelineMessage, type ToolExecution } from "@qingzhou/protocol";
 import { ToolExecutionRow } from "./ToolExecutionRow";
 import { ToolGroupRow } from "./ToolGroupRow";
+import { ConversationImage } from "./ConversationImage";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { groupToolExecutions } from "../../lib/tool-groups";
 import { ConversationSearchBar } from "./ConversationSearchBar";
@@ -71,11 +72,7 @@ function MessageImages({ images }: { images: NonNullable<TimelineMessage["images
       {images.map((image, index) => (
         <li key={`${image.name ?? image.mimeType}-${index}`}>
           {image.dataUrl ? (
-            <img
-              src={image.dataUrl}
-              alt={image.name ?? `图片 ${index + 1}`}
-              className="h-16 w-16 rounded-md bg-fill object-cover"
-            />
+            <ConversationImage src={image.dataUrl} label={image.name ?? `图片 ${index + 1}`} imageClassName="h-16 w-16 rounded-md bg-fill object-cover" />
           ) : (
             <span className="inline-flex h-16 min-w-16 items-center justify-center rounded-md bg-fill px-2 text-[11px] text-mute">
               {image.name ?? `图片 ${index + 1}`}

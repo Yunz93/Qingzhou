@@ -66,15 +66,12 @@
 .workflow-item-open { font-size: 12px; color: var(--color-mute); }
 .workflow-item-open:is(:hover, :focus-visible) { color: var(--color-accent); }
 .workflow-item-menu { position: relative; }
-.workflow-item-menu summary { display: grid; place-items: center; cursor: pointer; list-style: none; width: 30px; height: 30px; border-radius: 6px; }
-.workflow-item-menu summary::-webkit-details-marker { display: none; }
-.workflow-item-menu summary:hover { background: var(--color-fill); }
-.workflow-item-menu > div { position: absolute; right: 0; top: 34px; z-index: 10; min-width: 150px; padding: 5px; border: 1px solid var(--color-line); background: var(--color-surface); border-radius: 8px; box-shadow: 0 8px 24px #00000018; }
-.workflow-item-menu button { display: block; text-align: left; width: 100%; padding: 8px; font-size: 12px; border-radius: 4px; }
-.workflow-item-menu button:hover { background: var(--color-fill); }
+.workflow-item-menu > [role="menu"] { position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 150px; padding: 5px; border: 1px solid var(--color-line); background: var(--color-surface); border-radius: 8px; box-shadow: var(--shadow-dialog); }
+.workflow-item-menu [role="menuitem"] { display: block; text-align: left; width: 100%; min-height: 40px; padding: 8px; font-size: 13px; border-radius: 4px; }
+.workflow-item-menu [role="menuitem"]:enabled:hover { background: var(--color-fill); }
 .workflow-kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .workflow-kanban > section { min-width: 0; padding: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: color-mix(in srgb, var(--color-canvas) 70%, var(--color-fill)); }
-.workflow-kanban > section[data-empty="true"] { align-self: start; background: transparent; }
+.workflow-kanban > section[data-empty="true"] { align-self: start; background: transparent; border-color: var(--color-divider); }
 .workflow-kanban h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; padding: 2px 3px 9px; border-bottom: 1px solid var(--color-line); font-size: 13px; font-weight: 600; }
 .workflow-kanban [data-empty="true"] h3, .workflow-kanban h3 span { color: var(--color-mute); }
 .workflow-kanban h3 span { font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -84,7 +81,7 @@
 .workflow-kanban .workflow-requirement:has(> input:checked) { background: var(--color-accent-soft); }
 .workflow-kanban .workflow-item-main { flex-basis: calc(100% - 30px); }
 .workflow-kanban .workflow-item-actions { width: 100%; justify-content: space-between; padding: 0; }
-.workflow-lane-empty { padding: 6px 3px 12px; color: var(--color-mute); font-size: 12px; }
+.workflow-kanban > section[data-empty="true"] h3 { margin: 0; padding: 2px 3px; border: 0; }
 .workflow-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 50px 24px; color: var(--color-mute); }
 .workflow-empty h3 { font-size: 15px; font-weight: 600; color: var(--color-ink); }
 .workflow-empty p { max-width: 380px; font-size: 12px; line-height: 1.8; }

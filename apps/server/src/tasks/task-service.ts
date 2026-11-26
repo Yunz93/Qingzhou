@@ -116,8 +116,8 @@ export class TaskService {
       (taskId) => {
         void this.apply(taskId, "approval_request");
       },
-      (taskId) => {
-        void this.apply(taskId, "agent_settled");
+      (taskId, errorMessage) => {
+        void this.apply(taskId, "agent_settled", errorMessage);
       },
       (taskId) => {
         void this.apply(taskId, "abort_confirmed");
@@ -1652,6 +1652,16 @@ export class TaskService {
     return resources;
   }
 
+  async refreshCredentialModels(): Promise<void> {
+    const live = this.store.getSnapshot().filter((task) => this.supervisor.has(task.id) || this.booting.has(task.id));
+    await Promise.allSettled(live.map(async ({ id }) => {
+      await this.booting.get(id);
+      if (!this.supervisor.has(id)) return;
+      await this.supervisor.reloadCredentialModels(id);
+      await this.refreshAvailableModels(id);
+    }));
+  }
+
   async refreshResources(): Promise<void> {
     const taskId = this.activeTaskId;
     if (!taskId || !this.store.get(taskId)) return;
@@ -1802,12 +1812,13 @@ export class TaskService {
     });
     this.emit(taskId, "agent.status", { status: next.status, errorMessage: next.errorMessage ?? null });
     this.emit(taskId, "task.updated", { task: next });
-    if (next.status === "error") {
+    const failure = next.status === "error" ? next.errorMessage : event === "agent_settled" ? errorMessage : null;
+    if (failure) {
       const run = this.workItems.activeRunForTask(taskId);
       if (run) {
         await this.workItems.updateRun(run.id, {
           status: "failed",
-          errorMessage: next.errorMessage ?? "执行失败",
+          errorMessage: failure,
         });
         this.emitWorkItems();
         const snapshot = this.supervisor.snapshot(taskId);
@@ -1818,7 +1829,7 @@ export class TaskService {
       await this.syncActiveWorkRun(taskId, "aborted");
       for (const item of this.workItems.findByTaskId(taskId)) await this.workflow.settled(item.id, false);
     }
-    if (event === "agent_settled") {
+    if (event === "agent_settled" && !failure) {
       void this.refreshStats(taskId);
       if (
         (task.status === "running" || task.status === "waiting_approval") &&
@@ -1830,10 +1841,10 @@ export class TaskService {
         this.emit(taskId, "server.error", { code: "workItem.settle", message: humanizeUserFacingError(error) });
       });
     }
-    if (next.status === "error" && next.errorMessage) {
+    if (failure) {
       // Banner + toast: server.error sticks in the workbench; notification is OS/toast.
-      this.emit(taskId, "server.error", { code: "task.error", message: next.errorMessage });
-      this.emit(taskId, "notification.shown", { message: next.errorMessage, notifyType: "error" });
+      this.emit(taskId, "server.error", { code: "task.error", message: failure });
+      this.emit(taskId, "notification.shown", { message: failure, notifyType: "error" });
     }
     return next;
   }

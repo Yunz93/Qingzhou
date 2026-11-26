@@ -1,9 +1,10 @@
 import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useRef, useState } from "react";
+import { geminiTargetSchema, type GeminiTarget } from "@qingzhou/protocol";
 import { X } from "lucide-react";
 import { FolderPicker } from "./FolderPicker";
-import { isDesktopApp } from "../../desktop-bridge";
-import { authEntryStatusLabel, findAuthEntry, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthEntryLike, type AuthMode } from "../../lib/settings-auth";
+import { ProviderKeyField } from "./ProviderKeyField";
+import { canSaveProviderKey, authEntryStatusLabel, findAuthEntry, initialAuthChoice, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthEntryLike, type AuthMode } from "../../lib/settings-auth";
 
 type WizardAuthMode = Exclude<AuthMode, "env">;
 
@@ -25,6 +26,7 @@ export type SetupStatus = {
   piBundled?: boolean;
   canInstallPi?: boolean;
   authEntries?: AuthEntryLike[];
+  geminiTarget?: GeminiTarget;
   hasModelsFile?: boolean;
   modelsFilePath?: string;
   modelCount?: number;
@@ -35,12 +37,13 @@ export type SetupStatus = {
 type Props = {
   onFinished: (status: SetupStatus) => void;
   onCancel?: () => void;
+  initialStatus?: SetupStatus;
 };
 
-type Step = "welcome" | "pi" | "auth" | "workspace";
+type Step = "pi" | "auth" | "workspace";
 
-async function fetchSetup(): Promise<SetupStatus> {
-  const response = await fetch("/api/setup", { credentials: "same-origin" });
+async function fetchSetup(signal?: AbortSignal): Promise<SetupStatus> {
+  const response = await fetch("/api/setup", { credentials: "same-origin", signal });
   if (!response.ok) throw new Error("无法加载设置状态");
   return (await response.json()) as SetupStatus;
 }
@@ -62,17 +65,18 @@ export function setupStorePayload(status: SetupStatus) {
   };
 }
 
-export function SetupWizard({ onFinished, onCancel }: Props) {
-  const [status, setStatus] = useState<SetupStatus | null>(null);
-  const [step, setStep] = useState<Step>("welcome");
-  const [provider, setProvider] = useState("anthropic");
-  const [apiKey, setApiKey] = useState("");
-  const [workspace, setWorkspace] = useState("");
+export function SetupWizard({ onFinished, onCancel, initialStatus }: Props) {
+  const [status, setStatus] = useState<SetupStatus | null>(initialStatus ?? null);
+  const [step, setStep] = useState<Step>(initialStatus?.piAvailable === false ? "pi" : "auth");
+  const [choice, setChoice] = useState<{ mode: WizardAuthMode; provider: string } | null>(null);
+  const [confirmedTarget, setConfirmedTarget] = useState<string>();
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+  const [workspace, setWorkspace] = useState(initialStatus?.workspaceRoot ?? initialStatus?.allowedRoots[0] ?? initialStatus?.homeDir ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installLog, setInstallLog] = useState("");
-  const [authMode, setAuthMode] = useState<WizardAuthMode>("oauth");
+  const [attempt, setAttempt] = useState(0);
   const existingLogins = status?.authEntries ?? [];
   const hasExistingLogin = existingLogins.length > 0 || Boolean(status?.authConfigured);
   const catalog = mergeAuthCatalog(
@@ -82,28 +86,48 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
     ],
     status?.providers ?? [],
   );
+  const { mode: authMode, provider } = choice ?? initialAuthChoice(catalog, existingLogins);
   const modeProviders = providersForMode(catalog, authMode);
   const activeProviderId = pickDefaultProvider(catalog, authMode, provider);
-  const activeItem = modeProviders.find((item) => item.id === activeProviderId) ?? modeProviders[0] ?? null;
+  const apiKey = keyDrafts[activeProviderId] ?? "";
+  const canSaveKey = canSaveProviderKey(activeProviderId, status?.geminiTarget, confirmedTarget);
+  const activeItem = modeProviders.find((item) => item.id === activeProviderId);
   const activeEntry = activeItem ? findAuthEntry(existingLogins, activeItem.id, authMode) : undefined;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useDialogLayer(panelRef, () => { if (!busy) onCancel?.(); });
 
   useEffect(() => {
-    void fetchSetup()
+    if (initialStatus) return;
+    const controller = new AbortController();
+    void fetchSetup(controller.signal)
       .then((next) => {
+        if (controller.signal.aborted) return;
         setStatus(next);
         setWorkspace(next.workspaceRoot ?? next.allowedRoots[0] ?? next.homeDir);
-        const nextCatalog = mergeAuthCatalog(next.oauthProviders ?? [{ id: "github", label: "GitHub Copilot" }, { id: "openai", label: "OpenAI (ChatGPT)" }], next.providers);
-        setProvider(pickDefaultProvider(nextCatalog, "oauth", nextCatalog.find((entry) => findAuthEntry(next.authEntries ?? [], entry.id, "oauth"))?.id));
-        setStep("welcome");
+        setStep(next.piAvailable ? "auth" : "pi");
       })
-      .catch(() => setError("连不上墨问。确认应用正在运行。"));
-  }, []);
+      .catch(() => { if (!controller.signal.aborted) setError("无法读取设置，请检查墨问服务后重试。"); });
+    return () => controller.abort();
+  }, [initialStatus, attempt]);
 
-  const panelRef = useRef<HTMLDivElement>(null);
-  useDialogLayer(panelRef, () => { if (!busy && !installing) onCancel?.(); }, Boolean(status));
+  const loaded = status !== null;
+  useEffect(() => { if (loaded) titleRef.current?.focus(); }, [step, loaded]);
+
+  function chooseProvider(mode: WizardAuthMode, next: string) {
+    if (authMode === mode && activeProviderId === next) return;
+    setChoice({ mode, provider: next });
+    setConfirmedTarget(undefined);
+    setError("");
+  }
+
+  function updateTarget(target: GeminiTarget) {
+    setStatus((current) => current && { ...current, geminiTarget: target });
+    setConfirmedTarget(undefined);
+  }
 
   async function saveApiKey() {
-    const providerId = activeProviderId || provider;
+    if (!activeProviderId || busy || apiKey.trim().length < 8 || !canSaveKey) return;
     setBusy(true);
     setError("");
     try {
@@ -111,15 +135,19 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider: providerId, apiKey }),
+        body: JSON.stringify({ provider: activeProviderId, apiKey: apiKey.trim(), confirmedGeminiTarget: activeProviderId === "google" ? confirmedTarget : undefined }),
       });
       const json = (await response.json()) as SetupStatus & { error?: string };
       if (!response.ok) {
+        const current = geminiTargetSchema.safeParse(json.geminiTarget);
+        if (current.success) updateTarget(current.data);
         setError(json.error ?? "密钥保存失败。");
         return;
       }
+      setChoice({ mode: authMode, provider: activeProviderId });
       setStatus(json);
-      setApiKey("");
+      setConfirmedTarget(undefined);
+      setKeyDrafts((drafts) => ({ ...drafts, [activeProviderId]: "" }));
       setStep("workspace");
     } catch {
       setError("密钥保存失败。");
@@ -225,71 +253,35 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
 
   function goBack() {
     setError("");
-    if (step === "pi") setStep("welcome");
-    else if (step === "auth") setStep(status?.piAvailable ? "welcome" : "pi");
-    else if (step === "workspace") setStep("auth");
-  }
-
-  function goNextFromWelcome() {
-    setError("");
-    setStep(status?.piAvailable ? "auth" : "pi");
+    if (step === "workspace") setStep("auth");
   }
 
   const titles: Record<Step, string> = {
-    welcome: "准备使用墨问",
-    pi: status?.piBundled ? "AI 引擎出了点问题" : "需要安装 Pi",
-    auth: "连接一个 AI",
+    pi: status?.piBundled ? "检查 AI 引擎" : "安装 AI 引擎",
+    auth: "连接模型服务",
     workspace: "选一个工作文件夹",
   };
 
-  if (!status && !error) {
-    return (
-      <div className="dialog-scrim">
-        <p className="text-sm text-mute">正在检查这台电脑…</p>
-      </div>
-    );
-  }
-
   return (
     <div className="dialog-scrim">
-      {onCancel ? (
-        <button type="button" className="absolute inset-0" aria-label="关闭" onClick={onCancel} />
-      ) : null}
-      <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-solid dialog-panel-lg" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+      {onCancel ? <button type="button" className="absolute inset-0" tabIndex={-1} aria-hidden="true" disabled={busy} onClick={onCancel} /> : null}
+      <div ref={panelRef} tabIndex={-1} className="dialog-panel dialog-panel-solid dialog-panel-lg connection-setup" role="dialog" aria-modal="true" aria-labelledby="setup-title">
         <div className="dialog-head">
+          <img className="connection-setup-brand" src="/mowen.svg" alt="墨问" width={36} height={36} />
           <div className="dialog-head-text">
-            <p className="dialog-kicker flex items-center gap-2">
-              <img src="/mowen.svg" alt="" width={22} height={22} />
-              {isDesktopApp() ? "欢迎使用墨问" : "墨问设置"}
-            </p>
-            <h1 id="setup-title" className="dialog-title">
-              {titles[step]}
-            </h1>
+            <p className="dialog-kicker">{!status || step === "pi" ? "墨问设置" : step === "auth" ? "墨问设置 · 1 / 2" : "墨问设置 · 2 / 2"}</p>
+            <h1 id="setup-title" ref={titleRef} tabIndex={-1} className="dialog-title">{status ? titles[step] : "读取设置"}</h1>
           </div>
           {onCancel ? (
-            <button type="button" className="pressable icon-btn -mr-1 -mt-1" aria-label="关闭" onClick={onCancel}>
+            <button type="button" className="pressable icon-btn" aria-label="关闭" disabled={busy} onClick={onCancel}>
               <X size={16} />
             </button>
           ) : null}
         </div>
 
         <div className="dialog-body space-y-4">
-          {step === "welcome" ? (
-            <>
-              <p className="text-sm leading-6 text-mute">
-                {isDesktopApp()
-                  ? "连接 AI 并选择工作文件夹，即可开始使用。"
-                  : "确认运行环境，连接 AI 并选择工作文件夹。"}
-              </p>
-              <ol className="list-decimal space-y-1 pl-5 text-sm leading-6 text-mute">
-                <li>连接已有账号或输入 API Key</li>
-                <li>选一个工作文件夹</li>
-                <li>确认操作权限后开始对话</li>
-              </ol>
-            </>
-          ) : null}
-
-          {step === "pi" ? (
+          {!status && !error ? <p role="status" className="text-sm text-mute">正在检查这台电脑…</p> : null}
+          {status && step === "pi" ? (
             <>
               <p className="text-sm leading-6 text-mute">
                 {status?.piBundled
@@ -309,12 +301,9 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
             </>
           ) : null}
 
-          {step === "auth" ? (
+          {status && step === "auth" ? (
             <>
-              <p className="text-sm leading-6 text-mute">
-                连接账号，或使用 API Key。
-              </p>
-              <div className="seg w-full max-w-[240px]">
+              <div className="seg w-full max-w-[280px]" role="group" aria-label="连接方式">
                 {([
                   { id: "oauth" as const, label: "订阅登录" },
                   { id: "api_key" as const, label: "API Key" },
@@ -323,12 +312,11 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                     key={item.id}
                     type="button"
                     className={`pressable btn ${authMode === item.id ? "seg-active" : "text-mute"}`}
+                    disabled={busy}
                     aria-pressed={authMode === item.id}
                     onClick={() => {
-                      setAuthMode(item.id);
-                      const id = pickDefaultProvider(catalog, item.id);
-                      setProvider(id);
-                      setError("");
+                      if (item.id === authMode) return;
+                      chooseProvider(item.id, pickDefaultProvider(catalog, item.id, item.id === "api_key" ? "google" : undefined));
                     }}
                   >
                     {item.label}
@@ -343,10 +331,9 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                   id="provider"
                   className="field mt-1 w-full text-sm text-ink"
                   value={activeProviderId}
-                  disabled={modeProviders.length === 0}
+                  disabled={busy || modeProviders.length === 0}
                   onChange={(event) => {
-                    setProvider(event.target.value);
-                    setError("");
+                    chooseProvider(authMode, event.target.value);
                   }}
                 >
                   {modeProviders.map((item) => (
@@ -357,10 +344,9 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                 </select>
               </div>
               {activeItem ? (
-                <div className="space-y-3 rounded-md border border-line bg-canvas px-3 py-3">
-                  <div className="flex items-center justify-between gap-2">
+                <div className="space-y-2">
+                  {authMode === "oauth" || activeEntry ? <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm text-ink">{activeItem.label}</p>
                       <p className="text-[12px] text-mute">
                         {authEntryStatusLabel(activeEntry, {
                           oauth: authMode === "oauth",
@@ -378,34 +364,29 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                         {oauthButtonLabel(activeEntry?.kind)}
                       </button>
                     ) : null}
-                  </div>
+                  </div> : null}
                   {authMode === "oauth" ? (
                     <details className="text-[12px] leading-5 text-mute"><summary>无法打开登录页？</summary><p className="mt-2">在终端运行 <code className="font-mono text-ink">pi</code>，输入 <code className="font-mono text-ink">/login</code> 完成授权，再刷新状态。</p></details>
                   ) : (
-                    <div>
-                      <label className="block text-sm text-mute" htmlFor="api-key">
-                        API Key
-                      </label>
-                      <input
-                        id="api-key"
-                        type="password"
-                        autoComplete="off"
-                        className="field mt-1 w-full font-mono text-sm text-ink"
-                        value={apiKey}
-                        placeholder={activeItem.hint ?? "API Key"}
-                        onChange={(event) => setApiKey(event.target.value)}
-                      />
-                    </div>
+                    <form id="setup-api-key" onSubmit={(event) => { event.preventDefault(); void saveApiKey(); }}>
+                      <ProviderKeyField key={activeItem.id} provider={activeItem} entry={activeEntry} value={apiKey}
+                        target={status.geminiTarget} confirmedTarget={confirmedTarget} onConfirm={setConfirmedTarget} onTargetChange={updateTarget}
+                        disabled={busy} onChange={(value) => {
+                          setConfirmedTarget(undefined);
+                          setKeyDrafts((drafts) => ({ ...drafts, [activeProviderId]: value }));
+                          setError("");
+                        }} />
+                    </form>
                   )}
                 </div>
               ) : null}
-              {status?.hasModelsFile ? (
-                <p className="text-sm text-mute">已找到 models.json{status.modelCount ? ` · ${status.modelCount} 个模型` : ""}</p>
+              {status?.hasModelsFile && !activeEntry ? (
+                <p className="text-sm text-mute">已配置 models.json · {status.modelCount ?? 0} 个自定义模型</p>
               ) : null}
             </>
           ) : null}
 
-          {step === "workspace" ? (
+          {status && step === "workspace" ? (
             <>
               <p className="text-sm leading-6 text-mute">
                 选择默认工作文件夹，之后可为会话选择其他目录。
@@ -418,21 +399,13 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
             </>
           ) : null}
 
-          {error ? <p className="text-sm text-danger">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
         </div>
 
         <div className="dialog-actions">
-          {step === "welcome" ? (
-            <button type="button" className="pressable btn btn-primary" onClick={goNextFromWelcome}>
-              继续
-            </button>
-          ) : null}
-
-          {step === "pi" ? (
+          {!status && error ? <button type="button" className="pressable btn btn-primary" onClick={() => { setError(""); setAttempt((count) => count + 1); }}>重试</button> : null}
+          {status && step === "pi" ? (
             <>
-              <button type="button" className="pressable btn btn-ghost" disabled={busy} onClick={goBack}>
-                上一步
-              </button>
               {status?.piAvailable ? (
                 <button
                   type="button"
@@ -451,7 +424,7 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
                   >
                     再检查
                   </button>
-                  {status?.piBundled ? null : (
+                  {status?.piBundled || status.canInstallPi === false ? null : (
                     <button
                       type="button"
                       className="pressable btn btn-primary"
@@ -466,55 +439,29 @@ export function SetupWizard({ onFinished, onCancel }: Props) {
             </>
           ) : null}
 
-          {step === "auth" ? (
+          {status && step === "auth" ? (
             <>
-              <button
-                type="button"
-                className="pressable btn btn-ghost"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  void fetchSetup()
-                    .then((next) => {
-                      setStatus(next);
-                    })
-                    .catch(() => setError("刷新登录状态失败。"))
-                    .finally(() => setBusy(false));
-                }}
-              >
-                刷新
-              </button>
-              {authMode === "api_key" || !hasExistingLogin ? <button type="button" className="pressable btn btn-ghost" onClick={() => setStep("workspace")}>
+              {authMode === "oauth" ? <button type="button" className="pressable btn btn-ghost" disabled={busy} onClick={() => {
+                setBusy(true);
+                setError("");
+                void fetchSetup().then(setStatus).catch(() => setError("刷新登录状态失败。")).finally(() => setBusy(false));
+              }}>刷新</button> : null}
+              <button type="button" className={`pressable btn ${hasExistingLogin && !apiKey.trim() ? "btn-primary" : "btn-ghost"}`}
+                disabled={busy} onClick={() => { setError(""); setStep("workspace"); }}>
                 {hasExistingLogin ? "使用现有连接" : "暂时跳过"}
-              </button> : null}
-              {authMode === "api_key" ? (
-                <button
-                  type="button"
-                  className="pressable btn btn-primary"
-                  disabled={busy || apiKey.trim().length < 8 || !activeProviderId}
-                  onClick={() => {
-                    setProvider(activeProviderId);
-                    void saveApiKey();
-                  }}
-                >
-                  保存密钥
+              </button>
+              {authMode === "api_key" && (!hasExistingLogin || apiKey.trim()) ? (
+                <button type="submit" form="setup-api-key" className="pressable btn btn-primary"
+                  disabled={busy || apiKey.trim().length < 8 || !activeItem || !canSaveKey}>
+                  {busy ? "正在保存…" : "保存并继续"}
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  className="pressable btn btn-primary"
-                  disabled={busy || (!hasExistingLogin && activeEntry?.kind !== "oauth")}
-                  onClick={() => setStep("workspace")}
-                >
-                  {hasExistingLogin ? "使用现有连接" : "继续"}
-                </button>
-              )}
+              ) : null}
             </>
           ) : null}
 
-          {step === "workspace" ? (
+          {status && step === "workspace" ? (
             <>
-              <button type="button" className="pressable btn btn-ghost" onClick={goBack}>
+              <button type="button" className="pressable btn btn-ghost" disabled={busy} onClick={goBack}>
                 上一步
               </button>
               <button

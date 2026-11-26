@@ -1,3 +1,4 @@
+import { geminiTargetSchema, type GeminiTarget } from "@qingzhou/protocol";
 import { getDesktop } from "../desktop-bridge";
 import { WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
 import { settingsReturnPath } from "../lib/settings-navigation";
@@ -8,7 +9,8 @@ import { useAgentStore } from "../stores/agent-store";
 import { SetupWizard, type SetupStatus, setupStorePayload } from "../components/setup/SetupWizard";
 import { useTheme } from "../hooks/useTheme";
 import { socketClient } from "../transport/socket-client";
-import { authEntryStatusLabel, connectedAuthEntries, envAuthEntries, findAuthEntry, isRemovableAuthEntry, logoutNotice, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthMode } from "../lib/settings-auth";
+import { canSaveProviderKey, authEntryStatusLabel, connectedAuthEntries, envAuthEntries, findAuthEntry, initialAuthChoice, isRemovableAuthEntry, logoutNotice, mergeAuthCatalog, oauthButtonLabel, pickDefaultProvider, providersForMode, type AuthMode } from "../lib/settings-auth";
+import { ProviderKeyField } from "../components/setup/ProviderKeyField";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { AppUpdateSection } from "../components/settings/AppUpdateSection";
 
@@ -50,18 +52,20 @@ export function SettingsPage() {
     { id: "github", label: "GitHub Copilot" },
     { id: "openai", label: "OpenAI (ChatGPT)" },
   ]);
+  const [geminiTarget, setGeminiTarget] = useState<GeminiTarget>();
+  const [confirmedTarget, setConfirmedTarget] = useState<string>();
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [keyBusy, setKeyBusy] = useState("");
   const [piLatest, setPiLatest] = useState<PiLatest | null>(null);
   const [checkBusy, setCheckBusy] = useState(false);
   const [authBusy, setAuthBusy] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
-  const [flash, setFlash] = useState<{ id: string; tone: "ok" | "err"; text: string } | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("oauth");
-  const [selectedProvider, setSelectedProvider] = useState("");
+  const [flash, setFlash] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [choice, setChoice] = useState<{ mode: AuthMode; provider: string } | null>(null);
 
   const applySetup = useCallback((setup: SetupStatus) => {
     setSetupError("");
+    setGeminiTarget(setup.geminiTarget);
     setModels({ present: Boolean(setup.hasModelsFile), count: setup.modelCount ?? 0, path: setup.modelsFilePath ?? "" });
     setCanInstallPi(setup.canInstallPi !== false && !setup.piBundled);
     if (setup.providers?.length) {
@@ -70,6 +74,8 @@ export function SettingsPage() {
     if (setup.oauthProviders?.length) {
       setOauthProviders(setup.oauthProviders);
     }
+    const catalog = mergeAuthCatalog(setup.oauthProviders ?? [], setup.providers ?? []);
+    setChoice((current) => current ?? initialAuthChoice(catalog, setup.authEntries ?? []));
     useAgentStore.getState().setSetupState(setupStorePayload(setup));
   }, []);
 
@@ -136,7 +142,7 @@ export function SettingsPage() {
         return;
       }
       applySetup(json);
-      void socketClient.send("snapshot.request");
+      void socketClient.send("snapshot.request").catch(() => undefined);
       await checkPiUpdate();
     } catch {
       setInstallError(force ? "更新 Pi 失败。" : "安装 Pi 失败。");
@@ -183,8 +189,15 @@ export function SettingsPage() {
     }
   }
 
+  function updateTarget(target: GeminiTarget) {
+    setGeminiTarget(target);
+    setConfirmedTarget(undefined);
+  }
+
   async function saveApiKey(providerId: string) {
-    const apiKey = keyDrafts[providerId] ?? "";
+    const apiKey = keyDrafts[providerId]?.trim() ?? "";
+    if (keyBusy || apiKey.length < 8 || !canSaveProviderKey(providerId, geminiTarget, confirmedTarget)) return;
+    setChoice({ mode: "api_key", provider: providerId });
     setKeyBusy(providerId);
     setFlash(null);
     try {
@@ -192,20 +205,23 @@ export function SettingsPage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider: providerId, apiKey }),
+        body: JSON.stringify({ provider: providerId, apiKey, confirmedGeminiTarget: providerId === "google" ? confirmedTarget : undefined }),
       });
       const json = (await response.json()) as SetupStatus & { error?: string };
       if (!response.ok) {
-        setFlash({ id: providerId, tone: "err", text: json.error ?? "密钥保存失败。" });
+        const current = geminiTargetSchema.safeParse(json.geminiTarget);
+        if (current.success) updateTarget(current.data);
+        setFlash({ tone: "err", text: json.error ?? "密钥保存失败。" });
         return;
       }
       applySetup(json);
+      setConfirmedTarget(undefined);
       setKeyDrafts((current) => ({ ...current, [providerId]: "" }));
       const label = providers.find((item) => item.id === providerId)?.label ?? providerId;
-      setFlash({ id: providerId, tone: "ok", text: `已保存 ${label} 的密钥。` });
-      void socketClient.send("snapshot.request");
+      setFlash({ tone: "ok", text: providerId === "google" ? "已保存密钥。可在对话的「模型和思考」中选择 Gemini。" : `已保存 ${label} 的密钥。` });
+      void socketClient.send("snapshot.request").catch(() => undefined);
     } catch {
-      setFlash({ id: providerId, tone: "err", text: "密钥保存失败。" });
+      setFlash({ tone: "err", text: "密钥保存失败。" });
     } finally {
       setKeyBusy("");
     }
@@ -218,14 +234,14 @@ export function SettingsPage() {
       const response = await fetch("/api/setup", { credentials: "same-origin" });
       const setup = (await response.json()) as SetupStatus;
       if (!response.ok) {
-        setFlash({ id: "sync", tone: "err", text: "刷新登录状态失败。" });
+        setFlash({ tone: "err", text: "刷新登录状态失败。" });
         return;
       }
       applySetup(setup);
-      void socketClient.send("snapshot.request");
-      setFlash({ id: "sync", tone: "ok", text: "已刷新登录状态。" });
+      void socketClient.send("snapshot.request").catch(() => undefined);
+      setFlash({ tone: "ok", text: "已刷新登录状态。" });
     } catch {
-      setFlash({ id: "sync", tone: "err", text: "刷新登录状态失败。" });
+      setFlash({ tone: "err", text: "刷新登录状态失败。" });
     } finally {
       setRefreshBusy(false);
     }
@@ -244,23 +260,17 @@ export function SettingsPage() {
       });
       const json = (await response.json()) as SetupStatus & { error?: string };
       if (!response.ok) {
-        setFlash({ id: flashIdForProvider(provider), tone: "err", text: json.error ?? "退出失败。" });
+        setFlash({ tone: "err", text: json.error ?? "退出失败。" });
         return;
       }
       applySetup(json);
-      void socketClient.send("snapshot.request");
-      setFlash({ id: flashIdForProvider(provider), tone: "ok", text: logoutNotice(kind) });
+      void socketClient.send("snapshot.request").catch(() => undefined);
+      setFlash({ tone: "ok", text: logoutNotice(kind) });
     } catch {
-      setFlash({ id: flashIdForProvider(provider), tone: "err", text: "退出失败。" });
+      setFlash({ tone: "err", text: "退出失败。" });
     } finally {
       setAuthBusy("");
     }
-  }
-
-  function flashIdForProvider(provider: string): string {
-    if (provider === "openai-codex") return "openai";
-    if (provider === "github-copilot") return "github";
-    return provider;
   }
 
   async function loginProvider(provider: string) {
@@ -280,36 +290,34 @@ export function SettingsPage() {
         loginStarted?: boolean;
       };
       if (!response.ok) {
-        setFlash({ id: provider, tone: "err", text: json.error ?? "无法打开登录。" });
+        setFlash({ tone: "err", text: json.error ?? "无法打开登录。" });
         return;
       }
       applySetup(json);
-      void socketClient.send("snapshot.request");
+      void socketClient.send("snapshot.request").catch(() => undefined);
       if (json.loginCompleted) {
-        setFlash({ id: provider, tone: "ok", text: json.hint ?? "订阅登录已完成。" });
+        setFlash({ tone: "ok", text: json.hint ?? "订阅登录已完成。" });
       } else {
         setFlash({
-          id: provider,
           tone: json.loginStarted ? "ok" : "err",
           text: json.hint ?? "完成订阅登录后，点下面的刷新同步状态。",
         });
       }
     } catch {
-      setFlash({ id: provider, tone: "err", text: "无法打开登录。" });
+      setFlash({ tone: "err", text: "无法打开登录。" });
     } finally {
       setAuthBusy("");
     }
   }
 
   const catalog = mergeAuthCatalog(oauthProviders, providers, authEntries);
+  const { mode: authMode, provider } = choice ?? initialAuthChoice(catalog, authEntries);
   const modeProviders = providersForMode(catalog, authMode);
-  const connectedProvider = authMode === "env" ? undefined : modeProviders.find((item) => findAuthEntry(authEntries, item.id, authMode));
-  const activeProviderId = pickDefaultProvider(catalog, authMode, selectedProvider || connectedProvider?.id);
+  const activeProviderId = pickDefaultProvider(catalog, authMode, provider);
   const activeItem = modeProviders.find((item) => item.id === activeProviderId) ?? modeProviders[0] ?? null;
   const activeEntry =
     activeItem && authMode !== "env" ? findAuthEntry(authEntries, activeItem.id, authMode) : undefined;
   const activeDraft = activeItem ? (keyDrafts[activeItem.id] ?? "") : "";
-  const activeFlash = activeItem && flash?.id === activeItem.id ? flash : flash?.id === "sync" ? flash : null;
   const envEntries = envAuthEntries(authEntries);
   const connectedEntries = connectedAuthEntries(authEntries, authMode).filter((entry) => entry.id !== activeEntry?.id);
   const engineDetail = piVersion ? `已就绪（Pi ${piVersion}）` : (piError ?? "还没准备好");
@@ -350,8 +358,8 @@ export function SettingsPage() {
             <div className="settings-card">
               <div className="settings-row flex-col items-stretch gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[13px] text-ink">方式</p>
-                  <div className="seg w-[300px]">
+                  <p className="text-[13px] text-ink">连接方式</p>
+                  <div className="seg w-[300px] max-w-full" role="group" aria-label="连接方式">
                     {([
                       { id: "oauth" as const, label: "订阅登录" },
                       { id: "api_key" as const, label: "API Key" },
@@ -362,9 +370,14 @@ export function SettingsPage() {
                         type="button"
                         className={`pressable btn ${authMode === item.id ? "seg-active" : "text-mute"}`}
                         aria-pressed={authMode === item.id}
+                        disabled={Boolean(keyBusy || authBusy)}
                         onClick={() => {
-                          setAuthMode(item.id);
-                          setSelectedProvider(pickDefaultProvider(catalog, item.id));
+                          const mode = item.id;
+                          if (authMode === mode) return;
+                          const connected = mode === "env" ? undefined : providersForMode(catalog, mode)
+                            .find((provider) => findAuthEntry(authEntries, provider.id, mode));
+                          setConfirmedTarget(undefined);
+                          setChoice({ mode, provider: pickDefaultProvider(catalog, mode, connected?.id ?? (mode === "api_key" ? "google" : undefined)) });
                           setFlash(null);
                         }}
                       >
@@ -407,11 +420,6 @@ export function SettingsPage() {
                   ) : (
                     <p className="text-[13px] text-mute">{setupLoading ? "正在检测环境变量…" : setupError ? "暂时无法检测环境变量。" : "未检测到环境变量中的密钥。"}</p>
                   )}
-                  {flash?.id === "sync" ? (
-                    <p className={`text-[12px] ${flash.tone === "err" ? "text-danger" : "text-success"}`}>
-                      {flash.text}
-                    </p>
-                  ) : null}
                 </div>
               ) : (
                 <>
@@ -423,9 +431,10 @@ export function SettingsPage() {
                       id="settings-auth-provider"
                       className="field w-full text-[13px] text-ink"
                       value={activeProviderId}
-                      disabled={modeProviders.length === 0}
+                      disabled={Boolean(keyBusy || authBusy) || modeProviders.length === 0}
                       onChange={(event) => {
-                        setSelectedProvider(event.target.value);
+                        setConfirmedTarget(undefined);
+                        setChoice({ mode: authMode, provider: event.target.value });
                         setFlash(null);
                       }}
                     >
@@ -441,7 +450,7 @@ export function SettingsPage() {
                     <div className="settings-row flex-col items-stretch gap-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-[13px] text-ink">{activeItem.label}</p>
+                          <p className="text-[13px] text-ink">连接状态</p>
                           <p className="mt-0.5 text-[12px] text-mute">
                             {setupLoading ? "正在读取…" : setupError ? "暂时无法读取认证状态" : authEntryStatusLabel(activeEntry, {
                               oauth: authMode === "oauth",
@@ -476,7 +485,7 @@ export function SettingsPage() {
                             <button
                               type="button"
                               className="pressable btn btn-ghost"
-                              disabled={authBusy === activeItem.id || authBusy === activeEntry?.id}
+                              disabled={Boolean(authBusy || keyBusy)}
                               onClick={() => void logoutProvider(activeEntry?.id ?? activeItem.id)}
                             >
                               {(authBusy === activeItem.id || authBusy === activeEntry?.id)
@@ -490,45 +499,21 @@ export function SettingsPage() {
                       </div>
 
                       {authMode === "api_key" ? (
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <label className="sr-only" htmlFor={`settings-api-key-${activeItem.id}`}>
-                            {activeItem.label} API Key
-                          </label>
-                          <input
-                            id={`settings-api-key-${activeItem.id}`}
-                            type="password"
-                            autoComplete="off"
-                            className="field min-w-0 flex-1 font-mono text-[13px] text-ink"
-                            value={activeDraft}
-                            placeholder={
-                              activeEntry?.kind === "api_key" ? "粘贴新的密钥以替换" : (activeItem.hint ?? "API Key")
-                            }
-                            onChange={(event) => {
-                              const value = event.target.value;
+                        <form className="grid w-full gap-3" onSubmit={(event) => { event.preventDefault(); void saveApiKey(activeItem.id); }}>
+                          <ProviderKeyField key={activeItem.id} provider={activeItem} entry={activeEntry} value={activeDraft}
+                            target={geminiTarget} confirmedTarget={confirmedTarget} onConfirm={setConfirmedTarget} onTargetChange={updateTarget}
+                            disabled={Boolean(keyBusy || authBusy)} onChange={(value) => {
+                              setConfirmedTarget(undefined);
                               setKeyDrafts((current) => ({ ...current, [activeItem.id]: value }));
                               setFlash(null);
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="pressable btn btn-primary shrink-0"
-                            disabled={keyBusy === activeItem.id || activeDraft.trim().length < 8}
-                            onClick={() => void saveApiKey(activeItem.id)}
-                          >
-                            {keyBusy === activeItem.id
-                              ? "正在保存…"
-                              : activeEntry?.kind === "api_key"
-                                ? "更新密钥"
-                                : "保存密钥"}
+                            }} />
+                          <button type="submit" className="pressable btn btn-primary justify-self-end"
+                            disabled={Boolean(keyBusy || authBusy) || activeDraft.trim().length < 8 || !canSaveProviderKey(activeItem.id, geminiTarget, confirmedTarget)}>
+                            {keyBusy === activeItem.id ? "正在保存…" : activeEntry?.kind === "api_key" && isRemovableAuthEntry(activeEntry) ? "更新密钥" : "保存密钥"}
                           </button>
-                        </div>
+                        </form>
                       ) : null}
 
-                      {activeFlash ? (
-                        <p className={`text-[12px] ${activeFlash.tone === "err" ? "text-danger" : "text-success"}`}>
-                          {activeFlash.text}
-                        </p>
-                      ) : null}
                     </div>
                   ) : (
                     <div className="settings-row">
@@ -552,7 +537,7 @@ export function SettingsPage() {
                               <button
                                 type="button"
                                 className="pressable btn btn-ghost shrink-0"
-                                disabled={authBusy === entry.id}
+                                disabled={Boolean(authBusy || keyBusy)}
                                 onClick={() => void logoutProvider(entry.id)}
                               >
                                 {entry.kind === "api_key" ? "移除" : "退出"}
@@ -565,6 +550,7 @@ export function SettingsPage() {
                   ) : null}
                 </>
               )}
+              {flash ? <p role={flash.tone === "err" ? "alert" : "status"} className={`pb-2 text-[13px] ${flash.tone === "err" ? "text-danger" : "text-success"}`}>{flash.text}</p> : null}
             </div>
           </section>
 
@@ -617,7 +603,7 @@ export function SettingsPage() {
                 <div>
                   <p className="text-[13px] text-ink">models.json</p>
                   <p className="mt-0.5 text-[12px] text-mute">
-                    {setupLoading ? "正在读取…" : setupError ? "暂时无法读取" : models.present ? `已配置${models.count ? ` · ${models.count} 个模型` : ""}` : "可选的自定义模型配置，内置模型无需此文件。"}
+                    {setupLoading ? "正在读取…" : setupError ? "暂时无法读取" : models.present ? `已配置 · ${models.count} 个自定义模型` : "可选的自定义模型配置，内置模型无需此文件。"}
                   </p>
                   {models.path ? <p className="mt-1 break-all font-mono text-[11px] text-mute">{models.path}</p> : null}
                   {models.path && getDesktop()?.openPath ? <button type="button" className="pressable mt-2 text-[12px] text-accent" onClick={() => {

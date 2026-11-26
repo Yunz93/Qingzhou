@@ -1,4 +1,4 @@
-import hljs from "highlight.js";
+import { useHighlightedCode } from "../../hooks/useHighlightedCode";
 import type { FilePreviewPayload } from "@qingzhou/protocol";
 
 type Props = {
@@ -11,13 +11,6 @@ type Props = {
   mimeType?: string;
   dataUrl?: string;
 };
-
-function highlight(content: string, language?: string): string {
-  if (language && hljs.getLanguage(language)) {
-    return hljs.highlight(content, { language }).value;
-  }
-  return hljs.highlightAuto(content).value;
-}
 
 function fileName(pathValue: string): string {
   return pathValue.replaceAll("\\", "/").split("/").pop() || pathValue;
@@ -70,7 +63,7 @@ export function FilePreview({
 }
 
 function TextPreview({ content, language }: { content: string; language?: string }) {
-  const html = highlight(content, language);
+  const html = useHighlightedCode(content, language);
   const lines = (html || " ").split("\n");
   return (
     <div className="min-h-0 flex-1 overflow-auto py-2 font-mono text-[12px] leading-5 text-ink">

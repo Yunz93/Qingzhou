@@ -141,6 +141,7 @@ export function isAuthHttpError(raw: string): boolean {
     message.includes("authentication_error") ||
     message.includes("invalid api key") ||
     message.includes("invalid_api_key") ||
+    /api_key_invalid|api key not valid/i.test(raw) ||
     message.includes("invalid x-api-key") ||
     /\bunauthorized\b/.test(message) ||
     message.includes("authentication failed")
@@ -165,6 +166,9 @@ export function humanizeAuthHttpError(error: unknown): string | null {
   const raw = extractErrorText(error);
   if (!isAuthHttpError(raw)) return null;
   if (humanizeUnsupportedRegionError(raw)) return null;
+  if (/api_key_invalid|api key not valid/i.test(raw)) {
+    return "Gemini API Key 无效。请在 Google AI Studio 检查密钥，然后打开设置重新保存。";
+  }
   if (/\b403\b/.test(raw) || /forbidden/i.test(raw)) {
     return "当前密钥没有权限调用这个模型（HTTP 403）。打开设置换一个可用的 API Key，或换一个模型。";
   }

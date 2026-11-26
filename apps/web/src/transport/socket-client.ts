@@ -56,7 +56,7 @@ export class SocketClient {
     const timer = setTimeout(() => controller.abort(), SOCKET_CONNECT_TIMEOUT_MS);
     useAgentStore.getState().setConnection("connecting");
     try {
-      const response = await fetch("/api/session", { credentials: "same-origin", signal: controller.signal });
+      const response = await fetch("/api/session", { method: "HEAD", credentials: "same-origin", signal: controller.signal });
       if (!response.ok) throw new Error(`Session bootstrap failed (${response.status})`);
       if (!this.closedByUser && generation === this.connectGeneration) this.open();
     } catch {

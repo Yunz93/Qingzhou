@@ -1,6 +1,6 @@
 {
   "name": "@qingzhou/server",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "private": true,
   "type": "module",
   "exports": {
@@ -24,12 +24,14 @@
     "@qingzhou/protocol": "workspace:*",
     "fastify": "^5.12.7",
     "node-pty": "^1.1.0",
+    "proper-lockfile": "4.1.2",
     "thread-stream": "^4.2.0",
     "undici": "^8.12.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.17.0",
+    "@types/proper-lockfile": "^4.1.4",
     "tsx": "^4.20.3",
     "typescript": "^5.9.2"
   }

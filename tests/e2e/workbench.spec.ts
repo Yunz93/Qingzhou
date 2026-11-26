@@ -236,7 +236,7 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByText("已保存密钥").first()).toBeVisible();
   await page.getByRole("link", { name: "模型与引擎", exact: true }).click();
   await expect(page.getByText("models.json", { exact: true })).toBeVisible();
-  await expect(page.getByText(/已配置.*个模型/)).toBeVisible();
+  await expect(page.getByText("已配置 · 1 个自定义模型", { exact: true })).toBeVisible();
   await page.getByRole("navigation", { name: "设置分组" }).getByRole("link", { name: "项目", exact: true }).click();
   await expect(page.getByText("信任默认工作区")).toBeVisible();
   await expect(page.getByText("默认工作文件夹", { exact: true })).toBeVisible();
@@ -244,7 +244,6 @@ test("pi mvp settings, skills, resume, and runtime controls", async ({ page }) =
   await expect(page.getByText("新对话默认使用此目录，可在会话中切换。")).toBeVisible();
   await page.getByRole("link", { name: "账号与认证", exact: true }).click();
   await page.getByRole("button", { name: "打开设置向导" }).click();
-  await page.getByRole("button", { name: "继续" }).click();
   await page.getByText("无法打开登录页？", { exact: true }).click();
   await expect(page.getByText("/login")).toBeVisible();
   await expect(page.getByRole("button", { name: "使用现有连接" })).toBeVisible();
@@ -639,7 +638,7 @@ test("queue follow-up while running and retry after abort", async ({ page }) => 
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("button", { name: "停止" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "停止" }).click();
-  await expect(page.getByRole("button", { name: "重试上一条" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("status").filter({ has: page.getByRole("button", { name: "重试上一条" }) })).toContainText("已停止回复。", { timeout: 15_000 });
   await page.getByRole("button", { name: "重试上一条" }).click();
   await expect(page.getByText(/Echo: please stream this slowly retry-me/).first()).toBeVisible({
     timeout: 20_000,
@@ -727,10 +726,10 @@ test("attached images show a thumbnail that can be removed", async ({ page }) =>
   });
   await expect(page.getByRole("img", { name: "shot.png" })).toBeVisible();
   await expect(page.getByRole("img", { name: "shot.png" })).toHaveCount(1);
-  await page.getByRole("button", { name: "双击放大 shot.png" }).dblclick();
-  await expect(page.getByRole("dialog", { name: "放大 shot.png" })).toBeVisible();
-  await page.getByRole("button", { name: "关闭预览" }).click();
-  await expect(page.getByRole("dialog", { name: "放大 shot.png" })).toHaveCount(0);
+  await page.getByRole("button", { name: "查看图片：shot.png" }).press("Enter");
+  await expect(page.getByRole("dialog", { name: "shot.png" })).toBeVisible();
+  await page.getByRole("button", { name: "关闭图片" }).click();
+  await expect(page.getByRole("dialog", { name: "shot.png" })).toHaveCount(0);
   await page.getByLabel("输入消息").fill("see this screenshot");
   await expectPreviewAboveInput(page);
   await page.getByRole("button", { name: "移除 shot.png" }).click();
@@ -755,10 +754,10 @@ test("pasting one image attaches a single preview", async ({ page }) => {
     document.activeElement?.dispatchEvent(event);
   }, TINY_PNG.toString("base64"));
   await expect(page.getByRole("img", { name: "pasted.png" })).toHaveCount(1);
-  await page.getByRole("button", { name: "双击放大 pasted.png" }).dblclick();
-  await expect(page.getByRole("dialog", { name: "放大 pasted.png" })).toBeVisible();
+  await page.getByRole("button", { name: "查看图片：pasted.png" }).click();
+  await expect(page.getByRole("dialog", { name: "pasted.png" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "放大 pasted.png" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "pasted.png" })).toHaveCount(0);
   await page.getByLabel("输入消息").fill("pasted above this line");
   await expectPreviewAboveInput(page);
 });

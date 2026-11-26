@@ -1,14 +1,13 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AuthEntry } from "@qingzhou/protocol";
 import {
   defaultPiAgentDir,
-  humanizeUserFacingError,
-  isAccessDenied,
   piAuthFile,
-  tryRepairAgentDir,
 } from "./pi-agent-dir.js";
+import { verifyGeminiSaveTarget } from "./gemini-target.js";
+import { readPiAuthFile, updatePiAuthFile, type AuthFile } from "./pi-auth-file.js";
 import { oauthAuthIds, runPiOAuthLogin, type PiOAuthLoginResult } from "./pi-oauth-login.js";
 import { listPiAuthEntries, mergeAuthEntries } from "./pi-auth-entries.js";
 
@@ -79,18 +78,6 @@ export function piModelsPath(homeDir = os.homedir(), agentDir = defaultPiAgentDi
   return path.join(agentDir, "models.json");
 }
 
-type AuthFile = Record<string, { type?: string; key?: string } | undefined>;
-
-async function readAuthFile(homeDir = os.homedir(), agentDir = defaultPiAgentDir(homeDir)): Promise<AuthFile> {
-  try {
-    const raw = await readFile(piAuthPath(homeDir, agentDir), "utf8");
-    const parsed = JSON.parse(raw) as AuthFile;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 export function authKind(type: string | undefined): AuthEntry["kind"] {
   if (type === "api_key") return "api_key";
   if (type && /oauth|subscription|login|token/i.test(type)) return "oauth";
@@ -102,13 +89,11 @@ export async function listAuthEntries(
   agentDir = defaultPiAgentDir(homeDir),
   options: { pi?: { command: string; prefixArgs: string[] } } = {},
 ): Promise<AuthEntry[]> {
-  const auth = await readAuthFile(homeDir, agentDir);
+  const auth: AuthFile = await readPiAuthFile(piAuthFile(agentDir)).catch(() => ({}));
   const fromFile: AuthEntry[] = Object.entries(auth)
     .filter(([, value]) => {
       if (!value || typeof value !== "object") return false;
-      if (value.type === "api_key" && typeof value.key === "string" && value.key.length > 0) {
-        return true;
-      }
+      if (value.type === "api_key") return typeof value.key === "string" && value.key.trim().length > 0;
       return Boolean(value.type);
     })
     .map(([id, value]) => ({
@@ -158,14 +143,16 @@ export async function inspectModelsFile(
 ): Promise<{ present: boolean; count: number }> {
   try {
     const raw = await readFile(piModelsPath(homeDir, agentDir), "utf8");
-    const parsed = JSON.parse(raw) as { models?: unknown[]; providers?: unknown } | unknown[];
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, "")) as {
+      models?: unknown[];
+      providers?: Record<string, { models?: unknown[] } | null>;
+    } | unknown[] | null;
     if (Array.isArray(parsed)) return { present: true, count: parsed.length };
-    if (parsed && typeof parsed === "object") {
-      const models = (parsed as { models?: unknown[] }).models;
-      if (Array.isArray(models)) return { present: true, count: models.length };
-      return { present: true, count: Object.keys(parsed).length };
+    let count = Array.isArray(parsed?.models) ? parsed.models.length : 0;
+    for (const provider of Object.values(parsed?.providers ?? {})) {
+      if (Array.isArray(provider?.models)) count += provider.models.length;
     }
-    return { present: true, count: 0 };
+    return { present: true, count };
   } catch {
     return { present: false, count: 0 };
   }
@@ -184,43 +171,23 @@ export async function saveApiKey(
   apiKey: string,
   homeDir = os.homedir(),
   agentDir = defaultPiAgentDir(homeDir),
+  confirmedGeminiTarget?: string,
 ): Promise<void> {
   const key = apiKey.trim();
-  if (!key) {
-    throw new Error("请填写 API Key");
+  if (!isLiteralApiKey(key)) {
+    throw new Error("请粘贴完整的 API Key。");
   }
   if (!BEGINNER_PROVIDERS.some((provider) => provider.id === providerId)) {
     throw new Error("不支持这个服务商");
   }
-  const authPath = piAuthPath(homeDir, agentDir);
-  const persist = async () => {
-    await mkdir(agentDir, { recursive: true, mode: 0o700 });
-    const auth = await readAuthFile(homeDir, agentDir);
+  await updatePiAuthFile(agentDir, async (auth) => {
+    if (providerId === "google") await verifyGeminiSaveTarget(agentDir, confirmedGeminiTarget);
     auth[providerId] = { type: "api_key", key };
-    await writeFile(authPath, `${JSON.stringify(auth, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  };
-  try {
-    await persist();
-  } catch (error) {
-    if (!isAccessDenied(error) && !/auth\.json/i.test(error instanceof Error ? error.message : String(error))) {
-      throw error instanceof Error ? error : new Error(String(error));
-    }
-    if (await tryRepairAgentDir(agentDir)) {
-      try {
-        await persist();
-      } catch (retry) {
-        throw new Error(humanizeUserFacingError(retry));
-      }
-    } else {
-      throw new Error(humanizeUserFacingError(error));
-    }
-  }
+  });
+}
 
-  // Also set in the current process so newly spawned Pi children see it immediately.
-  const provider = BEGINNER_PROVIDERS.find((item) => item.id === providerId);
-  if (provider) {
-    process.env[provider.envVar] = key;
-  }
+export function isLiteralApiKey(value: string): boolean {
+  return value.length >= 8 && value.length <= 512 && !value.startsWith("!") && /^[\x21-\x7e]+$/.test(value) && !value.includes("$");
 }
 
 export async function removeAuth(
@@ -230,40 +197,12 @@ export async function removeAuth(
 ): Promise<void> {
   const id = providerId.trim();
   if (!id) throw new Error("请选择要退出的登录");
-  const authPath = piAuthPath(homeDir, agentDir);
   const candidates = [...new Set([id, ...oauthAuthIds(id)])];
-  const persist = async () => {
-    const auth = await readAuthFile(homeDir, agentDir);
-    const key = candidates.find((candidate) => candidate in auth);
-    if (!key) {
-      throw new Error("没有这条登录");
-    }
+  await updatePiAuthFile(agentDir, (auth) => {
+    const key = candidates.find((candidate) => Object.hasOwn(auth, candidate));
+    if (!key) throw new Error("没有这条登录");
     delete auth[key];
-    await mkdir(agentDir, { recursive: true, mode: 0o700 });
-    await writeFile(authPath, `${JSON.stringify(auth, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  };
-  try {
-    await persist();
-  } catch (error) {
-    if (error instanceof Error && error.message === "没有这条登录") throw error;
-    if (!isAccessDenied(error) && !/auth\.json/i.test(error instanceof Error ? error.message : String(error))) {
-      throw error instanceof Error ? error : new Error(String(error));
-    }
-    if (await tryRepairAgentDir(agentDir)) {
-      try {
-        await persist();
-      } catch (retry) {
-        throw new Error(humanizeUserFacingError(retry));
-      }
-    } else {
-      throw new Error(humanizeUserFacingError(error));
-    }
-  }
-
-  const beginner = BEGINNER_PROVIDERS.find((item) => item.id === id);
-  if (beginner) {
-    delete process.env[beginner.envVar];
-  }
+  });
 }
 
 export async function tryPiLogin(options: {

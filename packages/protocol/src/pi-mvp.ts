@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const geminiTargetRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/);
+export const geminiTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("official") }),
+  z.object({ kind: z.literal("custom"), origins: z.array(z.string()).min(1), revision: geminiTargetRevisionSchema }),
+  z.object({ kind: z.literal("unavailable") }),
+]);
+export type GeminiTarget = z.infer<typeof geminiTargetSchema>;
+
 export const authEntrySourceSchema = z.enum(["auth_file", "env", "models_json", "other"]);
 export type AuthEntrySource = z.infer<typeof authEntrySourceSchema>;
 

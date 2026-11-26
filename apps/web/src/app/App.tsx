@@ -12,33 +12,38 @@ export function App() {
   const storageError = useSyncExternalStore(subscribeDesktopUiError, readDesktopUiError);
   const needsSetup = useAgentStore((state) => state.needsSetup);
   const [checked, setChecked] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
+  const [initialSetup, setInitialSetup] = useState<SetupStatus>();
 
   useLayoutEffect(() => {
     applyTheme(readTheme());
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let mounted = true;
+    void socketClient.connect();
     void (async () => {
       try {
-        const response = await fetch("/api/setup", { credentials: "same-origin" });
+        const response = await fetch("/api/setup", { credentials: "same-origin", signal: controller.signal });
         if (response.ok) {
           const setup = (await response.json()) as SetupStatus;
-          if (!cancelled) {
+          if (mounted) {
             useAgentStore.getState().setSetupState(setupStorePayload(setup));
-            setShowWizard(setup.needsSetup);
+            if (setup.needsSetup) setInitialSetup(setup);
           }
         }
       } catch {
         // Socket connect will surface connection issues.
       } finally {
-        if (!cancelled) setChecked(true);
+        clearTimeout(timeout);
+        if (mounted) setChecked(true);
       }
-      await socketClient.connect();
     })();
     return () => {
-      cancelled = true;
+      mounted = false;
+      clearTimeout(timeout);
+      controller.abort();
       socketClient.disconnect();
     };
   }, []);
@@ -48,12 +53,14 @@ export function App() {
       <DesktopMenuBridge />
       {storageError ? <div role="alert" className="fixed bottom-3 left-3 right-3 z-50 flex max-w-lg items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-danger">{storageError}<button className="btn btn-secondary shrink-0" onClick={retryDesktopUiState}>重试保存</button></div> : null}
       <AppRouter />
-      {checked && (showWizard || needsSetup) ? (
+      {checked && (initialSetup || needsSetup) ? (
         <SetupWizard
+          initialStatus={initialSetup}
           onFinished={(status) => {
             useAgentStore.getState().setSetupState(setupStorePayload(status));
-            setShowWizard(false);
-            void socketClient.send("snapshot.request");
+            setInitialSetup(undefined);
+            // A reconnect publishes the current snapshot when the socket next opens.
+            void socketClient.send("snapshot.request").catch(() => undefined);
           }}
         />
       ) : null}

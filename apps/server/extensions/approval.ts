@@ -76,6 +76,13 @@ function assertWritable(inputPath: string, cwd: string, roots: string[]): string
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand("mowen-refresh-models", {
+    description: "重新读取本机凭据与模型目录",
+    handler: async (_args, ctx) => {
+      await ctx.modelRegistry.refresh({ allowNetwork: false });
+    },
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     const toolName = event.toolName;
     if (AUTO_ALLOW.has(toolName)) {

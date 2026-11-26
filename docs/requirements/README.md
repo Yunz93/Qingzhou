@@ -2,6 +2,7 @@
 
 | 需求 | PRD 与当前状态 | 涉及模块 |
 | --- | --- | --- |
+| 墨问首用与商用就绪 | [PRD v1](mowen-readiness/PRD.md)、[模块提案](mowen-readiness/modules/model-and-workbench.md) | Gemini、首次设置、工作台层级与连接恢复 |
 | 轻舟桌面迁移与界面重设计 | [PRD v2](tauri-desktop/PRD.md)、[页面设计](tauri-desktop/DESIGN.md)、[验证记录](tauri-desktop/VERIFICATION.md)，待确认 | 桌面宿主、界面、Pi 运行与分发升级 |
 | 轻舟产品化重构 | [PRD v1](productize-refactor/PRD.md)、[实施](productize-refactor/IMPLEMENTATION.md)、[验证](productize-refactor/VERIFICATION.md)，已实施并自测、待用户确认 | 工作流职责、草稿与异步操作、检查命令适配器 |
 | 真实 DeepSeek 需求生命周期验证与修复 | [PRD v1](deepseek-lifecycle/PRD.md)、[实施](deepseek-lifecycle/IMPLEMENTATION.md)、[真实闭环](deepseek-lifecycle/LIFECYCLE.md)、[验证](deepseek-lifecycle/VERIFICATION.md)，独立样例已合入，轻舟修复待用户确认 | 凭据来源、只读提示、设计提案、精简对话、交付与集成 |

@@ -91,6 +91,65 @@ test("new conversation focus stays in the modal and Esc returns focus", async ({
   await expect(trigger).toBeFocused();
 });
 
+test("compact conversation actions preserve the reading title, Chinese composition and drawer focus", async ({ page }, testInfo) => {
+  const title = "工作台交互验收";
+  await createConversation(page, title);
+  const composer = page.getByLabel("输入消息", { exact: true });
+  await composer.fill("检查当前项目");
+  await composer.press("Enter");
+  await expect(page.getByText("Echo: 检查当前项目", { exact: true })).toBeVisible();
+  await composer.fill("这份草稿待发送");
+  await page.setViewportSize({ width: 375, height: 812 });
+  const heading = page.getByRole("heading", { name: title, exact: true });
+  await expect(heading).toBeVisible();
+  expect(await heading.evaluate((node) => node.clientWidth >= node.scrollWidth)).toBe(true);
+  const menuTrigger = page.getByRole("button", { name: "会话更多操作" });
+  await menuTrigger.press("Enter");
+  const menu = page.getByRole("menu", { name: "会话更多操作" });
+  await expect(menu.getByRole("menuitem", { name: "重命名" })).toBeFocused();
+  const triggerBox = (await menuTrigger.boundingBox())!;
+  const menuBox = (await menu.boundingBox())!;
+  expect(triggerBox.width).toBeGreaterThanOrEqual(40);
+  expect(menuBox.y).toBeGreaterThanOrEqual(triggerBox.y + triggerBox.height + 4);
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "克隆会话" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menuTrigger).toBeFocused();
+  await menuTrigger.press("Enter");
+  await menu.getByRole("menuitem", { name: "重命名" }).click();
+  const input = page.getByRole("textbox", { name: "会话标题" });
+  await input.fill("选择中文字");
+  await input.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await expect(input).toBeFocused();
+  await input.press("Escape");
+  await expect(heading).toBeVisible();
+  for (const theme of ["浅色", "深色"]) {
+    const switcher = page.getByRole("button", { name: `切换到${theme}` });
+    if (await switcher.isVisible()) await switcher.click();
+    await page.screenshot({ path: testInfo.outputPath(`conversation-header-${theme}-375.png`), animations: "disabled" });
+  }
+  const trigger = page.getByRole("button", { name: "打开导航" });
+  const drawer = page.getByRole("dialog", { name: "工作区导航" });
+  for (const route of ["/", "/board"]) {
+    if (route === "/board") {
+      await trigger.press("Enter");
+      await drawer.getByRole("link", { name: "项目", exact: true }).click();
+      await expect(page.getByRole("banner").getByText("项目", { exact: true })).toBeVisible();
+    }
+    await trigger.press("Enter");
+    await expect(drawer.getByRole("link", { name: "墨问", exact: true })).toBeFocused();
+    await drawer.getByRole("link", { name: "设置" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(drawer.getByRole("link", { name: "墨问", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(trigger).toBeFocused();
+  }
+  await trigger.press("Enter");
+  await drawer.getByRole("link", { name: "对话", exact: true }).click();
+  await expect(composer).toHaveValue("这份草稿待发送");
+});
+
 test("IME confirmation preserves the draft before a real Shift+Enter queues it", async ({ page }) => {
   const commands: string[] = [];
   await page.routeWebSocket("**/ws", (route) => {
@@ -535,6 +594,11 @@ test("a question displays waiting feedback and empty Enter cannot bypass a disab
 test("compact directory selection keeps a typed path when an older browse request returns", async ({ page }) => {
   let releaseSetup!: () => void;
   const setupReady = new Promise<void>((resolve) => { releaseSetup = resolve; });
+  // Delay both sources of workspace defaults so the dialog opens without a preselected folder.
+  await page.route("**/api/session", async (route) => {
+    await setupReady;
+    await route.continue();
+  });
   await page.route("**/api/setup", async (route) => {
     await setupReady;
     await route.continue();
@@ -558,6 +622,61 @@ test("compact directory selection keeps a typed path when an older browse reques
   await expect(dialog.getByLabel("工作文件夹", { exact: true })).toHaveValue(`${project}/typed-folder`);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "新对话", exact: true })).toBeFocused();
+});
+
+test("new conversations follow the configured workspace and keep explicit folders local to each dialog", async ({ page }) => {
+  const configured = path.join(project, "configured-workspace");
+  const alternate = path.join(project, "one-conversation");
+  for (const directory of [configured, alternate]) mkdirSync(directory, { recursive: true });
+  let release!: () => void;
+  const waitForSettings = new Promise<void>((resolve) => { release = resolve; });
+  let settingsReady = false;
+  const sent: string[] = [];
+  await page.routeWebSocket("**/ws", (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      for (const event of frame.__batch ? frame.events : [frame]) {
+        if (event.type === "snapshot") Object.assign(event.payload, { allowedRoots: [project], workspaceRoot: settingsReady ? configured : null });
+      }
+      socket.send(JSON.stringify(frame));
+    });
+    socket.onMessage((message) => {
+      const command = JSON.parse(String(message));
+      if (command.type === "task.create") sent.push(command.payload.cwd);
+      server.send(message);
+    });
+  });
+  await page.route("**/api/setup", async (route) => {
+    const response = await route.fetch();
+    await waitForSettings;
+    settingsReady = true;
+    await route.fulfill({ response, json: { ...await response.json(), allowedRoots: [project], workspaceRoot: configured } });
+  });
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "新对话", exact: true });
+  const dialog = page.getByRole("dialog", { name: "新对话", exact: true });
+  const folder = dialog.getByRole("textbox", { name: "工作文件夹" });
+  await trigger.click();
+  await dialog.getByRole("button", { name: "输入路径" }).click();
+  try {
+    await expect(folder).toHaveValue(project);
+    await folder.fill(alternate);
+  } finally { release(); }
+  await expect.poll(() => settingsReady).toBe(true);
+  await expect(folder).toHaveValue(alternate);
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await trigger.click();
+  await expect(dialog.locator(".folder-field-summary")).toHaveText(configured);
+  await dialog.getByRole("button", { name: "输入路径" }).click();
+  await folder.fill(alternate);
+  await dialog.getByRole("button", { name: "创建对话" }).click();
+  await expect(dialog).toBeHidden();
+  await trigger.click();
+  await expect(dialog.locator(".folder-field-summary")).toHaveText(configured);
+  await dialog.getByRole("button", { name: "创建对话" }).click();
+  await expect(dialog).toBeHidden();
+  expect(sent).toEqual([alternate, configured]);
 });
 
 test("conversation conversion creates a project without losing its source or draft", async ({ page }) => {
@@ -620,7 +739,6 @@ test("setup distinguishes an environment key from a saved login", async ({ page 
   });
   await page.goto('/');
   const wizard = page.getByRole('dialog');
-  await wizard.getByRole('button', { name: '继续', exact: true }).click();
   await wizard.getByRole('button', { name: 'API Key', exact: true }).click();
   await wizard.getByLabel('服务商', { exact: true }).selectOption('deepseek');
   await expect(wizard.getByText('环境变量 DEEPSEEK_API_KEY', { exact: true })).toBeVisible();

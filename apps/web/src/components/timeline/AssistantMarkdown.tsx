@@ -2,9 +2,8 @@ import { Component, createContext, isValidElement, memo, useContext, useDeferred
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import hljs from "highlight.js";
+import { useHighlightedCode } from "../../hooks/useHighlightedCode";
 import {
-  escapeHtml,
   isWorkspaceMediaPath,
   markdownUrlTransform,
   shouldOpenMarkdownLink,
@@ -30,18 +29,6 @@ class MarkdownErrorBoundary extends Component<{ text: string; children: ReactNod
   }
 }
 
-function highlightCode(content: string, language?: string): string {
-  try {
-    if (language && hljs.getLanguage(language)) {
-      return hljs.highlight(content, { language }).value;
-    }
-    if (content.length > 8_000) return escapeHtml(content);
-    return hljs.highlightAuto(content).value;
-  } catch {
-    return escapeHtml(content);
-  }
-}
-
 function onMarkdownLinkClick(event: MouseEvent<HTMLAnchorElement>, href: string | undefined): void {
   event.preventDefault();
   if (!shouldOpenMarkdownLink(href) || !href) return;
@@ -58,7 +45,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     language = /language-([\w-]+)/.exec(props.className ?? "")?.[1] ?? "";
     code = String(props.children ?? "").replace(/\n$/, "");
   }
-  const html = useMemo(() => streaming ? escapeHtml(code) : highlightCode(code, language), [code, language, streaming]);
+  const html = useHighlightedCode(code, language, !streaming);
   return <div className="markdown-code-block">
     <div className="markdown-code-head"><span className="markdown-pre-lang">{language || "代码"}</span>
       <button type="button" className="pressable" aria-label="复制代码" onClick={() => {

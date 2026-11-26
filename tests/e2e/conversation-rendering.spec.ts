@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
+import { writeFile } from "node:fs/promises";
 
 async function createConversation(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -28,6 +29,7 @@ test("conversation keeps Markdown structure while streaming and makes rich repli
   expect(headingDuringStream).toBe(true);
   await expect(log.getByRole("table")).toHaveCount(1);
   await expect(log.locator(".markdown-pre code")).toContainText("console.log(greeting)");
+  await expect(log.locator(".markdown-pre code .hljs-keyword").first()).toHaveText("const");
   await expect(log.locator("a[href^='javascript:'], script")).toHaveCount(0);
   expect(await page.evaluate(() => (window as Window & { __markdownInjected?: boolean }).__markdownInjected)).toBeUndefined();
   await expect(log.getByRole("button", { name: "2 段思考记录", exact: false })).toHaveAttribute("aria-expanded", "false");
@@ -55,4 +57,20 @@ test("a tool group exposes a failure that arrives after its initial collapsed re
   await expect(group).toHaveAttribute("aria-expanded", "true");
   await group.click();
   await expect(group).toHaveAttribute("aria-expanded", "false");
+});
+
+test("a local image in a reply opens inside the conversation and returns keyboard focus", async ({ page }) => {
+  await createConversation(page);
+  await writeFile(path.join(process.cwd(), ".qingzhou-test/e2e-project/conversation-preview.svg"),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700"><rect width="1000" height="700" fill="teal"/></svg>');
+  await page.getByLabel("输入消息", { exact: true }).fill("![界面预览](./conversation-preview.svg)");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  const trigger = page.getByRole("button", { name: "查看图片：界面预览" });
+  await trigger.press("Enter");
+  const viewer = page.getByRole("dialog", { name: "界面预览" });
+  await expect(viewer.getByRole("img")).toBeInViewport();
+  await expect(viewer.getByRole("button", { name: "关闭图片" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(viewer).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });

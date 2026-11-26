@@ -50,7 +50,7 @@ const tauriDesktop: QingzhouDesktopApi = {
   kind: "tauri",
   get platform() { return systemPlatform(window.navigator.userAgent); },
   async ensureBackend(changes) {
-    const response = await fetch("/api/session", { signal: AbortSignal.timeout(3000) }).catch(() => null);
+    const response = await fetch("/api/session", { method: "HEAD", signal: AbortSignal.timeout(3000) }).catch(() => null);
     return invoke("ensure_backend", { renew: response?.status === 401, changes });
   },
   pickFolder: (defaultPath) => invoke("pick_folder", { defaultPath }),

@@ -214,13 +214,14 @@ export async function createApp(env: NodeJS.ProcessEnv = process.env, options: {
     fetchLatestPi: () => fetchLatestPiVersion({ env }),
     installPi,
     loadSetup: refreshSetupHints,
-    onSetupChanged: async () => {
+    onSetupChanged: async (credentialsChanged) => {
       const nextTrust = settings.get().trustProject;
       if (config.trustProject !== nextTrust) {
         config = { ...config, trustProject: nextTrust };
         service.updateConfig(config);
       }
       await refreshSetupHints();
+      if (credentialsChanged) await service.refreshCredentialModels();
       void service.refreshResources();
     },
   });
@@ -230,6 +231,9 @@ export async function createApp(env: NodeJS.ProcessEnv = process.env, options: {
     settings,
   });
 
+  // The request hook authenticates the WebView or establishes the browser cookie.
+  // Connecting a socket does not need a transcript or a second credential scan.
+  app.head("/api/session", (_request, reply) => reply.code(204).send());
   app.get("/api/session", async () => {
     const setup = await refreshSetupHints();
     return {

@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
-    [string]$HistoryFixture
+    [string]$HistoryFixture,
+    [ValidateSet('0.1.26', '0.1.28')][string]$LegacyVersion = '0.1.28'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +26,21 @@ function Start-Installer([string]$Installer, [string[]]$Options) {
 
 function Assert-Path([string]$Path) {
     if (!(Test-Path -LiteralPath $Path)) { throw "缺少文件 $Path" }
+}
+
+function Get-ShellIconHash([string]$Binary) {
+    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($Binary)
+    $bitmap = $icon.ToBitmap()
+    $png = [System.IO.MemoryStream]::new()
+    try {
+        $bitmap.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
+        $png.Position = 0
+        return (Get-FileHash -Algorithm SHA256 -InputStream $png).Hash
+    } finally {
+        $png.Dispose()
+        $bitmap.Dispose()
+        $icon.Dispose()
+    }
 }
 
 function Assert-UpdateTarget([string]$Expected) {
@@ -97,6 +113,11 @@ Assert-StockApp (Join-Path $portableRoot 'Qingzhou.exe') 'portable'
 $cleanRoot = Join-Path $base 'Clean Install'
 Start-Installer $setup @('/S', "/D=$cleanRoot")
 Assert-Path (Join-Path $cleanRoot 'uninstall.exe')
+Add-Type -AssemblyName System.Drawing
+$appIconHash = Get-ShellIconHash (Join-Path $cleanRoot 'Qingzhou.exe')
+foreach ($binary in @($setup, (Join-Path $cleanRoot 'uninstall.exe'))) {
+    if ((Get-ShellIconHash $binary) -ne $appIconHash) { throw "图标和墨问主程序不一致 $binary" }
+}
 Assert-UpdateTarget $cleanRoot
 Assert-StockApp (Join-Path $cleanRoot 'Qingzhou.exe') 'clean'
 Assert-StockApp (Join-Path $portableRoot 'Qingzhou.exe') 'portable-with-installation'
@@ -106,10 +127,14 @@ if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath (Join-Path $cleanRoot 
     throw '全新安装的候选未成功卸载。'
 }
 
-# Use the immutable 0.1.26 release asset and pin its published checksum.
-$legacySetup = Join-Path $base 'Qingzhou-0.1.26-setup.exe'
-Invoke-WebRequest -Uri 'https://github.com/Yunz93/Qingzhou/releases/download/v0.1.26/Qingzhou-win-x64-setup.exe' -OutFile $legacySetup -TimeoutSec 300
-if ((Get-FileHash -LiteralPath $legacySetup -Algorithm SHA256).Hash -ine 'e7f887418027b6694e859154114daaf43f3a0a683ae507d9e1f435bbd41fef40') {
+# Pin each supported release asset to its published SHA256.
+$legacyHashes = @{
+    '0.1.26' = 'e7f887418027b6694e859154114daaf43f3a0a683ae507d9e1f435bbd41fef40'
+    '0.1.28' = '9da944e1550ebd02ec786da7cbc5ef36ac858f55a94cc24ff054c6a0ea396f0d'
+}
+$legacySetup = Join-Path $base "Qingzhou-$LegacyVersion-setup.exe"
+Invoke-WebRequest -Uri "https://github.com/Yunz93/Qingzhou/releases/download/v$LegacyVersion/Qingzhou-win-x64-setup.exe" -OutFile $legacySetup -TimeoutSec 300
+if ((Get-FileHash -LiteralPath $legacySetup -Algorithm SHA256).Hash -ine $legacyHashes[$LegacyVersion]) {
     throw '历史安装包校验失败。'
 }
 $legacyRoot = Join-Path $base 'Legacy Custom Install'
@@ -121,7 +146,7 @@ Assert-Path (Join-Path $legacyResources 'app.asar')
 if ((Get-ItemPropertyValue -LiteralPath $legacyInstall -Name InstallLocation) -ine $legacyRoot) {
     throw '旧版本的安装登记未指向自定义目录。'
 }
-if ((Get-ItemPropertyValue -LiteralPath $legacyUninstall -Name DisplayVersion) -ne '0.1.26') {
+if ((Get-ItemPropertyValue -LiteralPath $legacyUninstall -Name DisplayVersion) -ne $LegacyVersion) {
     throw '旧版本的卸载登记不正确。'
 }
 $retained = Join-Path $legacyRoot 'user-note.txt'
@@ -144,7 +169,7 @@ try {
         if ($legacy.HasExited -or [DateTime]::UtcNow -ge $deadline) { throw '旧版桌面服务未就绪。' }
         $preferences = $null
         try { $preferences = Invoke-RestMethod -Uri $preferencesUri -TimeoutSec 3 } catch { Start-Sleep -Milliseconds 250 }
-    } until ($preferences.current -eq '0.1.26')
+    } until ($preferences.current -eq $LegacyVersion)
     $saved = Invoke-RestMethod -Uri $preferencesUri -TimeoutSec 5 -Method Post -ContentType 'application/json' -Body '{"skippedUpdateVersion":"0.1.27"}'
     if ($saved.skippedUpdateVersion -ne '0.1.27') { throw '旧版未写入升级测试资料。' }
     if ($HistoryFixture) {

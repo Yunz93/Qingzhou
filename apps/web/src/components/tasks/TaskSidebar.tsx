@@ -1,6 +1,6 @@
 import { useDialogLayer } from "../../hooks/useDialogLayer";
 import { useEffect, useRef, useState } from "react";
-import { Archive, ChevronRight, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, X } from "lucide-react";
+import { Archive, ChevronRight, MoreHorizontal, Pencil, Pin, PinOff, SquarePen, Search } from "lucide-react";
 import type { TaskRecord } from "@qingzhou/protocol";
 import { PiStatusRing } from "../status/PiStatusRing";
 import { folderName, taskStatusLabel } from "../../copy";
@@ -17,7 +17,6 @@ type Props = {
   onNew?: () => void;
   onShowArchived?: () => void;
   onShowHidden?: () => void;
-  onClose?: () => void;
   pinned?: boolean;
   onPinToggle?: () => void;
   workTaskIds?: Set<string>;
@@ -40,7 +39,6 @@ export function TaskSidebar({
   onNew,
   onShowArchived,
   onShowHidden,
-  onClose,
   pinned = true,
   onPinToggle,
   workTaskIds = EMPTY_WORK_TASK_IDS,
@@ -92,28 +90,20 @@ export function TaskSidebar({
     onRename?.(task.id, title);
   }
 
-  const filtered = tasks.filter((task) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return task.title.toLowerCase().includes(q) || task.cwd.toLowerCase().includes(q);
-  });
+  const term = query.trim().toLowerCase();
+  const filtered = tasks.filter((task) => !term || [task.title, task.cwd, groupNames?.get(task.cwd)].some((value) => value?.toLowerCase().includes(term)));
   const groups = groupTasksByProject(filtered);
 
   return (
     <section role="complementary" className="flex h-full min-h-0 w-full flex-col bg-canvas" aria-label="会话">
-      <div className="flex min-h-10 items-center gap-1 px-3">
-          <h2 className="flex-1 text-xs font-medium text-mute">最近对话</h2>
+      {onNew ? <div className="px-2.5 pt-3">
+        <button type="button" className="pressable btn btn-secondary w-full justify-start" aria-label="新对话" onClick={onNew}>
+          <SquarePen size={15} aria-hidden="true" />新对话
+        </button>
+      </div> : null}
+      <div className="flex min-h-10 items-center gap-1 px-3 pt-1">
+        <h2 className="flex-1 pl-1 text-xs font-medium text-mute">最近对话</h2>
         {onShowArchived ? <button type="button" className="pressable app-no-drag icon-btn" aria-label="已归档会话" title="已归档会话" onClick={onShowArchived}><Archive size={14} /></button> : null}
-        {onNew ? (
-          <button
-            type="button"
-            className="pressable app-no-drag icon-btn"
-            aria-label="新对话"
-            onClick={onNew}
-          >
-            <Plus size={15} />
-          </button>
-        ) : null}
         {onPinToggle ? (
           <button
             type="button"
@@ -126,16 +116,6 @@ export function TaskSidebar({
             {pinned ? <Pin size={14} /> : <PinOff size={14} />}
           </button>
         ) : null}
-        {onClose ? (
-          <button
-            type="button"
-            className="pressable app-no-drag icon-btn"
-            aria-label="关闭会话列表"
-            onClick={onClose}
-          >
-            <X size={15} />
-          </button>
-        ) : null}
       </div>
       <div className="px-3 pb-2">
         <label className="search-field">
@@ -143,7 +123,7 @@ export function TaskSidebar({
           <input
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            placeholder="搜索"
+            placeholder="搜索会话"
             aria-label="搜索会话"
             className="h-7 w-full bg-transparent text-[12.5px] text-ink placeholder:text-mute"
           />
@@ -152,7 +132,7 @@ export function TaskSidebar({
       {searching ? <p className="px-4 pb-2 text-[10px] text-mute">搜索时不能调整顺序</p> : null}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {groups.length === 0 ? (
-          <div className="px-2 py-4 text-[12px] leading-5 text-mute"><p>{searching ? "没有匹配的会话" : "点击 + 号开始对话"}</p>{searching ? <button type="button" className="pressable mt-2 text-accent" onClick={() => onQuery("")}>清空搜索</button> : null}</div>
+          <div className="px-2 py-4 text-[12px] leading-5 text-mute"><p>{searching ? "没有匹配的会话" : "暂无最近对话"}</p>{searching ? <button type="button" className="pressable mt-2 text-accent" onClick={() => onQuery("")}>清空搜索</button> : null}</div>
         ) : (
           groups.map(([cwd, items]) => (
             <section key={cwd} className="mb-2">
@@ -217,6 +197,7 @@ export function TaskSidebar({
                           <button
                             type="button"
                             title={task.title}
+                            aria-current={active ? "page" : undefined}
                             onClick={() => onSelect(task.id)}
                             onDoubleClick={() => startRename(task)}
                             className="pressable flex min-h-7 min-w-0 flex-1 items-center gap-1.5 py-1 text-left"

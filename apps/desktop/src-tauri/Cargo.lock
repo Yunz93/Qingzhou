@@ -3158,7 +3158,7 @@ dependencies = [
 
 [[package]]
 name = "qingzhou"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "core-foundation 0.10.1",
  "dunce",

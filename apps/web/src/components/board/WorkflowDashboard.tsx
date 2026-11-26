@@ -46,6 +46,7 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
   const filtered = sorted.filter((item) => matches(item, filter) && `${item.title} ${item.description}`.toLowerCase().includes(query.toLowerCase()));
   const eligible = (item: WorkItemSummary) => item.state === "open" && planningReady(state, item.id) && !!item.description.trim() && !!item.acceptanceCriteria.trim() && !["running", "queued"].includes(statusFor(item).ticket?.status ?? "");
   const selectable = filtered.filter(eligible);
+  const showSelection = items.length > 1 && selectable.length > 0;
   const selectedIds = selectable.filter((item) => selected.includes(item.id)).map((item) => item.id);
   const send = (type: "workflow.enqueue" | "workItem.reorder" | "workItem.reopen", payload: object) => run(
     () => socketClient.send(type, payload), async () => { setSelected([]); await onRefresh(); });
@@ -56,7 +57,7 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
     const visibleOrder = sorted.filter((entry) => entry.state !== "archived");
     const previous = visibleOrder[visibleOrder.findIndex((entry) => entry.id === item.id) - 1];
     return <li key={item.id} className="workflow-requirement">
-      {items.length > 1 ? <input type="checkbox" aria-label={`选择 ${item.title}`} disabled={busy || !eligible(item)} checked={selectedIds.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.id] : selected.filter((id) => id !== item.id))} /> : null}
+      {showSelection && eligible(item) ? <input type="checkbox" aria-label={`选择 ${item.title}`} disabled={busy} checked={selectedIds.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.id] : selected.filter((id) => id !== item.id))} /> : null}
       <button className="workflow-item-main" onClick={() => onSelect(item)}>
         <span className="workflow-item-title">{item.title}</span>
         {item.description ? <span className="workflow-item-description">{item.description}</span> : null}
@@ -88,7 +89,7 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
       <button className="btn btn-primary" onClick={onCreate}><Plus size={14} />新建需求</button></div>
 
     {error ? <p role="alert" className="my-2 text-sm text-danger">{error}</p> : null}
-    {filtered.length > 0 && items.length > 1 ? <div className="workflow-selection-bar"><label><input type="checkbox" aria-label="选择当前可执行需求" disabled={!selectable.length || busy} checked={!!selectable.length && selectedIds.length === selectable.length} onChange={(event) => setSelected(event.target.checked ? selectable.map((item) => item.id) : [])} />{selectedIds.length ? `已选择 ${selectedIds.length} 个需求` : `${filtered.length} 个需求 · 按优先级排序`}</label>
+    {showSelection ? <div className="workflow-selection-bar"><label><input type="checkbox" aria-label="选择当前可执行需求" disabled={busy} checked={!!selectable.length && selectedIds.length === selectable.length} onChange={(event) => setSelected(event.target.checked ? selectable.map((item) => item.id) : [])} />{selectedIds.length ? `已选择 ${selectedIds.length} 个需求` : `${filtered.length} 个需求 · 按优先级排序`}</label>
       {selectedIds.length ? <div className="flex gap-2"><button className="btn btn-ghost" onClick={() => setSelected([])}>取消选择</button><button className="btn btn-primary" disabled={busy} onClick={() => void send("workflow.enqueue", { ids: selectedIds })}>{busy ? "正在加入队列…" : `开始所选（${selectedIds.length}）`}</button></div> : null}</div> : null}
     {filtered.length > 0 && (layout === "list" ? (
       <ul className="workflow-requirements-list">{filtered.map(renderItem)}</ul>
@@ -98,7 +99,7 @@ export function WorkflowDashboard({ state, items, onSelect, onCreate, onStart, o
           const entries = filtered.filter((item) => statusFor(item).lane === lane.id);
           return <section key={lane.id} aria-label={lane.label} data-empty={entries.length === 0}>
             <h3>{lane.label}<span>{entries.length}</span></h3>
-            {entries.length ? <ul>{entries.map(renderItem)}</ul> : <p className="workflow-lane-empty">暂无需求</p>}
+            {entries.length ? <ul>{entries.map(renderItem)}</ul> : <p className="sr-only">暂无需求</p>}
           </section>;
         })}
       </div>

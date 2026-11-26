@@ -234,6 +234,35 @@ async function createRequirement(page: Page, title: string, description: string)
   await room.getByRole("button", { name: "返回项目", exact: true }).click();
   await expect(room).toBeHidden();
 }
+
+test("project loading and unconfirmed plans keep unavailable actions out of the board", async ({ page }) => {
+  await setupWorkflowProject(page, "看板操作层级");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    route.onMessage(async (message) => {
+      if (JSON.parse(String(message)).type === "workflow.state") await gate;
+      server.send(message);
+    });
+  });
+  try {
+    await page.reload();
+    await expect(page.getByText("正在读取项目…", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "新建任务", exact: true })).toHaveCount(0);
+  } finally { release(); }
+  for (const title of ["整理客户反馈", "核对发布清单"]) {
+    await page.getByRole("button", { name: "新建需求", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "新建需求" });
+    await dialog.getByLabel("标题", { exact: true }).fill(title);
+    await dialog.getByRole("button", { name: "保存到计划" }).click();
+    await expect(dialog).toBeHidden();
+  }
+  const board = page.getByRole("region", { name: "需求列表" });
+  await expect(board.getByText("整理客户反馈", { exact: true })).toBeVisible();
+  await expect(board.getByText("核对发布清单", { exact: true })).toBeVisible();
+  await expect(board.getByRole("checkbox")).toHaveCount(0);
+});
 async function confirmRequirementDesign(page: Page) {
   const room = page.locator("[data-requirement-workspace]");
   await room.getByRole("tab", { name: "设计", exact: true }).click();
@@ -427,7 +456,11 @@ test("preparation discussion, focus layouts and shared drafts keep the requireme
   await sidebar.getByRole("listitem").getByRole("button", { name: /^连续对话需求 需求对话 / }).click();
   await expect(page.getByRole("textbox", { name: "输入消息" })).toHaveValue("同一个需求的跨布局草稿");
   await expect(page.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
+  const desktopSize = page.viewportSize()!;
+  await page.setViewportSize({ width: 533, height: 600 });
+  await expect(page.getByRole("link", { name: "返回需求", exact: true })).toBeInViewport();
   await page.getByRole("link", { name: "返回需求", exact: true }).click();
+  await page.setViewportSize(desktopSize);
   await expect(room.getByRole("textbox", { name: "输入消息" })).toHaveValue("同一个需求的跨布局草稿");
   await expect(room.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("qingzhou:shared-images:") && sessionStorage.getItem(key)?.includes("data:image/png;base64,")))).toBe(true);
@@ -584,8 +617,9 @@ test("an incomplete requirement stays discussable and cannot bypass scope confir
   await page.getByRole("button", { name: "新建需求", exact: true }).click();
   await create.getByLabel("标题", { exact: true }).fill("另一个待讨论需求");
   await create.getByRole("button", { name: "保存到计划", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "选择 待完善的需求", exact: true })).toBeDisabled();
-  await expect(page.getByRole("checkbox", { name: "选择当前可执行需求", exact: true })).toBeDisabled();
+  await expect(page.getByText("另一个待讨论需求", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "选择 待完善的需求", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "选择当前可执行需求", exact: true })).toHaveCount(0);
   await page.getByRole("button").filter({ has: page.getByText("待完善的需求", { exact: true }) }).click();
   const room = page.getByRole("region", { name: "待完善的需求", exact: true });
   await room.getByRole("button", { name: "对话", exact: true }).click();
@@ -1038,7 +1072,7 @@ test("late project responses and failures cannot replace the newly selected proj
     const room=page.getByRole("region",{name:"项目 B 的需求",exact:true});
     await expect(room).toBeVisible();
     await room.getByRole("button",{name:"返回项目",exact:true}).click();
-    await expect(page.getByRole("banner").getByRole("button",{name:"异步项目 B",exact:true})).toBeVisible();
+    await expect(page.getByRole("banner").getByText("异步项目 B", { exact: true })).toBeVisible();
     await expect(page.getByText("旧项目迟到的错误",{exact:true})).toHaveCount(0);
     await expect(page.getByRole("button").filter({has:page.getByText("项目 A 的需求",{exact:true})})).toHaveCount(0);
   }

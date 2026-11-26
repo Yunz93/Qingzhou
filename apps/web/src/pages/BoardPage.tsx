@@ -10,8 +10,9 @@ import { NewWorkItemDialog } from "../components/board/NewWorkItemDialog";
 import { NewWorkProjectDialog } from "../components/board/NewWorkProjectDialog";
 import { ProjectWorkflow } from "../components/board/ProjectWorkflow";
 import { WorkflowDashboard } from "../components/board/WorkflowDashboard";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useProjectWorkflow } from "../hooks/useProjectWorkflow";
-import { WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
+import { WorkspaceDrawer, WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { ThemeToggle } from "../components/status/ThemeToggle";
 import { ApprovalSheet } from "../components/approval/ApprovalSheet";
@@ -32,6 +33,8 @@ export function BoardPage() {
   const allowedRoots = useAgentStore((state) => state.allowedRoots);
   const [creatingProject, setCreatingProject] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const dockNavigation = useMediaQuery("(min-width: 768px)");
+  useEffect(() => { if (dockNavigation) setNavigationOpen(false); }, [dockNavigation]);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<{ text: string; kind: "error" | "ok" } | null>(null);
   const [details, setDetails] = useState<WorkItemDetails | null>(null);
@@ -182,26 +185,27 @@ export function BoardPage() {
     void socketClient.send("workProject.select", { id }).catch((error: unknown) => showError(error, "切换项目失败"));
   }
 
+  const rail = (
+    <WorkspaceRail section="projects" onClose={dockNavigation ? undefined : () => setNavigationOpen(false)}>
+      <div className="px-2.5 py-2">
+        <div className="flex items-center justify-between px-2.5 text-xs text-mute"><h2>项目列表</h2><button className="pressable icon-btn" aria-label="添加项目" title="添加项目" onClick={() => { setNavigationOpen(false); setCreatingProject(true); }}><Plus size={14} /></button></div>
+        {projects.map((entry) => <button key={entry.id} type="button" aria-current={entry.id === project?.id ? "page" : undefined}
+          className={`flex min-h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm ${entry.id === project?.id ? "bg-accent-soft text-accent" : "hover:bg-fill"}`}
+          onClick={() => selectProject(entry.id)}><FolderGit2 size={14} className="shrink-0" /><span className="truncate">{entry.name}</span></button>)}
+      </div>
+    </WorkspaceRail>
+  );
+
   return (
     <div className="relative flex h-dvh overflow-hidden bg-canvas text-ink">
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>
-      {navigationOpen ? <button className="fixed inset-0 z-20 bg-ink/20 md:hidden" type="button" aria-label="关闭导航" onClick={() => setNavigationOpen(false)} /> : null}
-      <div className={navigationOpen ? "fixed inset-y-0 left-0 z-30 md:static" : "hidden md:flex"}>
-        <WorkspaceRail section="projects">
-          <div className="px-2.5 py-2">
-            <div className="flex items-center justify-between px-2.5 text-xs text-mute"><h2>项目列表</h2><button className="pressable icon-btn" aria-label="添加项目" title="添加项目" onClick={() => setCreatingProject(true)}><Plus size={14} /></button></div>
-            {projects.map((entry) => <button key={entry.id} type="button" aria-current={entry.id === project?.id ? "page" : undefined}
-              className={`flex min-h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm ${entry.id === project?.id ? "bg-accent-soft text-accent" : "hover:bg-fill"}`}
-              onClick={() => selectProject(entry.id)}><FolderGit2 size={14} className="shrink-0" /><span className="truncate">{entry.name}</span></button>)}
-          </div>
-        </WorkspaceRail>
-      </div>
+      {dockNavigation ? rail : navigationOpen ? <WorkspaceDrawer onClose={() => setNavigationOpen(false)}>{rail}</WorkspaceDrawer> : null}
       <div className="flex min-w-0 flex-1 flex-col">
       <WorkspaceToolbar>
         <button type="button" className="pressable icon-btn md:hidden" aria-label="打开导航" onClick={() => setNavigationOpen(true)}><PanelLeft size={14} /></button>
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm"><span className="text-mute">项目</span>{project ? <><span aria-hidden="true" className="text-mute">/</span><button type="button" onClick={closeDetails} className="truncate font-semibold" title={project.name}>{project.name}</button></> : null}</div>
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm"><span className="text-mute">项目</span>{project ? <><span aria-hidden="true" className="text-mute">/</span>{focusItemId ? <button type="button" onClick={closeDetails} className="truncate font-semibold hover:text-accent" title={project.name}>{project.name}</button> : <strong className="truncate text-[17px] font-semibold" title={project.name}>{project.name}</strong>}</> : null}</div>
         <UpdateBanner />
         <ThemeToggle />
       </WorkspaceToolbar>
@@ -224,12 +228,14 @@ export function BoardPage() {
         ) : project ? (
           <div className={`mx-auto w-full px-4 pb-12 pt-4 ${workflow.state?.configs.length ? "workflow-project-container" : "max-w-[1040px]"}`}>
             <h1 className="sr-only">{project.name}</h1>
-            {workflow.error ? <p className="mb-3 text-sm text-danger" role="alert">{workflow.error}</p> : null}
+            {workflow.error ? <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-danger" role="alert">
+              <span>{workflow.error}</span><button className="btn btn-secondary" onClick={() => void workflow.refresh()}>重新加载项目</button>
+            </div> : !workflow.state ? <p className="py-4 text-sm text-mute" role="status">{connection === "open" ? "正在读取项目…" : "正在连接工作区…"}</p> : null}
             {workflow.state ? <ProjectWorkflow key={`overview:${project.id}`} projectId={project.id} state={workflow.state} items={projectItems} onRefresh={workflow.refresh} onSelect={openDetails}>
               <WorkflowDashboard key={`requirements:${project.id}`} state={workflow.state} items={projectItems} onSelect={openDetails} onCreate={() => setCreating(true)} onStart={startItem} onStop={stopItem} onConversation={openConversation} onArchive={archiveItem} onRefresh={workflow.refresh} />
             </ProjectWorkflow> : null}
-            {!workflow.state?.configs.length && !projectItems.length ? <section className="workflow-empty"><h2>记录第一项工作</h2><p>先记录目标，之后可配置 PRD、检查和合入流程。</p><button className="btn btn-primary" disabled={connection !== "open"} onClick={() => setCreating(true)}>新建任务</button></section> : null}
-            {!workflow.state?.configs.length && projectItems.length > 0 ? <WorkDashboard
+            {workflow.state && !workflow.state.configs.length && !projectItems.length ? <section className="workflow-empty"><h2>记录第一项工作</h2><p>先记录目标，之后可配置 PRD、检查和合入流程。</p><button className="btn btn-primary" disabled={connection !== "open"} onClick={() => setCreating(true)}>新建任务</button></section> : null}
+            {workflow.state && !workflow.state.configs.length && projectItems.length > 0 ? <WorkDashboard
               items={projectItems}
               tasks={tasks}
               pendingApprovals={pendingApprovals}

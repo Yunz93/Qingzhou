@@ -15,7 +15,8 @@ import { ContextMeter } from "../components/status/ContextMeter";
 import { RunStatusBar } from "../components/status/RunStatusBar";
 import { useAgentStore } from "../stores/agent-store";
 import { socketClient } from "../transport/socket-client";
-import { WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
+import { WorkspaceDrawer, WorkspaceRail, WorkspaceToolbar } from "../components/workspace/WorkspaceChrome";
+import { WorkflowMenu } from "../components/board/WorkflowTabs";
 import { UpdateBanner } from "../components/app/UpdateBanner";
 import { CommandPalette } from "../components/command-palette/CommandPalette";
 import { NewTaskDialog } from "../components/tasks/NewTaskDialog";
@@ -29,6 +30,7 @@ import { tasksInSidebarOrder } from "../lib/task-list";
 import { OPEN_CONVERSATION_SEARCH_EVENT } from "../lib/conversation-search";
 import { showOsNotification } from "../lib/notify";
 import { isEditableTarget } from "../lib/hotkeys";
+import { isImeKey } from "../lib/composer-input";
 import { prepareComposerImageIds, useConversationDraft } from "../lib/conversation-draft";
 import { ChatToRequirementDialog } from "../components/board/ChatToRequirementDialog";
 import { useViewPreference } from "../hooks/useViewPreference";
@@ -113,7 +115,7 @@ export function WorkbenchLayout() {
   const [converting, setConverting] = useState(false);
   const [hiddenConversations, setHiddenConversations] = useViewPreference<string[]>("qingzhou:hidden-conversations", []);
   const [query, setQuery] = useState("");
-  const [cwd, setCwd] = useState(workspaceRoot ?? allowedRoots[0] ?? "");
+  const defaultCwd = workspaceRoot ?? allowedRoots[0];
   const [creating, setCreating] = useState(false);
   const [goingWork, setGoingWork] = useState(false);
   const [creatingWorkProject, setCreatingWorkProject] = useState(false);
@@ -126,6 +128,7 @@ export function WorkbenchLayout() {
     () => readUiFlag(RIGHT_PINNED_KEY, false) && readUiFlag(INSPECTOR_OPEN_KEY, false),
   );
   const isMd = useMediaQuery("(min-width: 768px)");
+  const compactHeader = useMediaQuery("(max-width: 639px)", false);
   const dockLeft = leftPinned && isMd;
   const overlayLeft = taskOpen && !dockLeft;
   const [notice, setNotice] = useState("");
@@ -135,18 +138,13 @@ export function WorkbenchLayout() {
   const [titleDraft, setTitleDraft] = useState("");
   const skipTitleCommitRef = useRef(false);
 
-  const [retryPrompt, setRetryPrompt] = useState<{ taskId: string; text: string; images: ComposerImage[] } | null>(null);
+  const [retryPrompt, setRetryPrompt] = useState<{ taskId: string; text: string; images: ComposerImage[]; reason: "stopped" | "failed" } | null>(null);
   const [pendingDraft, setPendingDraft] = useState<string | null>(null);
   const [promptSending, setPromptSending] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const reconnectingRef = useRef(false);
   const sendingRef = useRef(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const preferred = workspaceRoot ?? allowedRoots[0];
-    if (preferred && !cwd) setCwd(preferred);
-  }, [allowedRoots, workspaceRoot, cwd]);
 
   useEffect(() => {
     if (connection !== "open" || !activeTaskId) return;
@@ -216,13 +214,18 @@ export function WorkbenchLayout() {
 
   const abortRun = useCallback(() => {
     if (!task) return;
-    const lastUser = [...useAgentStore.getState().messages].reverse().find((item) => item.role === "user");
-    const text = lastUser ? stripModePrefix(lastUser.text).trim() : draft.trim();
-    if (text) setRetryPrompt({ taskId: task.id, text, images: (lastUser?.images ?? []).filter((image) => image.dataUrl?.startsWith("data:image/")).map((image, index) => ({ id: "", name: image.name || `图片 ${index + 1}`, previewUrl: image.dataUrl! })) });
-    void socketClient.send("agent.abort", {}, task.id).catch((error: unknown) => {
+    const lastUser = useAgentStore.getState().messages.findLast((message) => message.role === "user");
+    void socketClient.send("agent.abort", {}, task.id).then(() => {
+      // Requirement runs resume through their own recorded workflow.
+      if (linkedWorkItem || !lastUser) return;
+      const text = stripModePrefix(lastUser.text);
+      const images = (lastUser.images ?? []).flatMap((image, index) =>
+        image.dataUrl?.startsWith("data:image/") ? [{ id: "", name: image.name || `图片 ${index + 1}`, previewUrl: image.dataUrl }] : []);
+      if (text.trim() || images.length) setRetryPrompt({ taskId: task.id, text, images, reason: "stopped" });
+    }).catch((error: unknown) => {
       reportRequestError(error, "停止失败");
     });
-  }, [draft, task]);
+  }, [linkedWorkItem, task]);
 
   useEffect(() => {
     if (!toast?.message) return;
@@ -278,7 +281,7 @@ export function WorkbenchLayout() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || hasDialogLayer()) return;
+      if (event.defaultPrevented || isImeKey(event) || hasDialogLayer()) return;
       if (event.key === "Escape") {
         if (creating) {
           event.preventDefault();
@@ -375,7 +378,33 @@ export function WorkbenchLayout() {
     const next = title.trim().slice(0, 200);
     const current = tasks.find((item) => item.id === taskId);
     if (!next || next === current?.title) return;
-    await socketClient.send("task.rename", { title: next }, taskId);
+    try {
+      await socketClient.send("task.rename", { title: next }, taskId);
+    } catch (error) {
+      reportRequestError(error, "重命名失败，请重试。");
+    }
+  }
+
+  function editTitle() {
+    if (!task) return;
+    skipTitleCommitRef.current = false;
+    setTitleDraft(task.title);
+    setEditingTitle(true);
+  }
+
+  async function cloneConversation() {
+    if (!task) return;
+    try {
+      const result = await socketClient.send<{ task?: { id: string } }>("session.clone", {}, task.id);
+      if (result.task?.id) useAgentStore.getState().setActiveTask(result.task.id);
+    } catch (error) {
+      reportRequestError(error, "无法复制对话");
+    }
+  }
+
+  function convertConversation() {
+    setConverting(true);
+    void socketClient.send("workItem.list").catch(() => undefined);
   }
 
   async function selectTask(taskId: string) {
@@ -450,7 +479,7 @@ export function WorkbenchLayout() {
     } catch (error) {
       if (optimistic) {
         useAgentStore.getState().markMessageFailed(taskId, clientMessageId);
-        setRetryPrompt({ taskId, text, images });
+        setRetryPrompt({ taskId, text, images, reason: "failed" });
         setDraft((current) => current || text);
         setComposerImages((current) => current.length ? current : images);
       } else {
@@ -502,7 +531,7 @@ export function WorkbenchLayout() {
       setTimeout(() => { for (const image of images) URL.revokeObjectURL(image.previewUrl); }, 4000);
     } catch (error) {
       useAgentStore.getState().markMessageFailed(task.id, clientMessageId);
-      setRetryPrompt({ taskId: task.id, text, images });
+      setRetryPrompt({ taskId: task.id, text, images, reason: "failed" });
       reportRequestError(error);
     } finally {
       sendingRef.current = false;
@@ -573,7 +602,7 @@ export function WorkbenchLayout() {
 
   function renderSidebar(onClose?: () => void) {
     return (
-      <WorkspaceRail section="conversation"><TaskSidebar
+      <WorkspaceRail section="conversation" onClose={onClose}><TaskSidebar
         tasks={tasks.filter((entry) => !hiddenConversations.includes(entry.id))}
         activeTaskId={activeTaskId}
         waitingInputTaskIds={new Set(pendingInteractions.map((entry) => entry.taskId))}
@@ -604,7 +633,6 @@ export function WorkbenchLayout() {
           setTaskOpen(false);
           setCreating(true);
         }}
-        onClose={onClose}
       /></WorkspaceRail>
     );
   }
@@ -735,7 +763,7 @@ export function WorkbenchLayout() {
           </button>
           ) : null}
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <PiStatusRing status={status} size={16} />
+            {task ? <PiStatusRing status={status} size={16} /> : null}
             {editingTitle && task ? (
               <input
                 autoFocus
@@ -748,6 +776,7 @@ export function WorkbenchLayout() {
                   if (!skip) void renameTask(task.id, titleDraft);
                 }}
                 onKeyDown={(event) => {
+                  if (isImeKey(event)) return;
                   if (event.key === "Enter") {
                     event.preventDefault();
                     skipTitleCommitRef.current = false;
@@ -767,31 +796,22 @@ export function WorkbenchLayout() {
             ) : task ? (
               <div className="group/title flex min-w-0 flex-1 items-center gap-1.5">
                 <h1
-                  className="shrink truncate text-sm font-semibold text-ink"
-                  title="双击重命名"
-                  onDoubleClick={() => {
-                    setTitleDraft(task.title);
-                    setEditingTitle(true);
-                  }}
+                  className="min-w-0 truncate text-[16px] font-semibold text-ink"
+                  title={task.title}
+                  onDoubleClick={editTitle}
                 >
                   {task.title}
                 </h1>
-                <button
+                {!compactHeader ? <button
                   type="button"
                   className="pressable icon-btn title-rename-btn"
                   aria-label="重命名"
-                  onClick={() => {
-                    setTitleDraft(task.title);
-                    setEditingTitle(true);
-                  }}
+                  title="重命名"
+                  onClick={editTitle}
                 >
                   <Pencil size={12} />
-                </button>
-                <div className="hidden min-w-0 items-center gap-2 lg:flex">
-                  <span className="truncate text-xs text-mute" title={task.cwd}>
-                    {headerSubtitle(task.cwd, true)}
-                  </span>
-                  {linkedWorkItem ? (
+                </button> : null}
+                {linkedWorkItem ? (
                     <Link
                       to={`/board?item=${linkedWorkItem.id}`}
                       className="pressable titlebar-work-link"
@@ -800,24 +820,24 @@ export function WorkbenchLayout() {
                       <span>返回需求</span>
                       <ArrowUpRight size={12} aria-hidden="true" />
                     </Link>
-                  ) : null}
-                </div>
+                  ) : <span className="hidden min-w-0 truncate text-xs text-mute lg:block" title={task.cwd}>{headerSubtitle(task.cwd, true)}</span>}
               </div>
             ) : (
               <h1 className="text-sm font-semibold text-ink">对话</h1>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            {task && !linkedWorkItem && messageCount > 0 ? (
-              <button type="button" className="pressable icon-btn" aria-label="克隆会话" title="克隆会话" onClick={() => {
-                void socketClient.send<{ task?: { id: string } }>("session.clone", {}, task.id).then((result) => {
-                  if (result.task?.id) useAgentStore.getState().setActiveTask(result.task.id);
-                }).catch((error: unknown) => {
-                  setNotice(error instanceof Error ? error.message : "无法复制对话");
-                });
-              }}><CopyPlus size={14} aria-hidden="true" /></button>
+            {task && compactHeader ? (
+              <WorkflowMenu label="会话更多操作" actions={[
+                { label: "重命名", run: editTitle },
+                ...(!linkedWorkItem && messageCount > 0 ? [{ label: "克隆会话", run: () => void cloneConversation() }] : []),
+                ...(!linkedWorkItem ? [{ label: "整理为需求", run: convertConversation }] : []),
+              ]} />
             ) : null}
-            {task && !linkedWorkItem ? <button className="conversation-convert icon-btn" aria-label="整理为需求" title="整理为需求" onClick={() => { setConverting(true); void socketClient.send("workItem.list").catch(() => undefined); }}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /></button> : null}
+            {task && !compactHeader && !linkedWorkItem && messageCount > 0 ? (
+              <button type="button" className="pressable icon-btn" aria-label="克隆会话" title="克隆会话" onClick={() => void cloneConversation()}><CopyPlus size={14} aria-hidden="true" /></button>
+            ) : null}
+            {task && !compactHeader && !linkedWorkItem ? <button className="conversation-convert icon-btn" aria-label="整理为需求" title="整理为需求" onClick={convertConversation}><ClipboardList className="conversation-convert-icon" size={14} aria-hidden="true" /></button> : null}
             {task ? (
               <div className="hidden sm:block">
                 <ContextMeter
@@ -897,7 +917,8 @@ export function WorkbenchLayout() {
           </div>
         ) : authHint ? (
           <div className="banner-note text-mute" role="status">
-            还没有连接 AI。打开设置登录或粘贴密钥，凭证只会保存在这台电脑上。
+            <span>连接模型服务后即可发送消息。</span>
+            <Link className="pressable text-accent" to="/settings#settings-auth" state={{ from: "/" }}>连接模型</Link>
           </div>
         ) : notice ? (
           <div className="banner-note text-mute" role="status">
@@ -922,7 +943,7 @@ export function WorkbenchLayout() {
         ) : null}
         {retryPrompt?.taskId === task?.id && retryPrompt && (status === "idle" || status === "error" || status === "stopped") ? (
           <div className="banner-note text-ink" role="status">
-            发送失败。
+            {retryPrompt.reason === "stopped" ? "已停止回复。" : "发送失败。"}
             <button type="button" className="pressable app-no-drag text-accent" onClick={() => void retryLastPrompt()}>
               重试上一条
             </button>
@@ -1061,15 +1082,7 @@ export function WorkbenchLayout() {
       </div>
 
       {overlayLeft ? (
-        <div className="fixed inset-0 z-30">
-          <button
-            type="button"
-            className="absolute inset-0 bg-ink/20"
-            aria-label="关闭会话列表"
-            onClick={() => setTaskOpen(false)}
-          />
-          <div className="absolute inset-y-0 left-0 z-40 shadow-dialog">{renderSidebar(() => setTaskOpen(false))}</div>
-        </div>
+        <WorkspaceDrawer onClose={() => setTaskOpen(false)}>{renderSidebar(() => setTaskOpen(false))}</WorkspaceDrawer>
       ) : null}
 
       {paletteOpen ? (
@@ -1096,11 +1109,10 @@ export function WorkbenchLayout() {
       }} /> : null}
       {creating ? (
         <NewTaskDialog
-          defaultCwd={cwd || workspaceRoot || allowedRoots[0] || ""}
+          defaultCwd={defaultCwd ?? ""}
           sessions={piSessions}
           onCancel={() => setCreating(false)}
           onCreate={async (directory, title) => {
-            if (directory) setCwd(directory);
             const result = await socketClient.send<{ task?: { id: string } }>(
               "task.create",
               directory ? { cwd: directory, title } : { title: title || "随便聊聊" },
@@ -1111,7 +1123,7 @@ export function WorkbenchLayout() {
           onResume={async (session) => {
             const result = await socketClient.send<{ task?: { id: string } }>("session.resume", {
               sessionPath: session.path,
-              cwd: session.cwd ?? (cwd || workspaceRoot || allowedRoots[0]),
+              cwd: session.cwd ?? defaultCwd,
               title: session.name || session.preview,
             });
             setCreating(false);
@@ -1142,7 +1154,7 @@ export function WorkbenchLayout() {
       ) : null}
       {creatingWorkProject ? (
         <NewWorkProjectDialog
-          defaultCwd={cwd || workspaceRoot || allowedRoots[0] || ""}
+          defaultCwd={defaultCwd ?? ""}
           onCancel={() => setCreatingWorkProject(false)}
           onCreate={async (input) => {
             await socketClient.send("workProject.create", input);

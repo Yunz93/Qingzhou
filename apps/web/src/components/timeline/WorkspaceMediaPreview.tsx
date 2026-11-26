@@ -5,6 +5,7 @@ import {
   normalizeWorkspaceMediaPath,
 } from "../../lib/assistant-markdown";
 import { socketClient } from "../../transport/socket-client";
+import { ConversationImage } from "./ConversationImage";
 
 type Props = {
   src: string;
@@ -65,17 +66,7 @@ export function WorkspaceMediaPreview({ src, alt, taskId }: Props) {
   }
 
   if (preview.kind === "image" && preview.dataUrl) {
-    return (
-      <a
-        className="my-2 block max-w-full overflow-hidden rounded-md border border-line bg-fill"
-        href={preview.dataUrl}
-        target="_blank"
-        rel="noreferrer"
-        title={path}
-      >
-        <img src={preview.dataUrl} alt={label} className="max-h-[360px] max-w-full object-contain" />
-      </a>
-    );
+    return <ConversationImage src={preview.dataUrl} label={label} />;
   }
 
   if (preview.kind === "audio" && preview.dataUrl) {
@@ -98,11 +89,7 @@ export function WorkspaceMediaPreview({ src, alt, taskId }: Props) {
 
   if (preview.kind === "text" && preview.language === "svg" && preview.content) {
     const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(preview.content)}`;
-    return (
-      <a className="my-2 block max-w-full overflow-hidden rounded-md border border-line bg-fill" href={dataUrl} target="_blank" rel="noreferrer">
-        <img src={dataUrl} alt={label} className="max-h-[360px] max-w-full object-contain" />
-      </a>
-    );
+    return <ConversationImage src={dataUrl} label={label} />;
   }
 
   return (

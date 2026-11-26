@@ -15,7 +15,9 @@ import {
   tryPiLogin,
   type BeginnerProviderId,
 } from "../setup/auth-status.js";
-import type { AuthEntry } from "@qingzhou/protocol";
+import { geminiTargetRevisionSchema, type AuthEntry, type GeminiTarget } from "@qingzhou/protocol";
+import { GeminiTargetChanged, readGeminiProfile } from "../setup/gemini-target.js";
+import { GeminiConnectionError, testGeminiConnection } from "../setup/gemini-connection.js";
 import { listFolders } from "../setup/folder-browser.js";
 import {
   fetchLatestPiVersion,
@@ -25,9 +27,12 @@ import {
 import { isDevSelfWorkspace } from "../setup/dev-self-workspace.js";
 import type { SettingsStore } from "../setup/settings-store.js";
 
+const apiKeyValue = z.string().trim().min(8).max(512);
+
 const apiKeyBodySchema = z.object({
   provider: z.enum(["anthropic", "openai", "google", "openrouter", "deepseek"]),
-  apiKey: z.string().min(8).max(512),
+  apiKey: apiKeyValue,
+  confirmedGeminiTarget: geminiTargetRevisionSchema.optional(),
 });
 
 const workspaceBodySchema = z.object({
@@ -51,6 +56,7 @@ export type SetupStatus = {
   needsSetup: boolean;
   piBundled: boolean;
   authEntries: AuthEntry[];
+  geminiTarget: GeminiTarget;
   hasModelsFile: boolean;
   modelsFilePath: string;
   modelCount: number;
@@ -72,7 +78,7 @@ export async function buildSetupStatus(
   });
   const configuredProviders = authEntries.map((entry) => entry.id);
   const authConfigured = configuredProviders.length > 0 || (await hasAnyAuth(config.homeDir, agentDir));
-  const models = await inspectModelsFile(config.homeDir, agentDir);
+  const [models, gemini] = await Promise.all([inspectModelsFile(config.homeDir, agentDir), readGeminiProfile(agentDir)]);
   const piAvailable = Boolean(pi.version) && !pi.error;
   const e2e =
     process.env.QINGZHOU_E2E === "1" ||
@@ -83,7 +89,8 @@ export async function buildSetupStatus(
     process.env.OHMYPI_SKIP_SETUP === "1";
   const setupCompleted = e2e || Boolean(userSettings.setupCompletedAt);
   const effectiveAuth = e2e || authConfigured;
-  const needsSetup = !e2e && (!piAvailable || !effectiveAuth || !setupCompleted);
+  // Skipping credentials still lets a user open projects and read earlier conversations.
+  const needsSetup = !e2e && (!piAvailable || !setupCompleted);
 
   return {
     ready: piAvailable && effectiveAuth && setupCompleted,
@@ -102,6 +109,7 @@ export async function buildSetupStatus(
     needsSetup,
     piBundled: config.piBundled,
     authEntries,
+    geminiTarget: gemini.target,
     hasModelsFile: models.present,
     modelsFilePath: piModelsPath(config.homeDir, agentDir),
     modelCount: models.count,
@@ -120,7 +128,7 @@ export function registerSetupRoutes(
     getPi: () => { version: string | null; error: string | null };
     refreshPi?: () => Promise<void>;
     fetchLatestPi?: () => Promise<{ version: string | null; error: string | null }>;
-    onSetupChanged?: () => void | Promise<unknown>;
+    onSetupChanged?: (credentialsChanged?: boolean) => void | Promise<unknown>;
     loadSetup?: () => Promise<SetupStatus>;
     installPi?: () => Promise<SetupStatus & { log: string }>;
   },
@@ -129,6 +137,19 @@ export function registerSetupRoutes(
     if (options.loadSetup) return options.loadSetup();
     await options.onSetupChanged?.();
     return buildSetupStatus(options.getConfig(), options.settings, options.getPi());
+  });
+
+  app.post("/api/setup/test-gemini", async (request, reply) => {
+    const parsed = z.object({ apiKey: apiKeyValue.optional() }).strict().safeParse(request.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "请粘贴完整的 Gemini API Key。" });
+    try {
+      await testGeminiConnection(options.getConfig().piAgentDir, parsed.data.apiKey);
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof GeminiTargetChanged) return reply.code(409).send({ error: "当前配置无法使用 Google 官方目录测试。", geminiTarget: error.target });
+      if (error instanceof GeminiConnectionError) return reply.code(error.status).send({ error: error.message });
+      return reply.code(400).send({ error: "无法读取本机凭据。请粘贴 Google AI Studio 的 API Key 后重试。" });
+    }
   });
 
   app.post("/api/setup/api-key", async (request, reply) => {
@@ -143,12 +164,14 @@ export function registerSetupRoutes(
         parsed.data.apiKey,
         config.homeDir,
         config.piAgentDir,
+        parsed.data.confirmedGeminiTarget,
       );
     } catch (error) {
+      if (error instanceof GeminiTargetChanged) return reply.code(409).send({ error: error.message, geminiTarget: error.target });
       const message = error instanceof Error ? error.message : String(error);
       return reply.code(400).send({ error: message });
     }
-    await options.onSetupChanged?.();
+    await options.onSetupChanged?.(true);
     return buildSetupStatus(options.getConfig(), options.settings, options.getPi());
   });
 
@@ -164,7 +187,7 @@ export function registerSetupRoutes(
       const message = error instanceof Error ? error.message : String(error);
       return reply.code(400).send({ error: message });
     }
-    await options.onSetupChanged?.();
+    await options.onSetupChanged?.(true);
     return buildSetupStatus(options.getConfig(), options.settings, options.getPi());
   });
 
@@ -186,7 +209,7 @@ export function registerSetupRoutes(
       homeDir: config.homeDir,
       agentDir: config.piAgentDir,
     });
-    await options.onSetupChanged?.();
+    await options.onSetupChanged?.(result.completed);
     const setup = await buildSetupStatus(config, options.settings, options.getPi());
     return {
       ...setup,

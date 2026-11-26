@@ -162,6 +162,7 @@ export class ProcessSupervisor {
       sessionTree: SessionTreeNode[];
       sessionLeafId: string | null;
       stderrAlerted: string | null;
+      lastReplyError?: string;
     }
   >();
   private readonly pendingApprovals = new Map<string, ApprovalPending>();
@@ -174,7 +175,7 @@ export class ProcessSupervisor {
     private config: AppConfig,
     private readonly onUnexpectedExit: (taskId: string, generation: number, error: string) => void,
     private readonly onApprovalNeeded: (taskId: string) => void,
-    private readonly onSettled: (taskId: string) => void,
+    private readonly onSettled: (taskId: string, errorMessage?: string) => void,
     private readonly onAbortConfirmed: (taskId: string) => void,
   ) {}
 
@@ -271,6 +272,19 @@ export class ProcessSupervisor {
     const runtime = this.runtimes.get(taskId);
     if (!runtime) return;
     runtime.commands = commands;
+  }
+
+  async reloadCredentialModels(taskId: string): Promise<void> {
+    const runtime = this.runtimes.get(taskId);
+    if (!runtime) return;
+    // Pi RPC lists a cached catalog. Only dispatch a local extension command that
+    // this very worker has registered, since unknown slash commands are model input.
+    const result = await runtime.client.send({ type: "get_commands" });
+    const data = result.data as { commands?: Array<{ name?: string; source?: string; sourceInfo?: { path?: string } }> } | null;
+    const available = data?.commands?.some((command) => command.name === "mowen-refresh-models" &&
+      command.source === "extension" && command.sourceInfo?.path &&
+      path.relative(this.config.approvalExtensionPath, command.sourceInfo.path) === "");
+    if (available) await runtime.client.send({ type: "prompt", message: "/mowen-refresh-models" });
   }
 
   /** Re-query Pi for models/thinking levels (e.g. after auth changes or warm activate). */
@@ -646,12 +660,14 @@ export class ProcessSupervisor {
         if (normalized.settled) {
           runtime.liveAssistantId = null;
           runtime.liveAssistantIndex = null;
-          this.onSettled(taskId);
+          this.onSettled(taskId, runtime.lastReplyError);
+          runtime.lastReplyError = undefined;
         }
         break;
       case "message.started": {
         const message = attachPendingUserFields(runtime, normalized.message, false);
         runtime.messages.push(message);
+        if (message.role === "user" || message.role === "assistant") runtime.lastReplyError = undefined;
         if (message.role === "assistant" && message.streaming) {
           runtime.liveAssistantId = message.id;
           runtime.liveAssistantIndex = runtime.messages.length - 1;
@@ -699,6 +715,7 @@ export class ProcessSupervisor {
           runtime.messages.push(message);
         }
         if (remapped.role === "assistant") {
+          runtime.lastReplyError = normalized.error;
           runtime.liveAssistantId = null;
           runtime.liveAssistantIndex = null;
         }

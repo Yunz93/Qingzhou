@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listConfiguredProviders, saveApiKey } from "../../apps/server/src/setup/auth-status.ts";
+import { inspectModelsFile, listConfiguredProviders, saveApiKey } from "../../apps/server/src/setup/auth-status.ts";
 import { SettingsStore } from "../../apps/server/src/setup/settings-store.ts";
 import { listFolders } from "../../apps/server/src/setup/folder-browser.ts";
 
@@ -34,6 +34,22 @@ describe("setup helpers", () => {
     const raw = await readFile(path.join(home, ".pi", "agent", "auth.json"), "utf8");
     const json = JSON.parse(raw) as { anthropic: { type: string; key: string } };
     expect(json.anthropic.key).toBe("sk-ant-new-key-654321");
+  });
+
+  it("counts explicit models across providers and legacy lists without counting endpoint or model overrides", async () => {
+    const agentDir = await mkdtemp(path.join(os.tmpdir(), "mowen-model-count-"));
+    dirs.push(agentDir);
+    const inspect = () => inspectModelsFile(agentDir, agentDir);
+    const configure = (value: unknown) => writeFile(path.join(agentDir, "models.json"), JSON.stringify(value));
+    expect(await inspect()).toEqual({ present: false, count: 0 });
+    await configure({ providers: { google: { baseUrl: "http://localhost:4310", modelOverrides: { existing: { name: "Renamed" } } } } });
+    expect(await inspect()).toEqual({ present: true, count: 0 });
+    await configure({ providers: { one: { models: [{ id: "a" }, { id: "b" }] }, two: { models: [{ id: "a" }] }, three: {} } });
+    expect(await inspect()).toEqual({ present: true, count: 3 });
+    for (const legacy of [[{ id: "legacy" }], { models: [{ id: "legacy" }] }]) {
+      await configure(legacy);
+      expect(await inspect()).toEqual({ present: true, count: 1 });
+    }
   });
 
   it("persists workspace settings", async () => {
