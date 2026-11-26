@@ -119,7 +119,7 @@ jobs:
           export QINGZHOU_TAURI_UPDATE_PUBKEY="$(cat "$signing_key.pub")"
           TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" pnpm desktop:pack:win
           test -s apps/desktop/release/Qingzhou-win-x64-setup.exe.sig
-          pwsh -NoProfile -File ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release
+          pwsh -NoProfile -File ./tests/desktop/windows-install.ps1 -ReleaseDirectory apps/desktop/release -HistoryFixture .qingzhou-test/windows-legacy-history.json
           QINGZHOU_DESKTOP_E2E_BUILD=1 pnpm --filter @qingzhou/desktop tauri:pack x64 win32
 
       - name: Verify Windows installed and portable candidates
@@ -130,7 +130,10 @@ jobs:
       - name: Exercise Windows WebView2 recovery and drafts
         if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}
         shell: bash
-        run: node tests/desktop/tauri-smoke.mjs apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
+        run: |
+          test_program=apps/desktop/src-tauri/target/desktop-e2e/x86_64-pc-windows-msvc/release/qingzhou.exe
+          node tests/desktop/tauri-smoke.mjs "$test_program"
+          node tests/desktop/tauri-smoke.mjs "$test_program" .qingzhou-test/windows-legacy-history.json
 
       - name: Verify Windows in-app signed update
         if: ${{ !cancelled() && steps.windows_fixtures.outcome == 'success' }}

@@ -1,4 +1,7 @@
-param([Parameter(Mandatory = $true)][string]$ReleaseDirectory)
+param(
+    [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
+    [string]$HistoryFixture
+)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or !$env:RUNNER_TEMP) {
@@ -144,17 +147,31 @@ try {
     } until ($preferences.current -eq '0.1.26')
     $saved = Invoke-RestMethod -Uri $preferencesUri -TimeoutSec 5 -Method Post -ContentType 'application/json' -Body '{"skippedUpdateVersion":"0.1.27"}'
     if ($saved.skippedUpdateVersion -ne '0.1.27') { throw '旧版未写入升级测试资料。' }
+    if ($HistoryFixture) {
+        node ./tests/desktop/legacy-history.mjs http://127.0.0.1:4374 $env:QINGZHOU_HOME_DIR $env:QINGZHOU_DATA_DIR $HistoryFixture
+        if ($LASTEXITCODE -ne 0) { throw '未能生成真实旧版项目历史。' }
+    }
 } finally {
     Stop-TestApp $legacy
     Remove-Item Env:PORT
 }
 $legacyHash = (Get-FileHash -LiteralPath $legacySettings -Algorithm SHA256).Hash
+$legacyHistoryHashes = @{}
+if ($HistoryFixture) {
+    foreach ($name in @('work-items.json', 'workflow.json')) {
+        $file = Join-Path $env:QINGZHOU_DATA_DIR $name
+        $legacyHistoryHashes[$file] = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+    }
+}
 
 # The legacy in-app updater passes only /S and opens its original executable path.
 Start-Installer $setup @('/S')
 if (Test-Path -LiteralPath (Join-Path $legacyResources 'app.asar')) { throw '旧运行时仍留在原目录。' }
 if (Test-Path -LiteralPath $legacyUninstall) { throw '旧卸载登记仍在。' }
 if ((Get-FileHash -LiteralPath $legacySettings -Algorithm SHA256).Hash -ne $legacyHash) { throw '安装器改写了旧资料。' }
+foreach ($file in $legacyHistoryHashes.Keys) {
+    if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $legacyHistoryHashes[$file]) { throw '安装器改写了旧项目历史。' }
+}
 Assert-Path $retained
 Assert-Path (Join-Path $legacyRoot 'uninstall.exe')
 Assert-UpdateTarget $legacyRoot

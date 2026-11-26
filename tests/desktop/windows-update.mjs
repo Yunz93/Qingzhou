@@ -11,6 +11,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { URL } from "node:url";
+import { createProjectHistory } from "./legacy-history.mjs";
 
 if (process.platform !== "win32" || process.env.GITHUB_ACTIONS !== "true" || !process.env.RUNNER_TEMP) {
   throw new Error("签名升级测试使用一次性 Windows CI 运行器的应用登记及资料目录。");
@@ -25,6 +26,7 @@ assert(signature && size);
 const root = await mkdtemp(path.join(process.env.RUNNER_TEMP, "qingzhou-signed-"));
 const install = path.join(root, "Signed Update Installation");
 const portable = path.join(root, "Portable Copy");
+const workspace = path.join(root, "Upgrade Project");
 const binary = path.join(install, "Qingzhou.exe");
 const data = path.join(homedir(), ".qingzhou");
 const serviceLog = path.join(process.env.LOCALAPPDATA, identifier, "logs", "service.log");
@@ -33,7 +35,8 @@ const snapshot = path.join(data, "desktop-ui.json");
 const saved = { "qingzhou.theme": "dark", "qingzhou:shared-draft:signed-test": "需保留的未发送草稿" };
 // The NSIS restart uses the Windows shell, which may not inherit process-local settings.
 await mkdir(data);
-await writeFile(settings, JSON.stringify({ autoCheckForUpdates: false }));
+await mkdir(workspace);
+await writeFile(settings, JSON.stringify({ workspaceRoot: workspace, autoCheckForUpdates: false }));
 await writeFile(snapshot, JSON.stringify(saved));
 
 function powershell(script) {
@@ -119,7 +122,27 @@ async function exercise(executable, test) {
         binding.invoke(command, args).then(value => done({ ok: true, value }), error => done({ ok: false, error: String(error) }));
       `,
     }, 35_000);
-    await test(invoke, exited);
+    const send = async (type, payload) => {
+      const reply = await driver("POST", `${session}/execute/async`, {
+        args: [type, payload], script: `
+          const [type, payload, done] = arguments;
+          const id = crypto.randomUUID();
+          const socket = new WebSocket(location.origin.replace(/^http/, 'ws') + '/ws');
+          const timeout = setTimeout(() => finish({ error: '工作流请求超时 ' + type }), 8000);
+          function finish(result) { clearTimeout(timeout); socket.close(); done(result); }
+          socket.onopen = () => socket.send(JSON.stringify({ id, type, payload }));
+          socket.onerror = () => finish({ error: '工作流连接失败 ' + type });
+          socket.onmessage = (event) => {
+            const frame = JSON.parse(event.data);
+            const reply = (frame.__batch ? frame.events : [frame]).find(entry => entry.payload?.requestId === id);
+            if (reply) finish(reply.type === 'request.succeeded' ? { data: reply.payload.data } : { error: reply.payload.error });
+          };
+        `,
+      }, 10_000);
+      assert(!reply.error, reply.error);
+      return reply.data;
+    };
+    await test(invoke, exited, send);
   } finally {
     if (app.exitCode === null) {
       if (session) await driver("DELETE", `${session}/window`).catch(() => undefined);
@@ -153,7 +176,11 @@ try {
     assert.equal(downloads, 0);
   });
   console.log("同机便携副本拒绝执行安装和下载。");
-  await exercise(binary, async (invoke, exited) => {
+  await exercise(binary, async (invoke, exited, send) => {
+    const history = await createProjectHistory(send, workspace);
+    const before = JSON.parse(await readFile(path.join(data, "workflow.json"), "utf8"));
+    const confirmedPrd = before.prds.find(prd => prd.id === history.prdId);
+    assert(confirmedPrd?.confirmedAt, "旧版 PRD 确认未落盘");
     const offered = await invoke("check_signed_update");
     assert.deepEqual(offered, { ok: true, value: { version, body: "Windows 签名更新回归", canInstall: true } });
     const invalid = await invoke("download_signed_update");
@@ -181,8 +208,16 @@ try {
     assert.equal(powershell(`Test-Path -LiteralPath '${legacyRegistration}'`), "False");
     const updated = JSON.parse(await readFile(snapshot, "utf8"));
     for (const [key, value] of Object.entries(saved)) assert.equal(updated[key], value);
+    const restored = JSON.parse(await readFile(path.join(data, "work-items.json"), "utf8"));
+    assert(restored.projects.some(project => project.id === history.project.id));
+    assert(restored.items.some(item => item.id === history.item.id && item.title === history.item.title));
+    const workflow = JSON.parse(await readFile(path.join(data, "workflow.json"), "utf8"));
+    assert.deepEqual(workflow.prds.find(prd => prd.id === history.prdId), confirmedPrd);
+    for (const event of [history.configured, history.confirmed]) {
+      assert(workflow.events.some(entry => entry.id === event.id && entry.message === event.message));
+    }
   });
-  console.log(`Windows 原生签名升级到 ${version}：便携版拒绝安装，坏签名被拒绝，原位安装及重启后保留主题和草稿。`);
+  console.log(`Windows 原生签名升级到 ${version}：便携版拒绝安装，坏签名被拒绝，原位安装及重启后保留项目、确认历史、主题和草稿。`);
 } finally {
   feed.closeAllConnections();
   feed.close();

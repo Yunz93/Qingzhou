@@ -10,19 +10,23 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 
-const binary = process.argv[2];
+const [binary, historyPath] = process.argv.slice(2);
 if (!binary) throw new Error("用法：node tests/desktop/tauri-smoke.mjs <桌面测试程序>");
+const history = historyPath ? JSON.parse(await readFile(historyPath, "utf8")) : null;
 const executable = path.resolve(binary);
 const runtime = path.resolve(path.dirname(executable), process.platform === "darwin" ? "../Resources/runtime" : "runtime");
 const workbenchPage = path.join(runtime, "web/index.html");
 await mkdir(".qingzhou-test", { recursive: true });
 const directory = path.resolve(await mkdtemp(".qingzhou-test/tauri-native-"));
-const home = path.join(directory, "home");
-const workspace = path.join(home, "project");
-const data = path.join(directory, "data");
+const home = history?.home ?? path.join(directory, "home");
+const workspace = history?.workspace ?? path.join(home, "project");
+const data = history?.data ?? path.join(directory, "data");
 const logs = path.join(directory, "logs");
-await Promise.all([mkdir(workspace, { recursive: true }), mkdir(data), mkdir(logs)]);
-await writeFile(path.join(data, "settings.json"), JSON.stringify({ workspaceRoot: workspace, autoCheckForUpdates: false }));
+await mkdir(logs);
+if (!history) {
+  await Promise.all([mkdir(workspace, { recursive: true }), mkdir(data)]);
+  await writeFile(path.join(data, "settings.json"), JSON.stringify({ workspaceRoot: workspace, autoCheckForUpdates: false }));
+}
 
 const reservation = createServer().listen(0, "127.0.0.1");
 await once(reservation, "listening");
@@ -138,6 +142,39 @@ async function serviceStarts() {
   const log = await readFile(path.join(logs, "service.log"), "utf8");
   assert.equal(/\/_desktop\/bootstrap\?ticket=|QINGZHOU_DESKTOP_TICKET/.test(log), false, "启动日志包含会话票据");
   return log.split("\n").filter((line) => line.includes('"msg":"Server listening at ')).map((line) => JSON.parse(line));
+}
+
+if (history) {
+  const app = await start();
+  try {
+    const click = (selector, label = "") => app.execute(`
+      const node = [...document.querySelectorAll(arguments[0])].find(element => element.innerText.includes(arguments[1]));
+      node?.click();
+      return Boolean(node);
+    `, selector, label);
+    const read = (selector, label) => app.execute("return document.querySelector(arguments[0])?.innerText.includes(arguments[1])", selector, label);
+    await waitFor(() => click('nav[aria-label=工作区] a[href="/board"]'), "无法打开项目看板");
+    await waitFor(() => read("#main-content", history.project.name), "升级后未显示旧版项目");
+    await waitFor(() => click("#project-tab-history"), "项目编排历史未就绪");
+    await waitFor(() => click("#project-panel-history .workflow-timeline button", history.configured.message), "未找到旧版编排事件");
+    await waitFor(() => read('#project-panel-history [aria-label="只读历史回放"]', history.configured.message), "未回放旧版编排事件");
+    await waitFor(() => click("#project-tab-requirements"), "项目需求页未就绪");
+    await waitFor(() => click("#project-panel-requirements button", history.item.title), "未找到旧版需求");
+    await waitFor(() => app.execute('return new URLSearchParams(location.search).get("item") === arguments[0]', history.item.id), "没有打开原需求 ID");
+    await waitFor(() => click("#requirement-tab-history"), "需求历史未就绪");
+    await waitFor(() => click("#requirement-panel-history .workflow-timeline button", history.confirmed.message), "未找到旧版 PRD 确认事件");
+    await waitFor(() => read('#requirement-panel-history [aria-label="只读历史回放"]', history.marker), "未回放旧版 PRD 正文");
+    const stored = JSON.parse(await readFile(path.join(data, "workflow.json"), "utf8"));
+    assert(stored.prds.some(prd => prd.id === history.prdId && prd.confirmedAt));
+    for (const event of [history.configured, history.confirmed]) {
+      assert(stored.events.some(existing => existing.id === event.id && existing.message === event.message));
+    }
+    console.log("系统 WebView 已打开同一项目与需求，回放旧版编排历史、原 PRD 与确认事件。");
+    await app.screenshot("legacy-project-history.png");
+  } finally {
+    await app.close();
+  }
+  process.exit(0);
 }
 
 const first = await start({ simulateMissingPage: true });
