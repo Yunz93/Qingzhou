@@ -9,7 +9,7 @@
 - 墨问候选通过 lint、类型检查和 67 项全量 Chromium E2E。集成测试通过 103 项，跳过 1 项。归档修复后，本机单测通过 508 项，Windows 专用 ZIP 用例另外通过原生验证。系统 WebView 通过启动、断线恢复、AppKit 组字、原生文件选择及重启回归。用正式 arm64 ZIP 一致的网页资源与随包 Pi，在原生窗口完成两轮实际本机模型流式对话并重启回读。
 - arm64 DMG 和 Intel ZIP 完成隔离首装、签名校验与原生启动。两套架构的历史 0.1.26 更新器使用墨问 ZIP 拒绝错误摘要，再从原 `Qingzhou.app` 路径原位替换。各四份会话和项目资料逐字节保留，应用元数据读出「墨问」，升级后原路径可启动。
 - 两种 macOS 架构从 0.1.27 设置页拒绝修改过的下载，随后安装以 `Mowen.app` 为根的正确签名包并重启。主程序和 7 个网页文件与成品一致，主题、中文草稿和已确认 PRD 历史保留。Apple Silicon 使用独立标识重建同版本测试夹具，解决历史夹具启动时未取得桌面会话的问题。
-- 三套墨问 ZIP 的全部 7 个网页文件与同次构建逐字节一致，归档修复后的服务资源一致。macOS 两份 ZIP 的新显示名称、原应用标识和旧归档入口均已核对。两份 DMG 通过磁盘校验。Finder 自定义窗口步骤在本机失败，最终本地 DMG 沿用安装内容、卷图标和 Applications 链接。候选完整哈希在 `.qingzhou-test/mowen-windows-install-key.GfMTsK/release-artifacts.json`。
+- 三套墨问 ZIP 的全部 7 个网页文件与同次构建逐字节一致，归档修复后的服务资源一致。macOS 两份 ZIP 的新显示名称、原应用标识和旧归档入口均已核对。两份 DMG 通过磁盘校验。Finder 自定义窗口步骤在本机失败，最终本地 DMG 沿用安装内容、卷图标和 Applications 链接。候选完整哈希在 `.qingzhou-test/mowen-windows-migration.CXZJMw/release-artifacts.json`。
 
 ## 功能对照
 
@@ -86,7 +86,7 @@
 | `Qingzhou-mac-arm64.dmg` | 64,713,560 | `d137e8bbbc2499b66eb0f762fe8c87395fcf2e6e15b12b67ec549470788eb053` |
 | `Qingzhou-mac-x64.zip` | 80,193,505 | `67e233fad65b9ea95d080a1f3e14fcfcef6c398250ffc09bc9e3a1650e8eea0a` |
 | `Qingzhou-mac-x64.dmg` | 67,014,246 | `207976c03ac71f38b76e1068b02c1e03bfc70994caf039ff064770b01e249362` |
-| `Qingzhou-win-x64-setup.exe` | 45,163,712 | `b0aa948482464c17aef025cfceccc9c32b1dc4ca8838e0d7e1769dd0d212c5ce` |
+| `Qingzhou-win-x64-setup.exe` | 45,156,993 | `5ded4bfa9b9ff3f55bd76c12c973f9e8daa4a76977c57139da344824d9dd5889` |
 | `Qingzhou-win-x64-portable.zip` | 77,982,616 | `eada6c16b661156ffbe03042019b5ea9a6e8ee01bd209a6bb59cc135550fba7a` |
 
 Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建的未签名产物。便携 ZIP 完整性检查通过，主程序为 AMD64 Windows GUI 二进制，包内含 Windows Node、PTY、Pi 平台模块、fd 和 rg。检查了生成的 NSIS 脚本调用迁移钩子，PowerShell 回归脚本及发布工作流已通过解析。迁移脚本使用 0.1.26 的公开正式安装包，并固定其发布清单的 SHA256。
@@ -112,4 +112,5 @@ Windows 候选为 macOS 上用 `cargo-xwin`、Windows SDK 和 NSIS 交叉构建�
 - [Windows WebView2 交互复验](https://github.com/Yunz93/Qingzhou/actions/runs/45670898073) 在 `5be14ed2e5758fd6e78a309c3c096760fa8fc149` 通过了新建对话、断线草稿恢复、独立预览、最小窗口、退出重启和主题保留，四种成品安装与启动回归再次通过。签名升级测试退出时清理进程命令返回 1 并覆盖了原始错误，续验单独记录各升级断言及清理结果。
 - [Windows 签名升级诊断](https://github.com/Yunz93/Qingzhou/actions/runs/45735878717/job/139628887453) 通过 0.1.27 验证包安装、便携副本拒绝下载和安装，原安装误报不可升级。Tauri 在嵌入的运行时配置中省略打包字段 `publisher`，因此安装判断提前返回。NSIS 和运行时改用同一应用标识中的 `qingzhou` 作为发布者。新增嵌入应用配置的 Rust 回归，沿用现有的安装路径校验。
 - [Windows 安装登记复验](https://github.com/Yunz93/Qingzhou/actions/runs/45737958340) 对应 `bc33cf612b7621323b9a182743924765b85bc196`。该提交通过 lint、Rust 格式和含测试的 Windows 交叉编译。实机通过安装登记回归、四种成品安装与启动、便携副本拒绝安装、坏签名拒绝、正确签名安装与自动重启。测试发现 NSIS 卸载会保留新版路径，旧版的签名升级继而使用了已卸载的路径。旧版迁移钩子新增新版程序存在检查，验证脚本核对最终安装路径。WebView2 交互步骤移到签名升级前独立执行，避免错误目录中的更新进程干扰烟测。
+- [Windows 原位复验](https://github.com/Yunz93/Qingzhou/actions/runs/45741016847) 对应 `b16a6d270035012ba9e9b644c4605003308f6260`。新版 NSIS 包通过本地交叉打包，便携包的主程序和归档内容校验与上次一致。实机通过 6 项 Rust 测试、四种成品安装与启动、WebView2 交互烟测及应用内签名更新。0.1.27 验证包拒绝损坏资产，使用正确签名包在原目录升级到 0.1.28，清除旧卸载登记，自动重启并保留主题和中文草稿。两种 macOS 架构同时通过该次作业的构建检查。
 - macOS 已启用简体拼音，测试进程缺少系统键盘投递权限，自身窗口事件没有进入系统拼音引擎，系统候选词操作仍需手动验收。AppKit 文本客户端、草稿恢复与 Chromium 键码用例已通过。随包 Pi 已通过真实进程 RPC、写文件审批和本机模型推理，外部服务商账号连通仍待验收。
