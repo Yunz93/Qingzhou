@@ -134,7 +134,7 @@ async function serviceStarts() {
 
 feed.listen(port, "127.0.0.1");
 await once(feed, "listening");
-let updateError;
+let cleanupError;
 try {
   powershell(`$command = Start-Process -FilePath $env:QINGZHOU_TEST_INSTALLER -ArgumentList @('/S', "/D=$env:QINGZHOU_TEST_ROOT") -Wait -PassThru
     exit $command.ExitCode`);
@@ -181,16 +181,14 @@ try {
     for (const [key, value] of Object.entries(saved)) assert.equal(updated[key], value);
   });
   console.log(`Windows 原生签名升级到 ${version}：便携版拒绝安装，坏签名被拒绝，原位安装及重启后保留主题和草稿。`);
-} catch (error) {
-  updateError = error;
-  throw error;
 } finally {
   feed.closeAllConnections();
   feed.close();
   try {
     powershell(`Get-Process | Where-Object { $_.ProcessName -ieq 'qingzhou' -and $_.Path -ieq $env:QINGZHOU_TEST_EXE } | ForEach-Object { $_.CloseMainWindow() | Out-Null }`);
   } catch (error) {
-    if (!updateError) throw error;
+    cleanupError = error;
     console.error("关闭签名升级测试进程时出错。", error);
   }
 }
+if (cleanupError) throw cleanupError;

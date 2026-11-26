@@ -31,6 +31,15 @@ fn matches_install_directory(executable: &std::path::Path, registered: &std::pat
 }
 
 #[cfg(windows)]
+fn install_registry_key(config: &tauri::Config) -> Option<String> {
+    // Tauri omits the bundler-only publisher from the embedded runtime config.
+    // The NSIS installer defaults to the second component of the same identifier.
+    let publisher = config.identifier.split('.').nth(1)?;
+    let product = config.product_name.as_deref()?;
+    Some(format!(r"Software\{publisher}\{product}"))
+}
+
+#[cfg(windows)]
 fn can_install_update(app: &AppHandle) -> bool {
     use std::{ffi::OsString, path::Path};
     use winreg::{
@@ -38,16 +47,12 @@ fn can_install_update(app: &AppHandle) -> bool {
         RegKey,
     };
 
-    let config = app.config();
-    let (Some(publisher), Some(product)) = (&config.bundle.publisher, &config.product_name) else {
+    let Some(key) = install_registry_key(app.config()) else {
         return false;
     };
     // Read the same current-user value used by the NSIS installer's RestorePreviousInstallLocation.
     let target = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey_with_flags(
-            format!(r"Software\{publisher}\{product}"),
-            KEY_READ | KEY_WOW64_32KEY,
-        )
+        .open_subkey_with_flags(key, KEY_READ | KEY_WOW64_32KEY)
         .and_then(|key| key.get_value::<OsString, _>(""));
     match (std::env::current_exe(), target) {
         (Ok(executable), Ok(registered)) if !registered.is_empty() => {
@@ -201,6 +206,16 @@ pub async fn install_signed_update(
 mod tests {
     use super::{download_error, install_error, matches_install_directory, UpdateError};
     use std::path::Path;
+
+    #[cfg(windows)]
+    #[test]
+    fn uses_the_installer_key_from_the_embedded_app_config() {
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        assert_eq!(
+            super::install_registry_key(context.config()).as_deref(),
+            Some(r"Software\qingzhou\Mowen")
+        );
+    }
 
     #[test]
     fn a_side_by_side_copy_does_not_match_the_registered_installation() {

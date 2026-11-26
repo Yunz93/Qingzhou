@@ -1,6 +1,5 @@
 {
   "bundle": {
-    "publisher": "qingzhou",
     "icon": ["../build/icon.ico"],
     "windows": {
       "nsis": { "installerHooks": "windows/legacy-install.nsh" }
