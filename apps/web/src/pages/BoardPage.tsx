@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useNavigationType, useSearchParams } from "react-router-dom";
 import { FolderGit2, PanelLeft, Plus } from "lucide-react";
 import type { WorkItemDetails, WorkItemSummary } from "@qingzhou/protocol";
 import { WorkDashboard, type WorkFilter } from "../components/board/WorkDashboard";
@@ -47,6 +47,11 @@ export function BoardPage() {
   function setFilter(value: WorkFilter) { setSearchParams((previous) => { previous.set("filter", value); return previous; }, { replace: true }); }
   function setQuery(value: string) { setSearchParams((previous) => { if (value) previous.set("q", value); else previous.delete("q"); return previous; }, { replace: true }); }
   const focusItemId = searchParams.get("item");
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const pendingReturnFocus = useRef(
+    navigationType === "PUSH" && focusItemId && location.state?.focusRequirementId === focusItemId ? location.key : null,
+  );
   const defaultCwd = workspaceRoot ?? allowedRoots[0] ?? "";
   const project = useMemo(
     () => projects.find((entry) => entry.id === activeProjectId) ?? projects[0],
@@ -179,6 +184,15 @@ export function BoardPage() {
   const openedDetails = focusItemId && details && details.item.id === focusItemId && details.item.projectId === project?.id ? details : null;
   const openWorkroom = openedDetails && workflow.state?.configs.length;
 
+  useLayoutEffect(() => {
+    if (pendingReturnFocus.current !== location.key) pendingReturnFocus.current = null;
+    if (!pendingReturnFocus.current || !openWorkroom) return;
+    pendingReturnFocus.current = null;
+    if (document.activeElement === document.body) {
+      document.getElementById("requirement-workroom-title")?.focus({ preventScroll: true });
+    }
+  }, [location.key, openWorkroom]);
+
   function selectProject(id: string) {
     closeDetails();
     setNavigationOpen(false);
@@ -197,7 +211,7 @@ export function BoardPage() {
   );
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-canvas text-ink">
+    <div className="relative flex h-dvh overflow-hidden bg-canvas text-ink" onFocusCapture={() => { pendingReturnFocus.current = null; }}>
       <a className="skip-link" href="#main-content">
         跳到正文
       </a>

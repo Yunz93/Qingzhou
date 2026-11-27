@@ -114,8 +114,27 @@ fi
 RELEASE_DIR="${ROOT:+$ROOT/apps/desktop/release}"
 TMP_DIR=""
 ATTACHED_DMG=""
+INSTALL_STAGE=""
+INSTALLED=""
+INSTALL_REPLACED=0
+
+with_sudo_fallback() {
+  "$@" 2>/dev/null || sudo "$@"
+}
 
 cleanup() {
+  if [[ -n "$INSTALL_STAGE" ]]; then
+    local backup="$INSTALL_STAGE/previous"
+    if [[ "$INSTALL_REPLACED" == 0 && ( -e "$backup" || -L "$backup" ) ]]; then
+      if [[ -e "$INSTALLED" || -L "$INSTALLED" ]] || ! with_sudo_fallback mv "$backup" "$INSTALLED"; then
+        echo "错误: 无法还原旧版本，备份已保留在 $backup" >&2
+        INSTALL_STAGE=""
+      fi
+    fi
+    if [[ -n "$INSTALL_STAGE" ]]; then
+      with_sudo_fallback rm -rf "$INSTALL_STAGE" || echo "提示: 临时安装目录仍在 $INSTALL_STAGE" >&2
+    fi
+  fi
   if [[ -n "${ATTACHED_DMG}" ]]; then
     hdiutil detach "${ATTACHED_DMG}" -quiet >/dev/null 2>&1 || true
     ATTACHED_DMG=""
@@ -125,6 +144,7 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
 
 ensure_tmp_dir() {
   if [[ -z "${TMP_DIR}" ]]; then
@@ -299,7 +319,7 @@ verify_release_file() {
   ok "${name} 校验通过"
 }
 
-trust_app() {
+sign_app() {
   local app="$1"
   [[ -d "$app" ]] || die "找不到应用: $app"
 
@@ -320,12 +340,15 @@ trust_app() {
       ok "签名校验通过。"
     else
       codesign --verify --deep "$app" >/dev/null 2>&1 && ok "签名已写入（非 strict）。" \
-        || echo "警告: codesign --verify 未完全通过，仍可尝试打开。" >&2
+        || die "codesign 签名校验失败。"
     fi
   else
     echo "警告: 没有 codesign，已跳过签名。" >&2
   fi
+}
 
+register_app() {
+  local app="$1"
   if command -v spctl >/dev/null; then
     info "登记 Gatekeeper 评估…"
     if sudo -n true 2>/dev/null || [[ -t 0 ]]; then
@@ -348,37 +371,44 @@ trust_app() {
 
 copy_app() {
   local src="${1:-}"
-  local dest="${DEST_DIR}/${APP_NAME}.app"
   local legacy_qingzhou="${DEST_DIR}/Qingzhou.app"
-  local legacy_ohmypi="${DEST_DIR}/ohMyPi.app"
-  local legacy="${DEST_DIR}/MyPi.app"
+  local stage="${DEST_DIR}/.mowen-install"
+  local candidate legacy
   [[ -d "$src" ]] || die "找不到要安装的应用: ${src:-<empty>}"
   mkdir -p "$DEST_DIR" || die "无法创建目录: $DEST_DIR"
-  if [[ ! -d "$dest" && -d "$legacy_qingzhou" ]]; then
-    dest="$legacy_qingzhou"
-  fi
-  if [[ -d "$dest" ]]; then
-    info "正在替换已有安装: $dest"
-    rm -rf "$dest" 2>/dev/null || sudo rm -rf "$dest" || die "无法删除旧版本。"
-  fi
-  if [[ "$dest" != "$legacy_ohmypi" && -d "$legacy_ohmypi" ]]; then
-    info "正在移除旧版 ohMyPi.app"
-    rm -rf "$legacy_ohmypi" 2>/dev/null || sudo rm -rf "$legacy_ohmypi" || true
-  fi
-  if [[ "$dest" != "$legacy" && -d "$legacy" ]]; then
-    info "正在移除旧版 MyPi.app"
-    rm -rf "$legacy" 2>/dev/null || sudo rm -rf "$legacy" || true
-  fi
-  info "安装到 $dest"
-  if cp -R "$src" "$dest" 2>/dev/null; then
-    :
+  # A private directory on the destination volume also serializes installers.
+  if mkdir -m 700 "$stage" 2>/dev/null; then
+    INSTALL_STAGE="$stage"
   else
-    sudo cp -R "$src" "$dest" || die "拷贝失败（可能需要管理员密码）。"
+    [[ ! -e "$stage" && ! -L "$stage" ]] || die "安装目录已被占用，请检查正在运行或中断的安装: $stage"
+    sudo mkdir -m 700 "$stage" || die "无法创建临时安装目录。"
+    INSTALL_STAGE="$stage"
+    sudo chown "$(id -u)" "$stage" || die "无法设置临时安装目录权限。"
   fi
-  if [[ "$(stat -f %u "$dest" 2>/dev/null || echo 0)" == "0" ]]; then
-    sudo chown -R "$(id -un):staff" "$dest" 2>/dev/null || true
+  INSTALLED="${DEST_DIR}/${APP_NAME}.app"
+  if [[ ! -d "$INSTALLED" && -d "$legacy_qingzhou" ]]; then
+    INSTALLED="$legacy_qingzhou"
   fi
-  echo "$dest"
+  candidate="$stage/${INSTALLED##*/}"
+  info "安装到 $INSTALLED"
+  with_sudo_fallback cp -R "$src/." "$candidate" || die "拷贝失败（可能需要管理员密码）。"
+  if [[ "$(stat -f %u "$candidate" 2>/dev/null || echo 0)" == "0" ]]; then
+    sudo chown -R "$(id -un):staff" "$candidate" 2>/dev/null || true
+  fi
+  sign_app "$candidate"
+
+  if [[ -e "$INSTALLED" || -L "$INSTALLED" ]]; then
+    [[ -d "$INSTALLED" ]] || die "安装位置不是应用目录: $INSTALLED"
+    with_sudo_fallback mv "$INSTALLED" "$stage/previous" || die "无法备份旧版本。"
+  fi
+  with_sudo_fallback mv "$candidate" "$INSTALLED" || die "无法替换应用。"
+  INSTALL_REPLACED=1
+  for legacy in "$DEST_DIR/ohMyPi.app" "$DEST_DIR/MyPi.app"; do
+    if [[ -d "$legacy" ]]; then
+      info "正在移除旧版 ${legacy##*/}"
+      with_sudo_fallback rm -rf "$legacy" || true
+    fi
+  done
 }
 
 if [[ "${QINGZHOU_SELF_TEST:-${MOWEN_SELF_TEST:-${OHMYPI_SELF_TEST:-}}}" == "1" ]]; then
@@ -429,7 +459,8 @@ need_darwin
 if [[ "$TRUST_ONLY" == "1" ]]; then
   TARGET="${SOURCE:-${DEST_DIR}/${APP_NAME}.app}"
   [[ -d "$TARGET" ]] || die "--trust-only 需要一个 .app 路径。"
-  trust_app "$TARGET"
+  sign_app "$TARGET"
+  register_app "$TARGET"
   exit 0
 fi
 
@@ -451,9 +482,8 @@ else
 fi
 
 [[ -n "${APP_SRC}" && -d "${APP_SRC}" ]] || die "找不到 ${APP_NAME}.app（得到: '${APP_SRC:-}'）。"
-INSTALLED="$(copy_app "$APP_SRC")"
-[[ -n "${INSTALLED}" && -d "${INSTALLED}" ]] || die "安装失败。"
-trust_app "$INSTALLED"
+copy_app "$APP_SRC"
+register_app "$INSTALLED"
 
 if [[ "$OPEN_AFTER" == "1" ]]; then
   info "正在打开 ${APP_NAME}…"

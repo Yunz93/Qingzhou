@@ -102,7 +102,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          test -n "$QINGZHOU_TAURI_UPDATE_PUBKEY" && test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          : "${QINGZHOU_TAURI_UPDATE_PUBKEY:?Missing QINGZHOU_TAURI_UPDATE_PUBKEY}"
+          : "${TAURI_SIGNING_PRIVATE_KEY:?Missing TAURI_SIGNING_PRIVATE_KEY}"
           pnpm desktop:pack:tauri "${{ matrix.arch }}"
 
       - name: Build Windows signed update fixtures

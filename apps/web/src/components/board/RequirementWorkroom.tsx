@@ -106,7 +106,7 @@ export function RequirementWorkroom({ error, state, details, items, projectName,
     <section aria-labelledby="requirement-workroom-title" data-requirement-workspace className="workflow-workroom min-h-0 flex-1">
       <header className="requirement-summary flex min-h-14 shrink-0 items-center gap-2 px-3 sm:px-5">
         <button className="icon-btn" aria-label="返回项目" title={`返回 ${projectName}`} onClick={onClose}><ArrowLeft size={15} /></button>
-        <h1 id="requirement-workroom-title" className="min-w-0 flex-1 truncate text-xl font-semibold" title={item.title}>{item.title}</h1>
+        <h1 id="requirement-workroom-title" tabIndex={-1} className="min-w-0 flex-1 truncate text-xl font-semibold" title={item.title}>{item.title}</h1>
         {sorted.length > 1 ? <div className="workflow-item-pagination"><button className="icon-btn" aria-label="上一个需求" disabled={index <= 0} onClick={() => onSelect(sorted[index - 1]!)}><ChevronLeft size={17} /></button><span>{index + 1} / {sorted.length}</span><button className="icon-btn" aria-label="下一个需求" disabled={index < 0 || index >= sorted.length - 1} onClick={() => onSelect(sorted[index + 1]!)}><ChevronRight size={17} /></button></div> : null}
         <span className="review-status" data-tone={statusTone} role="status" aria-label={headline} title={headline}>{compactStatus}</span>
         <button type="button" className="btn btn-ghost" aria-pressed={showConversation} onClick={showConversation ? openReview : openConversation}>

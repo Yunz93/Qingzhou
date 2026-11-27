@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -33,6 +33,112 @@ describe("install-macos.sh", () => {
       env: { ...process.env, QINGZHOU_SELF_TEST: "1", GITHUB_TOKEN: "", GH_TOKEN: "" },
     });
     expect(out).toContain("self-test passed");
+  });
+
+  it.skipIf(process.platform === "win32").each([
+    "same-app", "same-via-link", "copy-failure", "sign-failure", "verify-failure",
+    "backup-failure", "replace-failure", "rollback-failure", "another-install", "non-strict-signature", "trust-only",
+    ...(process.getuid?.() === 0 ? [] : ["permissions-failure"]),
+  ])("preserves a usable installation during %s", (scenario) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "mowen install "));
+    const home = path.join(root, "home");
+    const applications = path.join(home, "Applications");
+    try {
+      const installed = path.join(applications, "Qingzhou.app");
+      const legacy = path.join(applications, "ohMyPi.app");
+      const stage = path.join(applications, ".mowen-install");
+      const candidate = path.join(root, "New.app");
+      const bin = path.join(root, "bin");
+      for (const [app, version] of [[installed, "previous"], [legacy, "legacy"], [candidate, "new"]]) {
+        mkdirSync(app, { recursive: true });
+        writeFileSync(path.join(app, "version"), version);
+      }
+      mkdirSync(bin);
+      for (const [name, commands] of Object.entries({
+        uname: 'echo Darwin',
+        sudo: "exit 1",
+        xattr: "exit 0",
+        spctl: "exit 0",
+        open: 'printf "%s" "$1" > "$HOME/opened"',
+        cp: `
+          if [ "$SCENARIO" = copy-failure ]; then
+            for dest do :; done
+            mkdir -p "$dest"
+            echo partial > "$dest/version"
+            exit 1
+          fi
+          exec /bin/cp "$@"
+        `,
+        codesign: `
+          for app do :; done
+          [ -f "$app/version" ] || exit 2
+          if [ "$1" = --force ]; then
+            echo "$app" > "$HOME/signed"
+            if [ "$SCENARIO" = sign-failure ]; then echo damaged > "$app/version"; exit 1; fi
+          elif [ "$SCENARIO" = verify-failure ]; then
+            exit 1
+          elif [ "$SCENARIO" = non-strict-signature ] && [ "$3" = --strict ]; then
+            exit 1
+          fi
+        `,
+        mv: `
+          if [ "$SCENARIO" = backup-failure ] && [ "$1" = "$INSTALLED" ]; then exit 1; fi
+          if [ "$2" = "$INSTALLED" ]; then
+            if [ "$SCENARIO" = rollback-failure ]; then exit 1; fi
+            if [ "$SCENARIO" = replace-failure ] && [ "$(cat "$1/version")" = new ]; then exit 1; fi
+          fi
+          exec /bin/mv "$@"
+        `,
+      })) writeFileSync(path.join(bin, name), `#!/bin/sh\n${commands}\n`, { mode: 0o755 });
+      let source = candidate;
+      if (scenario === "same-app" || scenario === "trust-only") source = installed;
+      if (scenario === "same-via-link") {
+        source = path.join(root, "Alias.app");
+        symlinkSync(installed, source);
+      }
+      if (scenario === "another-install") {
+        mkdirSync(stage);
+        writeFileSync(path.join(stage, "marker"), "active install");
+      }
+      if (scenario === "permissions-failure") chmodSync(applications, 0o555);
+      const args = [script, "--user"];
+      if (scenario === "trust-only") args.push("--trust-only");
+      const result = spawnSync("bash", [...args, source], {
+        encoding: "utf8",
+        env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, CFFIXED_USER_HOME: home, TMPDIR: root, SCENARIO: scenario, INSTALLED: installed },
+      });
+      if (scenario === "rollback-failure") {
+        expect(result.status, result.stderr).not.toBe(0);
+        expect(result.stderr).toContain(path.join(stage, "previous"));
+        expect(readFileSync(path.join(stage, "previous", "version"), "utf8")).toBe("previous");
+        expect(readFileSync(path.join(legacy, "version"), "utf8")).toBe("legacy");
+      } else if (scenario === "another-install") {
+        expect(result.status, result.stderr).not.toBe(0);
+        expect(readFileSync(path.join(stage, "marker"), "utf8")).toBe("active install");
+        expect(readFileSync(path.join(installed, "version"), "utf8")).toBe("previous");
+      } else if (scenario.endsWith("failure")) {
+        expect(result.status, result.stderr).not.toBe(0);
+        expect(readFileSync(path.join(installed, "version"), "utf8")).toBe("previous");
+        expect(readFileSync(path.join(legacy, "version"), "utf8")).toBe("legacy");
+        expect(readdirSync(home)).not.toContain("opened");
+        expect(readdirSync(applications).sort()).toEqual(["Qingzhou.app", "ohMyPi.app"]);
+      } else {
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toContain(`已完成 macOS 信任处理: ${installed}`);
+        if (scenario === "trust-only") {
+          expect(readFileSync(path.join(home, "signed"), "utf8").trim()).toBe(installed);
+          expect(readdirSync(home)).not.toContain("opened");
+        } else {
+          expect(readFileSync(path.join(home, "signed"), "utf8").trim()).toBe(path.join(stage, "Qingzhou.app"));
+          expect(readFileSync(path.join(home, "opened"), "utf8")).toBe(installed);
+          expect(readdirSync(applications)).toEqual(["Qingzhou.app"]);
+        }
+        expect(readFileSync(path.join(installed, "version"), "utf8")).toBe(scenario === "non-strict-signature" ? "new" : "previous");
+      }
+    } finally {
+      if (scenario === "permissions-failure") chmodSync(applications, 0o755);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("prefers zip over dmg and parses volume paths that contain spaces", () => {

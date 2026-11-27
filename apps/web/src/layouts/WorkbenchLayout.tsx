@@ -844,6 +844,7 @@ export function WorkbenchLayout() {
                 {linkedWorkItem ? (
                     <Link
                       to={`/board?item=${linkedWorkItem.id}`}
+                      state={{ focusRequirementId: linkedWorkItem.id }}
                       className="pressable titlebar-work-link"
                       title={linkedWorkItem.title}
                     >

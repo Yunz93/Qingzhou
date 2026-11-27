@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import {
   assertChecksum,
   currentQingzhouVersion,
@@ -411,5 +412,25 @@ describe("atomic replace and helpers", () => {
     const writer = readFileSync(path.resolve("scripts/write-latest-json.ts"), "utf8");
     expect(writer).toContain("buildQingzhouLatestJson");
     expect(writer).toContain("changelogNotesForVersion");
+  });
+
+  it.skipIf(process.platform === "win32")("requires both signing inputs before building a release package", () => {
+    const workflow = readFileSync(path.resolve(".github/workflows/release.yml"), "utf8");
+    const packStep = workflow.split("      - name: Pack desktop app\n")[1].split("      - name:")[0];
+    const command = packStep.split("        run: |\n")[1].trim().replace("${{ matrix.arch }}", "arm64");
+    for (const [publicKey, privateKey] of [["", ""], ["test-public", ""], ["", "test-private"], ["test-public", "test-private"]]) {
+      const result = spawnSync("bash", ["-eo", "pipefail", "-c", 'pnpm() { echo "package requested"; }\n' + command], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH, QINGZHOU_TAURI_UPDATE_PUBKEY: publicKey, TAURI_SIGNING_PRIVATE_KEY: privateKey },
+      });
+      if (publicKey && privateKey) {
+        expect(result.status).toBe(0);
+        expect(result.stdout.trim()).toBe("package requested");
+      } else {
+        expect(result.status).toBeGreaterThan(0);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).toContain(publicKey ? "TAURI_SIGNING_PRIVATE_KEY" : "QINGZHOU_TAURI_UPDATE_PUBKEY");
+      }
+    }
   });
 });

@@ -427,10 +427,21 @@ test("requirement workspace preserves drafts, supports keyboard navigation and k
 const imageFixture = { name: "review.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=", "base64") };
 
 test("preparation discussion, focus layouts and shared drafts keep the requirement identity and attachments", async ({ page }, testInfo) => {
+  let pendingDetails: Promise<void> | undefined;
+  await page.routeWebSocket("**/ws", (route) => {
+    const server = route.connectToServer();
+    route.onMessage(async (message) => {
+      if (pendingDetails && JSON.parse(String(message)).type === "workItem.details") await pendingDetails;
+      server.send(message);
+    });
+  });
   await setupWorkflowProject(page);
   await createRequirement(page, "连续对话需求", "WRITE:shared-draft.txt:done");
   await page.getByRole("button").filter({ has: page.getByText("连续对话需求", { exact: true }) }).click();
   const room = page.getByRole("region", { name: "连续对话需求", exact: true });
+  const heading = room.locator("#requirement-workroom-title");
+  await expect(heading).toBeVisible();
+  await expect(heading).not.toBeFocused();
   await room.getByRole("button", { name: "对话", exact: true }).click();
   await room.getByRole("textbox", { name: "输入消息" }).fill("先讨论边界，不实施");
   await room.getByRole("button", { name: "讨论这个需求" }).click();
@@ -462,16 +473,41 @@ test("preparation discussion, focus layouts and shared drafts keep the requireme
   await expect(page.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
   const desktopSize = page.viewportSize()!;
   await page.setViewportSize({ width: 533, height: 600 });
-  await expect(page.getByRole("link", { name: "返回需求", exact: true })).toBeInViewport();
-  await page.getByRole("link", { name: "返回需求", exact: true }).click();
+  const returnLink = page.getByRole("link", { name: "返回需求", exact: true });
+  await expect(returnLink).toBeInViewport();
+  await returnLink.press("Enter");
+  await expect(heading).toBeFocused();
+  await expect(heading).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Tab");
+  await expect(room.locator(":focus")).toHaveCount(1);
   await page.setViewportSize(desktopSize);
   await expect(room.getByRole("textbox", { name: "输入消息" })).toHaveValue("同一个需求的跨布局草稿");
   await expect(room.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage).some((key) => key.startsWith("qingzhou:shared-images:") && sessionStorage.getItem(key)?.includes("data:image/png;base64,")))).toBe(true);
   await page.reload();
   await expect(room.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
+  await expect(heading).not.toBeFocused();
   await expect(room.getByRole("textbox", { name: "输入消息" })).toHaveValue("同一个需求的跨布局草稿");
   await page.screenshot({ path: testInfo.outputPath("shared-requirement-draft.png"), fullPage: true, animations: "disabled" });
+  await room.getByRole("button", { name: "返回项目", exact: true }).click();
+  await page.getByRole("link", { name: "对话", exact: true }).click();
+  let release!: () => void;
+  pendingDetails = new Promise<void>((resolve) => { release = resolve; });
+  const projectName = page.getByRole("dialog", { name: "启动项目" }).getByLabel("项目名称", { exact: true });
+  try {
+    await returnLink.click();
+    await page.getByRole("button", { name: "添加项目", exact: true }).click();
+    await projectName.fill("保留输入");
+    await expect(heading).toHaveCount(0);
+  } finally {
+    pendingDetails = undefined;
+    release();
+  }
+  await expect(heading).toBeAttached();
+  await expect(projectName).toBeFocused();
+  await page.keyboard.insertText("位置");
+  await expect(projectName).toHaveValue("保留输入位置");
+  await projectName.press("Escape");
   await room.getByRole("button", { name: "返回项目", exact: true }).click();
   await page.getByRole("link", { name: "对话", exact: true }).click();
   await sidebar.getByRole("button", { name: "会话操作 连续对话需求", exact: true }).click();

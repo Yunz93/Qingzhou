@@ -55,7 +55,7 @@ git push origin v0.1.29
 
 这会跑 `.github/workflows/release.yml`，上传安装包、安装脚本、`SHA256SUMS.txt`、旧版升级清单 `latest.json` 和 Tauri 签名更新清单 `tauri-update.json`。正式版本会设为 GitHub `latest`。更新签名使用仓库变量 `QINGZHOU_TAURI_UPDATE_PUBKEY` 及发布环境中的 `TAURI_SIGNING_PRIVATE_KEY`。`main` 推送只运行 CI。安装脚本会校验清单（旧版本没有清单时只警告）。
 
-合入前可手动运行 Release 工作流并勾选 `verify_only`，执行三个平台的依赖安装、lint、类型检查、单测和集成测试，并验证 Windows 的安装、便携启动、旧版升级及应用内签名更新。该模式使用临时更新密钥，不发布版本。macOS 正式打包后还会检查内置 fd / rg 的目标架构，避免交叉编译时混入宿主架构的工具。
+合入前可手动运行 Release 工作流并勾选 `verify_only`。两个 macOS 架构运行 lint、类型检查、单元和集成测试及 Rust 编译检查。Windows 运行归档和原生单测，并使用临时更新密钥验证安装、便携启动、旧版升级、WebView2 和应用内签名更新。正式标签构建另需配置更新签名密钥。macOS 正式包还会检查内置 fd 和 rg 的架构。
 
 ## 项目与 Agent 协作
 
@@ -67,10 +67,13 @@ git push origin v0.1.29
 
 ```bash
 bash scripts/install-macos.sh             # 下载 latest 正式版
+bash scripts/install-macos.sh --local --user  # 安装本地候选到 ~/Applications
 bash scripts/install-macos.sh --build     # 本机打包再安装
 bash scripts/install-macos.sh --user      # ~/Applications，不需要管理员
 bash scripts/install-macos.sh --trust-only /Applications/Mowen.app
 ```
+
+Windows 本地候选位于 `apps/desktop/release`。运行 `Qingzhou-win-x64-setup.exe` 安装；要试用便携版，解压同目录的 `Qingzhou-win-x64-portable.zip`。该目录的 `SHA256SUMS.txt` 列出各候选包摘要。
 
 本机开发和打包需要 Node.js 22.19 或以上与 Rust 工具链。
 
