@@ -468,7 +468,8 @@ test("preparation discussion, focus layouts and shared drafts keep the requireme
   await room.getByRole("button", { name: "返回项目", exact: true }).click();
   await page.getByRole("link", { name: "对话", exact: true }).click();
   const sidebar = page.getByRole("complementary", { name: "会话", exact: true });
-  await sidebar.getByRole("listitem").getByRole("button", { name: /^连续对话需求 需求对话 / }).click();
+  const requirementConversation = sidebar.getByRole("listitem").getByRole("button", { name: /^连续对话需求 需求对话 / });
+  await requirementConversation.click();
   await expect(page.getByRole("textbox", { name: "输入消息" })).toHaveValue("同一个需求的跨布局草稿");
   await expect(page.getByRole("button", { name: "移除 review.png", exact: true })).toBeVisible();
   const desktopSize = page.viewportSize()!;
@@ -491,6 +492,8 @@ test("preparation discussion, focus layouts and shared drafts keep the requireme
   await page.screenshot({ path: testInfo.outputPath("shared-requirement-draft.png"), fullPage: true, animations: "disabled" });
   await room.getByRole("button", { name: "返回项目", exact: true }).click();
   await page.getByRole("link", { name: "对话", exact: true }).click();
+  await requirementConversation.click();
+  await expect(returnLink).toBeVisible();
   let release!: () => void;
   pendingDetails = new Promise<void>((resolve) => { release = resolve; });
   const projectName = page.getByRole("dialog", { name: "启动项目" }).getByLabel("项目名称", { exact: true });
