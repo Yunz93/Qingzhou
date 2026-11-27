@@ -44,3 +44,9 @@ Linux 首轮在保存未确认需求后，测试同时匹配了看板卡片和�
 新标志在 16、24、64 和 128 像素分别与旧图标对比，并与 Mozi、Modu 的实际图标并排复核。Windows ICO 的 16 像素图、macOS ICNS 的 128 像素图与相应渲染逐像素一致。图标对照在 `.qingzhou-test/mowen-gate-icon.MVGIU5/`。
 
 原生 WKWebView 走查发现，从模型设置返回时焦点落在页面根节点。现从「连接模型」进入设置后，点击「返回对话」或浏览器后退会聚焦主操作，保存配置后则聚焦「新建对话」。首次直接打开首页沿用原有焦点行为。若用户在密钥保存结束前返回，首页切换操作时保留键盘焦点。若已移到搜索框，则可继续输入。桌面和 375 像素窄窗的 8 项定向 Chromium 测试连续两轮共 16 次通过，包含延迟保存、已有会话、读取失败和未知凭据状态。用例位于 `tests/e2e/startup.spec.ts`。
+
+本轮产品提交为 `f7c0052`。最终 Apple 芯片 ZIP 内的 12,129 项运行资源与 WKWebView 测试宿主逐项一致。原生窗口通过系统浅色、深色、不同保存时机的焦点切换，以及随包 Pi 对本机 Gemini 模拟服务的流式回复和重启恢复。记录在 `.qingzhou-test/landing-wk-029.FtCdFu/`。
+
+六份候选包的 SHA-256 均已复验。两种 Mac 磁盘映像已挂载核对应用和图标。Windows 主程序、安装器及卸载器内嵌的六个尺寸图标均与本轮 ICO 相同，安装器与便携包的 12,139 项运行资源逐项一致。校验记录和最终截图在 `.qingzhou-test/mowen-layout-focus-snapshot.8vbffKbT/`。本机通过 515 项单元和 103 项集成测试。同提交的 [Linux CI](https://github.com/Yunz93/Qingzhou/actions/runs/45924765644) 通过代码检查、测试和 Chromium 端到端验证。
+
+同提交的[桌面验证](https://github.com/Yunz93/Qingzhou/actions/runs/45924802226)通过。两个 macOS 架构完成构建检查。Windows 在临时签名测试包构建步骤中执行安装和便携检查，并通过 WebView2 历史回放、草稿恢复、随包 Pi 的本机 Gemini 流式回复和应用内签名更新。作业按 `verify_only` 跳过正式发布。
