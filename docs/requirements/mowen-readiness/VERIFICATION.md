@@ -17,10 +17,22 @@
 
 最终布局复核使用同一份资料比较 375 和 533 像素宽度的需求页，截图和 DOM 测量在 `.qingzhou-test/mobile-layout-diff.dXS0CW/`。有分页时，旧版 375 像素窗口的标题可用宽度为 0。新版短标题为 142 像素，长标题在 120 像素内完整显示为两行。在 533 像素窗口长标题可用宽度为 278 像素，可完整单行显示。相邻需求、审阅、对话、更多菜单和返回均已实际操作。
 
-最终产品源码为 `aa3559f`。实际 WKWebView 的 Gemini 截图和请求计数在 `.qingzhou-test/mowen-029-layout-final/mowen-gemini-wk-vqUfS2/`。Apple 芯片原位升级记录在 `.qingzhou-test/official-028-to-029.gwXDhH/verified.json`，Intel 包的 Rosetta 启动结果在 `.qingzhou-test/layout-intel-rosetta.auMdlH/verified.json`。六份成品校验清单位于本机 `apps/desktop/release/SHA256SUMS.txt`。
+布局修订的产品源码为 `aa3559f`。实际 WKWebView 的 Gemini 截图和请求计数在 `.qingzhou-test/mowen-029-layout-final/mowen-gemini-wk-vqUfS2/`。Apple 芯片原位升级记录在 `.qingzhou-test/official-028-to-029.gwXDhH/verified.json`，Intel 包的 Rosetta 启动结果在 `.qingzhou-test/layout-intel-rosetta.auMdlH/verified.json`。六份成品校验清单位于本机 `apps/desktop/release/SHA256SUMS.txt`。
 
 Linux 首轮在保存未确认需求后，测试同时匹配了看板卡片和待处理清单里的同名标题。断言已指定可点击的需求卡片。产品源码和桌面成品与 `aa3559f` 相同。
 
-2026-11-27 核对最终结果。[完整 CI](https://github.com/Yunz93/Qingzhou/actions/runs/45858762510) 在 `ad51ac1` 通过 lint、类型检查、Linux 单元 504 项、集成 103 项和 Chromium 74 项；Linux 单元按平台跳过 13 项，集成跳过 1 项。[桌面验证](https://github.com/Yunz93/Qingzhou/actions/runs/45857166917) 在 `aa3559f` 的 macOS arm64、macOS x64 和 Windows x64 三个作业均通过。Windows 实测包括安装与卸载、便携启动、原位迁移 v0.1.28、旧项目历史回放、断线草稿恢复、真实 Pi 对接本机 Gemini 模拟服务和应用内签名更新。
+2026-11-27 核对布局修订。[完整 CI](https://github.com/Yunz93/Qingzhou/actions/runs/45858762510) 在 `ad51ac1` 通过 lint、类型检查、Linux 单元 504 项、集成 103 项和 Chromium 74 项；Linux 单元按平台跳过 13 项，集成跳过 1 项。[桌面验证](https://github.com/Yunz93/Qingzhou/actions/runs/45857166917) 在 `aa3559f` 的 macOS arm64、macOS x64 和 Windows x64 三个作业均通过。Windows 实测包括安装与卸载、便携启动、原位迁移 v0.1.28、旧项目历史回放、断线草稿恢复、真实 Pi 对接本机 Gemini 模拟服务和应用内签名更新。
 
-本轮交付候选包，正式发布仍待人工决定。验证使用临时更新密钥，核对时正式仓库变量 `QINGZHOU_TAURI_UPDATE_PUBKEY` 尚未设置。
+分发修订 `7a8dcee` 使用同一套界面资源，补齐第三方声明后重新打包。Apple 芯片候选的 12,129 个运行资源和符号链接与 WKWebView 测试宿主逐项一致。首次配置和选择目录后，Pi 1.6.0 向本机模拟端点发送一次生成请求，界面收到三段回复。完全退出并重启后，会话 ID、模型和内容恢复，未观察到外部访问。记录在 `.qingzhou-test/mowen-029-notices/wk-archive-resource-match.json` 和同目录的 `mowen-gemini-wk-DqdAEl/evidence.json`。
+
+六份成品均通过 SHA-256 校验。Windows 安装器与便携包的 12,139 项运行资源逐字节一致。服务端的 88 个实际依赖均有声明，macOS 两个架构各对应 200 个原生包，Windows 对应 191 个，含实际链接的 WebView2 SDK 声明。Pi、Node 和两个搜索工具的原文均从成品解出比对。成品大小和摘要在 `.qingzhou-test/mowen-029-notices/release-artifacts.json`，Windows 资源核对在同目录的 `windows-audit.log` 和 `windows-notices-audit.log`。
+
+用官方 Electron v0.1.28 新建项目和一份已确认 PRD，再迁移至含声明的 Apple 芯片候选。旧版拒绝错误摘要，正确包原位安装并正常启动，12,132 项安装内容与最终 ZIP 相同。升级后工作项、设置和 PRD 正文字节一致。首次读取时工作流 JSON 重新排列了对象键，原项目、PRD、六条历史事件的内容均相同。记录和前后截图在 `.qingzhou-test/official-028-notices-arm64-rn_s9xzp/`。
+
+用临时密钥验证两个 macOS 架构从 0.1.27 到本轮 0.1.29 的应用内升级。损坏的更新包被拒绝，重试后自动重启，并保留中文草稿、主题、原项目、PRD 和确认记录。Intel 包通过 Rosetta 运行，Apple 芯片的旧版测试窗口在首次进入时刷新一次。记录位于 `.qingzhou-test/signed-notices-029.w36wu1wj/run-{arm64,x64}/result.json`。另核对正式脚本生成的两种更新清单，旧清单的六个别名与三个实际安装包摘要对应，新清单的三个签名均通过校验，修改任一资产一个字节后被拒绝。
+
+分发修订在本机通过 lint、类型检查、515 项单元和 103 项集成测试。Linux 完整 CI 通过 509 项单元、103 项集成和 74 项 Chromium 端到端测试。macOS 单元按环境跳过 7 项，Linux 跳过 13 项，集成各跳过 1 项。[本次完整 CI](https://github.com/Yunz93/Qingzhou/actions/runs/45919284187)
+
+同一提交的 macOS arm64、macOS x64 和 Windows x64 作业全部通过。Windows 原生运行器验证安装、便携、原位升级、已装文件声明、WebView2 历史回放及断线草稿恢复。包内 Pi 与本机 Gemini 模拟服务验证流式回复和失败后重试。应用内更新拒绝损坏包，正确包升级到 0.1.29 后保留项目、确认记录、主题和草稿。发布步骤按 `verify_only` 跳过。[本次桌面验证](https://github.com/Yunz93/Qingzhou/actions/runs/45919302191)
+
+本轮交付候选包，正式发布仍待人工决定。验证使用临时更新密钥。核对仓库配置项名称时，正式更新公钥变量 `QINGZHOU_TAURI_UPDATE_PUBKEY` 和签名私钥机密 `TAURI_SIGNING_PRIVATE_KEY` 均未设置。
