@@ -29,7 +29,7 @@ it.each([
   await import("../../scripts/bundle-pi-tools.ts");
   expect(downloadPinnedSearchTool).toHaveBeenCalledTimes(2);
   for (const tool of ["fd", "rg"]) {
-    expect(downloadPinnedSearchTool).toHaveBeenCalledWith(tool, expect.any(String), { architecture, platform });
+    expect(downloadPinnedSearchTool).toHaveBeenCalledWith(tool, expect.any(String), { architecture, platform, includeNotices: true });
   }
 });
 

@@ -1,0 +1,6 @@
+# Preserve upstream license text exactly on every build host.
+apps/desktop/pi-runtime/PI-LICENSE -text
+apps/desktop/scripts/licenses/*.txt -text
+apps/desktop/scripts/licenses/native/*.txt -text
+apps/desktop/scripts/licenses/native/*.md -text
+apps/desktop/scripts/licenses/native/webview2-sdk-LICENSE.txt -whitespace

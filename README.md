@@ -82,6 +82,8 @@ pnpm desktop:pack:tauri  # → apps/desktop/release 下的本机架构安装包
 
 桌面包自带 Node、Pi 和搜索工具。运行界面使用 macOS WKWebView 或 Windows WebView2。
 
+分发包中的 `runtime` 目录包含项目与 Node 的许可证、`pi/LICENSE`、搜索工具的 `tools/licenses`，以及原生宿主和本地服务的第三方声明。前端依赖声明位于 `runtime/web/THIRD-PARTY-LICENSES.md`。macOS 上的 `runtime` 位于应用包的 `Contents/Resources` 下。
+
 macOS 可用 `QINGZHOU_CROSS_WINDOWS=1 pnpm desktop:pack:win` 生成 Windows x64 候选。交叉构建需要 `x86_64-pc-windows-msvc` Rust 目标、`cargo-xwin`、Clang、LLD 和 NSIS。安装、便携启动及 WebView2 联调在 Windows 上验证。
 
 浏览器开发模式：

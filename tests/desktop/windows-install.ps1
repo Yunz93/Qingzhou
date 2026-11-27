@@ -83,6 +83,10 @@ function Stop-TestApp([System.Diagnostics.Process]$App) {
 
 function Assert-StockApp([string]$Binary, [string]$Case) {
     Assert-Path $Binary
+    $runtime = Join-Path (Split-Path -Parent $Binary) 'runtime'
+    foreach ($notice in @('NODE-LICENSE', 'pi/LICENSE', 'NATIVE-THIRD-PARTY-LICENSES.txt', 'SERVICE-THIRD-PARTY-LICENSES.txt', 'web/THIRD-PARTY-LICENSES.md', 'tools/licenses/fd/LICENSE-MIT', 'tools/licenses/rg/COPYING')) {
+        Assert-Path (Join-Path $runtime $notice)
+    }
     $settings = Set-TestProfile $Case
     $original = (Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash
     $app = Start-Process -FilePath $Binary -PassThru

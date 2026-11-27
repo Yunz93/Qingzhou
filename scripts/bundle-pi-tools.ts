@@ -16,6 +16,6 @@ await mkdir(dest, { recursive: true });
 
 console.log("Downloading pinned fd and ripgrep for", architecture, "into", dest);
 for (const tool of ["fd", "rg"] as const) {
-  const installed = await downloadPinnedSearchTool(tool, dest, { architecture, platform });
+  const installed = await downloadPinnedSearchTool(tool, dest, { architecture, platform, includeNotices: true });
   console.log("bundled", tool, "->", installed);
 }

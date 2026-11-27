@@ -4,9 +4,10 @@ import { chmod, cp, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { bundleService } from "./bundle-service.mjs";
 import { proxiedFetch } from "../../server/dist/setup/http-proxy.js";
 import { systemTar } from "../../server/dist/setup/system-tar.js";
+import { stageNativeNotices } from "./native-notices.mjs";
 
 const desktop = fileURLToPath(new URL("../", import.meta.url));
 const root = path.resolve(desktop, "../..");
@@ -111,21 +112,13 @@ async function stagePi() {
     recursive: true,
     filter: (file) => keepFile(file) && path.basename(file) !== ".bin",
   });
+  await cp(path.join(source, "PI-LICENSE"), path.join(runtime, "pi/LICENSE"));
 }
 
 async function stageService() {
   const server = path.join(root, "apps/server");
   await cp(path.join(root, "LICENSE"), path.join(runtime, "MOWEN-LICENSE"));
-  await build({
-    entryPoints: [path.join(server, "dist/desktop-main.js")],
-    outfile: path.join(runtime, "service.mjs"),
-    platform: "node",
-    format: "esm",
-    target: "node22",
-    bundle: true,
-    external: ["node-pty"],
-    banner: { js: "import { createRequire as bundleRequire } from 'node:module'; import { fileURLToPath as bundlePath } from 'node:url'; const require = bundleRequire(import.meta.url); const __dirname = bundlePath(new URL('.', import.meta.url));" },
-  });
+  await bundleService(root, runtime);
   await cp(path.join(server, "extensions/approval.ts"), path.join(runtime, "approval.ts"));
   const web = path.join(runtime, "web");
   await cp(path.join(root, "apps/web/dist"), web, { recursive: true, filter: keepFile });
@@ -147,6 +140,7 @@ async function stageService() {
 await stageNode();
 await stagePi();
 await stageService();
+await stageNativeNotices({ manifestPath: path.join(desktop, "src-tauri/Cargo.toml"), target, runtime });
 run(process.execPath, [requireRoot.resolve("tsx/cli"), "scripts/bundle-pi-tools.ts", arch, path.join(runtime, "tools"), platform], { cwd: root });
 
 const cli = path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js");

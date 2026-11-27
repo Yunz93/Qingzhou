@@ -19,6 +19,11 @@ const BINARY_NAMES: Record<SearchToolId, readonly string[]> = {
   rg: ["rg"],
 };
 
+const RELEASE_NOTICES: Record<SearchToolId, readonly string[]> = {
+  fd: ["LICENSE-APACHE", "LICENSE-MIT"],
+  rg: ["COPYING", "LICENSE-MIT", "UNLICENSE"],
+};
+
 export function searchToolBinaryName(tool: SearchToolId, platform = process.platform): string {
   const name = tool === "rg" ? "rg" : "fd";
   return platform === "win32" ? `${name}.exe` : name;
@@ -168,6 +173,7 @@ export async function downloadPinnedSearchTool(
     platform?: NodeJS.Platform;
     architecture?: string;
     fetchImpl?: typeof fetch;
+    includeNotices?: boolean;
   } = {},
 ): Promise<string> {
   const platform = options.platform ?? process.platform;
@@ -193,6 +199,17 @@ export async function downloadPinnedSearchTool(
     const binaryName = searchToolBinaryName(tool, platform);
     const extracted = findExtractedBinary(extractDir, binaryName);
     if (!extracted) throw new Error(`Binary ${binaryName} missing from ${path.basename(url)}`);
+    if (options.includeNotices) {
+      const sourceDir = path.dirname(extracted);
+      const files = readdirSync(sourceDir, { withFileTypes: true }).filter(entry => entry.isFile());
+      const notices = RELEASE_NOTICES[tool];
+      for (const name of notices) {
+        if (!files.some(file => file.name === name)) throw new Error(`Missing ${name} in ${path.basename(url)}`);
+      }
+      const noticeDir = path.join(destDir, "licenses", tool);
+      await mkdir(noticeDir, { recursive: true });
+      for (const name of notices) await copyFile(path.join(sourceDir, name), path.join(noticeDir, name));
+    }
     return await installSearchToolFrom(extracted, destDir, binaryName);
   } finally {
     await rm(tmp, { recursive: true, force: true });
