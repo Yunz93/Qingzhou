@@ -1,6 +1,6 @@
 import { ArchivedTasksDialog } from "../components/tasks/ArchivedTasksDialog";
 import { hasDialogLayer } from "../hooks/useDialogLayer";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, ClipboardList, CopyPlus, PanelBottom, PanelLeft, Pencil, Plus } from "lucide-react";
 import { TaskSidebar } from "../components/tasks/TaskSidebar";
@@ -45,6 +45,35 @@ import {
   readUiFlag,
   writeUiFlag,
 } from "../lib/ui-prefs";
+
+const modelSettingsLink = {
+  id: "conversation-model-action",
+  to: "/settings#settings-auth",
+  state: { from: "/", restoreModelAction: true },
+};
+
+type ConversationStartProps = { configured: boolean; onCreate: () => void };
+
+class ConversationStartAction extends Component<ConversationStartProps, object, boolean> {
+  override getSnapshotBeforeUpdate(previous: ConversationStartProps) {
+    return previous.configured !== this.props.configured && document.activeElement?.id === modelSettingsLink.id;
+  }
+
+  override componentDidUpdate(_previous: ConversationStartProps, _state: object, wasFocused: boolean) {
+    if (wasFocused) document.getElementById(modelSettingsLink.id)?.focus({ preventScroll: true });
+  }
+
+  override render() {
+    if (!this.props.configured) {
+      return <Link {...modelSettingsLink} className="pressable btn btn-primary">连接模型</Link>;
+    }
+    return (
+      <button id={modelSettingsLink.id} type="button" className="pressable btn btn-primary" onClick={this.props.onCreate}>
+        <Plus size={15} aria-hidden="true" />新建对话
+      </button>
+    );
+  }
+}
 
 function WorkbenchConversation({
   canRewrite,
@@ -100,6 +129,7 @@ export function WorkbenchLayout() {
   const piError = useAgentStore((state) => state.piError);
   const piAvailable = useAgentStore((state) => state.piAvailable);
   const authHint = useAgentStore((state) => state.authHint);
+  const authConfigured = useAgentStore((state) => state.authConfigured);
   const serverError = useAgentStore((state) => state.serverError);
   const requestError = useAgentStore((state) => state.requestError);
   const connection = useAgentStore((state) => state.connection);
@@ -915,10 +945,10 @@ export function WorkbenchLayout() {
               关闭
             </button>
           </div>
-        ) : authHint ? (
-          <div className="banner-note text-mute" role="status">
+        ) : task && (!authConfigured || authHint) ? (
+          <div className="banner-note conversation-auth-note text-mute" role="status">
             <span>连接模型服务后即可发送消息。</span>
-            <Link className="pressable text-accent" to="/settings#settings-auth" state={{ from: "/" }}>连接模型</Link>
+            <Link {...modelSettingsLink} className="pressable inline-flex shrink-0 items-center font-medium text-accent">连接模型</Link>
           </div>
         ) : notice ? (
           <div className="banner-note text-mute" role="status">
@@ -959,6 +989,7 @@ export function WorkbenchLayout() {
         ) : null}
         <main
           id="main-content"
+          tabIndex={-1}
           data-conversation-scroll
           className="relative min-h-0 min-w-[0] flex-1 overflow-y-auto overscroll-y-contain"
         >
@@ -982,9 +1013,13 @@ export function WorkbenchLayout() {
               onStarter={(prompt) => setDraft(prompt)}
             />
           ) : (
-            <div className="mx-auto flex h-full max-w-[720px] items-start px-6 pt-[min(20vh,112px)] sm:px-10">
-              <button type="button" className="pressable btn btn-primary" onClick={() => setCreating(true)}><Plus size={14} />新建对话</button>
-            </div>
+            <section className="conversation-empty" aria-labelledby="conversation-empty-title">
+              <h2 id="conversation-empty-title">
+                {!authConfigured ? "先连接一个模型" : sidebarTasks.length ? "选择或新建对话" : "开始一段对话"}
+              </h2>
+              <p>{!authConfigured ? "使用 Gemini 等服务的 API Key，或登录已有订阅。" : "选好工作文件夹，就可以提问或描述任务。"}</p>
+              <ConversationStartAction configured={authConfigured} onCreate={() => setCreating(true)} />
+            </section>
           )}
         </main>
         {approval ? (

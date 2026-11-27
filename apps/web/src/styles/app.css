@@ -1448,6 +1448,36 @@ html.dark {
     line-height: 1.4;
   }
 
+  .conversation-auth-note {
+    padding-block: 0;
+  }
+
+  .conversation-empty {
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px clamp(48px, 12vh, 112px);
+    text-align: center;
+  }
+
+  .conversation-empty h2 {
+    color: var(--color-ink);
+    font-size: clamp(20px, 2vw, 24px);
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .conversation-empty p {
+    max-width: 32em;
+    margin: 8px 0 20px;
+    color: var(--color-mute);
+    font-size: 14px;
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+
   .jump-latest {
     position: sticky;
     bottom: 16px;

@@ -2,7 +2,7 @@
 
 来源为 [PRD v2](../PRD.md)。本版待确认。页面结构、主题、控件与验收以[页面设计](../DESIGN.md)为准。相关业务依据为[对话](../../../modules/conversation.md)、[项目工作编排](../../../modules/work-orchestration.md)和[需求设计](../../../modules/requirement-design.md)。
 
-工作区与首次运行使用墨问标志。标志沿用 Mozi、Modu 的黑白图标体系，并以白色对话轮廓和「口」构成独立字形。
+工作区与首次运行使用墨问标志。标志沿用 Mozi、Modu 的黑白图标体系，由一个开底的白色门框和一个「口」构成「问」字。
 
 ## 职责
 
